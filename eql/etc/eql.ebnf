@@ -1,0 +1,247 @@
+@@grammar::EQL
+@@left_recursion :: False
+@@comments :: /\/\*(?:.|\n)*?\*\//
+@@eol_comments :: /\/\/(?:.|\n)*?$/
+@@keyword :: and by const in join macro not of or sequence until where with
+start = single_query;
+
+
+piped_query::PipedQuery
+    =
+    | query:base_query pipes:[pipe_chain]
+    | query:() pipes:pipe_chain
+    ;
+
+
+pipe_chain = {'|' ~ @+:pipe_command}+;
+
+pipe_command::Pipe
+    =
+    name:ident args:pipe_arguments
+    ;
+
+
+pipe_arguments
+    =
+    | &(atom atom) {atom}
+    | expressions
+    | {}
+    ;
+
+base_query
+    =
+    | sequence
+    | join
+    | event_query
+    ;
+
+join::Join
+    = 'join' ~ shared_by:by_values queries+:subquery_by {queries:subquery_by}+ [until:until_clause];
+
+sequence::Sequence
+    =
+    'sequence' ~
+    (shared_by:by_values ['with' params:named_params]|['with' params:named_params] shared_by:by_values)
+    queries:subquery_by
+    {queries:subquery_by}+
+    [until:until_clause]
+    ;
+
+until_clause
+    = 'until' ~ @:subquery_by;
+
+subquery_by::SubqueryBy
+    = query:subquery params:[named_params] join_values:[by_values];
+
+
+subquery = '[' ~ @:event_query ']';
+
+by_values
+    =
+    | 'by' ~ @:expressions
+    | {}
+    ;
+
+
+event_query::EventQuery
+    =
+    [event_type:ident 'where' ~ ] cond:expression
+    ;
+
+
+macro::Macro
+    =
+    'macro' ~ name:ident '(' params:params')' body:expression
+    ;
+
+const::Constant
+    =
+    'const' ~ name:ident equals value:literal
+    ;
+
+
+# At some point will add CONST or other types of definitions
+definition
+    =
+    | macro
+    | const
+    ;
+
+
+# Start rules
+definitions = {definition} $;
+single_definition = definition $;
+single_query = piped_query $;
+single_expression = expression $;
+
+
+expression
+    =
+    | or_expr
+    | subexpression
+    ;
+
+
+or_expr::OrTerms
+    = terms+:subexpression {'or' ~ terms+:subexpression}+;
+
+
+subexpression
+    =
+    | and_expr
+    | term
+    ;
+
+and_expr::AndTerms
+    = terms+:term {'and' ~ terms+:term}+;
+
+term
+    =
+    | not_term
+    | sub_term
+    ;
+
+not_term::NotTerm
+    = 'not' ~ t:term;
+
+
+sub_term
+    =
+    | comparison
+    | in_set
+    | value
+    ;
+
+
+comparison::Comparison
+    = left:value op:comparator ~ right:value;
+
+in_set::InSet
+    =
+    expr:value 'in' ~ '(' container:expressions ')'
+    ;
+
+# Operators
+equals::Equals = '==' | '=';
+comparator = @:('<=' | '<' | equals | '!=' | '>=' | '>');
+
+
+value
+    =
+    | function_call
+    | named_subquery
+    | check_paren
+    ;
+
+function_call::FunctionCall
+    =
+    name:ident '(' ~ args:[expressions] ')'
+    ;
+
+check_paren
+    =
+    | '(' ~ @:expression ')'
+    | atom
+    ;
+
+
+atom
+    =
+    | literal
+    | field
+    ;
+
+
+expressions
+    =
+    @+:argument {',' @+:argument} [',']
+    ;
+
+argument
+    = expression;
+
+named_subquery::NamedQuery
+    = name:ident 'of' ~ query:subquery;
+
+
+field::Field
+    =
+    base:ident sub_fields:{sub_field}
+    ;
+
+sub_field
+    =
+    | '.' @:ident
+    | '[' @:unsigned_integer ']'
+    ;
+
+
+named_params::NamedParams
+    =
+    params:{named_param}
+    ;
+
+named_param::NamedParam
+    =
+    k:ident [equals v:(time_unit | atom)]
+    ;
+
+params
+    =
+    @+:ident {',' @+:ident} | {}
+    ;
+
+
+# Fields
+@name
+ident = /[a-zA-Z][a-zA-Z0-9_]*/;
+
+# Literals
+literal::Literal = value:( decimal | integer | string | raw_string);
+
+time_unit::TimeRange = val:(decimal|integer) unit:ident;   # validated in python
+
+unsigned_integer::int
+    = /[0-9]+/
+    ;
+
+
+integer::int
+    = /[-+]?[0-9]+/
+    ;
+
+decimal::float
+    = /[-+]?(?:\d+\.\d*|\d*\.\d+)(?:[Ee][-+]?\d+)?/
+    ;
+
+string
+    =
+    | '\"' ~ @:/(\\[btnfr"'\\]|[^\r\n"\\])*/ '\"'
+    | "\'" ~ @:/(\\[btnfr"'\\]|[^\r\n'\\])*/ "\'"
+    ;
+
+raw_string
+    =
+    | '?\"' ~ @:/(\\"|[^"])*/ '\"'
+    | "?\'" ~ @:/(\\'|[^'])*/ "\'"
+    ;

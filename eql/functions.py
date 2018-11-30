@@ -1,0 +1,20 @@
+"""EQL functions."""
+builtins = (
+    "add",
+    "arrayContains",
+    "arraySearch",
+    "concat",
+    "divide",
+    "endsWith",
+    "indexOf",
+    "length",
+    "modulo",
+    "multiply",
+    "number",
+    "startsWith",
+    "string",
+    "stringContains",
+    "substring",
+    "subtract",
+    "wildcard",
+)
