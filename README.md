@@ -29,7 +29,7 @@ $ eql query -f example.json "process where process_name == 'explorer.exe'"
 
 # Next Steps
 
-- Check out the [query guide](https://eql.readthedocs.io/query-guide.html) for a crash course on writing EQL queries
-- View usage for the [cli](https://eql.readthedocs.io/cli.html)
-- Explore the [api](https://eql.readthedocs.io/api/index.html) for advanced usage or incorporating EQL into other projects
+- Check out the [query guide](https://eql.readthedocs.io/en/latest/query-guide/index.html) for a crash course on writing EQL queries
+- View usage for the [cli](https://eql.readthedocs.io/en/latest/cli.html)
+- Explore the [api](https://eql.readthedocs.io/en/latest/api/index.html) for advanced usage or incorporating EQL into other projects
 - Browse a [library of EQL analytics](https://eqllib.readthedocs.io)
