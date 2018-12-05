@@ -1,19 +1,18 @@
 """EQL command line utility."""
 from __future__ import print_function
+
 import argparse
 import glob
-import io
-import json
 import os
 import sys
 
 from eql.engines.build import render_engine
 from eql.engines.native import PythonEngine
+from eql.errors import EqlError
 from eql.loader import load_analytics, save_analytics
 from eql.parser import parse_query
 from eql.schema import use_schema
-from eql.utils import load_dump, stream_json
-from eql.errors import EqlError
+from eql.utils import load_dump, stream_stdin_events, stream_file_events
 
 
 def build(args):
@@ -42,13 +41,9 @@ def build(args):
 def query(args):
     """Query over an input file."""
     if args.file:
-        f = io.open(args.file, encoding=args.encoding)
-        _, ext = os.path.splitext(args.file)
-        ext = ext[len(os.path.extsep):]
-        fmt = args.format or ext
+        stream = stream_file_events(args.file, args.format, args.encoding)
     else:
-        f = sys.stdin
-        fmt = args.format or 'jsonl'
+        stream = stream_stdin_events(args.format)
 
     config = {'print': True}
     if args.config:
@@ -62,20 +57,8 @@ def query(args):
         print(e, file=sys.stderr)
         sys.exit(2)
 
-    if fmt == 'jsonl':
-        stream = stream_json(f)
-    elif fmt == 'json':
-        stream = json.load(f)
-    else:
-        raise NotImplemented("Unexpected format: {}".format(fmt))
-
-    try:
-        engine.stream_events(stream, finalize=False)
-    except IOError:
-        pass
-
+    engine.stream_events(stream, finalize=False)
     engine.finalize()
-    f.close()
 
 
 def main(args=None):
@@ -97,7 +80,7 @@ def main(args=None):
     query_parser.add_argument('query', help='The EQL query to run over the log file')
     query_parser.add_argument('--file', '-f', help='Target file(s) to query with EQL')
     query_parser.add_argument('--encoding', '-e', help='Encoding of input file', default="utf8")
-    query_parser.add_argument('--format', help='', choices=['json', 'jsonl'])
+    query_parser.add_argument('--format', help='', choices=['json', 'jsonl', 'json.gz', 'jsonl.gz'])
     query_parser.add_argument('--config', help='Engine configuration')
 
     parsed = parser.parse_args(args)

@@ -12,6 +12,11 @@ It supports field lookups, boolean logic, comparisons, wildcard matching, and fu
 EQL also has a preprocessor that can perform parse and translation time evaluation, allowing for easily sharable components between queries.
 
 
+.. image:: _static/eql-whoami.jpg
+    :alt: what is EQL
+    :scale: 50%
+
+
 Getting Started
 ^^^^^^^^^^^^^^^^
 The EQL module current supports Python 2.7 and 3.5+. Assuming a supported Python version is installed, run the command:
@@ -25,7 +30,7 @@ If Python is configured and already in the PATH, then ``eql`` will be readily av
 .. code-block:: console
 
      $ eql --version
-     eql 0.6.0
+     eql 0.6.1
 
 From there, try a :download:`sample json file <_static/example.json>` and test it with EQL.
 

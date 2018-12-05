@@ -22,6 +22,11 @@ build_analytics = parse_analytics([
 ])
 
 
+def stdin_patch():
+    """Patch stdin with a temporary stream."""
+    return io.StringIO(u'\n'.join([json.dumps(event.data) for event in TestEngine.get_events()]))
+
+
 class TestEqlCommand(TestEngine):
     """Test EQL command line parsing and functionality."""
 
@@ -83,7 +88,7 @@ class TestEqlCommand(TestEngine):
         os.remove(analytics_file)
 
     @mock.patch('eql.engines.native.PythonEngine.print_event')
-    @mock.patch('sys.stdin', new=io.StringIO(u'\n'.join([json.dumps(event.data) for event in TestEngine.get_events()])))
+    @mock.patch('sys.stdin', new=stdin_patch())
     def test_query_eql_stdin(self, mock_print_event):
         """Stream stdin to the EQL command."""
         query = "process where true | head 8 | tail 1"
@@ -94,7 +99,7 @@ class TestEqlCommand(TestEngine):
         self.assertEqual(expected, actual_event_ids, "Event IDs didn't match expected.")
 
     @mock.patch('eql.engines.native.PythonEngine.print_event')
-    @mock.patch('sys.stdin', new=io.StringIO(u'\n'.join([json.dumps(event.data) for event in TestEngine.get_events()])))
+    @mock.patch('sys.stdin', new=stdin_patch())
     def test_implied_any(self, mock_print_event):
         """Stream stdin to the EQL command."""
         query = "true | unique event_type_full"
@@ -105,7 +110,7 @@ class TestEqlCommand(TestEngine):
         self.assertEqual(expected, actual_event_ids, "Event IDs didn't match expected.")
 
     @mock.patch('eql.engines.native.PythonEngine.print_event')
-    @mock.patch('sys.stdin', new=io.StringIO(u'\n'.join([json.dumps(event.data) for event in TestEngine.get_events()])))
+    @mock.patch('sys.stdin', new=stdin_patch())
     def test_implied_base(self, mock_print_event):
         """Stream stdin to the EQL command."""
         query = "| unique event_type_full"

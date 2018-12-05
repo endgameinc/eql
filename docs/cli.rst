@@ -82,6 +82,7 @@ Detailed Usage
     optional arguments:
       --file FILE, -f FILE  Target file(s) to query with EQL
       --encoding ENCODING, -e ENCODING
-                            Encoding of input file
-      --format {json,jsonl}
+                            Encoding of input file (utf8, utf16, etc)
+      --format {json,jsonl,json.gz,jsonl.gz}
+                            File type. If not specified, defaults to the extension for --file
       --config CONFIG       Engine configuration

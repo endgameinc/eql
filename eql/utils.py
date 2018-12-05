@@ -1,5 +1,9 @@
 """Generic utility functions for analytic_engines."""
+import codecs
+import gzip
 import json
+import os
+import sys
 
 # Lazy load dynamic loaders
 try:
@@ -140,3 +144,59 @@ def stream_json(json_input):
         if line.strip():
             # Events may only be data buffers
             yield json.loads(line)
+
+
+def stream_file_events(file_path, file_format=None, encoding="utf8"):
+    """Stream a file as JSON.
+
+    :param str file_path: Path to the file
+    :param str file_format: One of json.jgz, json.gz
+    :param str encoding: File encoding (ascii, utf8, utf16, etc.)
+    """
+    decoder = codecs.getreader(encoding)
+    inner_ext, outer_ext = os.path.splitext(file_format or file_path)
+
+    if outer_ext == '.gz':
+        inner_path, inner_ext = os.path.splitext(inner_ext)
+        file_format = inner_ext or inner_path
+        f = gzip.open(file_path, 'rb')
+    else:
+        file_format = outer_ext
+        f = open(file_path, 'rb')
+
+    wrapped_file = decoder(f)
+    with wrapped_file:
+        return stream_events(wrapped_file, file_format)
+
+
+def stream_stdin_events(file_format="json"):
+    """Stream a file as JSON.
+
+    :param str file_format: One of json.jgz, json.gz
+    """
+    f = sys.stdin
+    file_format = file_format or 'jsonl'
+    if file_format.endswith('.gz'):
+        f = gzip.GzipFile(mode='r', fileobj=f)
+        file_format, _ = os.path.splitext(file_format)
+
+    stream = stream_events(f, file_format)
+    try:
+        return stream
+    except IOError:
+        pass
+
+
+def stream_events(fileobj, file_format="json"):
+    """Stream events from a file handle.
+
+    :param file fileobj: Handle to a file or stream
+    :param str file_format: JSON or JSONL
+    """
+    file_format = file_format.lstrip(".")
+    if file_format == 'jsonl':
+        return stream_json(fileobj)
+    elif file_format == 'json':
+        return json.loads(fileobj.read())
+
+    raise NotImplementedError("Unexpected format: {}".format(file_format))
