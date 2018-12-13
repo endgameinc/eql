@@ -1,6 +1,7 @@
 """Generic utility functions for analytic_engines."""
 import codecs
 import gzip
+import io
 import json
 import os
 import sys
@@ -137,12 +138,11 @@ def save_dump(contents, filename):
             raise ValueError("Unsupported file type {}".format(extension))
 
 
-def stream_json(json_input):
+def stream_json_lines(json_input):
     """Iterate over json lines to get Events."""
     for line in json_input:
         line = line.strip()
         if line.strip():
-            # Events may only be data buffers
             yield json.loads(line)
 
 
@@ -153,38 +153,41 @@ def stream_file_events(file_path, file_format=None, encoding="utf8"):
     :param str file_format: One of json.jgz, json.gz
     :param str encoding: File encoding (ascii, utf8, utf16, etc.)
     """
-    decoder = codecs.getreader(encoding)
-    inner_ext, outer_ext = os.path.splitext(file_format or file_path)
+    gz_ext = '.gz'
 
-    if outer_ext == '.gz':
-        inner_path, inner_ext = os.path.splitext(inner_ext)
-        file_format = inner_ext or inner_path
-        f = gzip.open(file_path, 'rb')
+    if not file_format:
+        base_path, file_format = os.path.splitext(file_path)
+        if file_format == gz_ext:
+            base_path, file_format = os.path.splitext(file_path[:-len(gz_ext)])
+            file_format += gz_ext
+
+    if file_format.endswith(gz_ext):
+        file_format = file_format[:-len(gz_ext)]
+        decoder = codecs.getreader(encoding)
+        handle = decoder(gzip.open(file_path, 'rb'))
     else:
-        file_format = outer_ext
-        f = open(file_path, 'rb')
+        handle = io.open(file_path, encoding=encoding)
 
-    wrapped_file = decoder(f)
-    with wrapped_file:
-        return stream_events(wrapped_file, file_format)
+    with handle:
+        for event in stream_events(handle, file_format=file_format):
+            yield event
 
 
-def stream_stdin_events(file_format="json"):
+def stream_stdin_events(file_format=None):
     """Stream a file as JSON.
 
     :param str file_format: One of json.jgz, json.gz
     """
-    f = sys.stdin
+    gz_ext = '.gz'
     file_format = file_format or 'jsonl'
-    if file_format.endswith('.gz'):
-        f = gzip.GzipFile(mode='r', fileobj=f)
-        file_format, _ = os.path.splitext(file_format)
+    f = sys.stdin
 
-    stream = stream_events(f, file_format)
-    try:
-        return stream
-    except IOError:
-        pass
+    if file_format.endswith(gz_ext):
+        file_format = file_format[:-len(gz_ext)]
+        f = gzip.GzipFile(mode='r', fileobj=sys.stdin)
+
+    for event in stream_events(f, file_format):
+        yield event
 
 
 def stream_events(fileobj, file_format="json"):
@@ -194,9 +197,10 @@ def stream_events(fileobj, file_format="json"):
     :param str file_format: JSON or JSONL
     """
     file_format = file_format.lstrip(".")
+
     if file_format == 'jsonl':
-        return stream_json(fileobj)
+        return stream_json_lines(fileobj)
     elif file_format == 'json':
-        return json.loads(fileobj.read())
+        return json.load(fileobj)
 
     raise NotImplementedError("Unexpected format: {}".format(file_format))

@@ -16,7 +16,7 @@ If Python is configured and already in the PATH, then ``eql`` will be readily av
 
 ```console
 $ eql --version
-eql 0.6.1
+eql 0.6.2
 ```
 
 From there, try a [sample json file](docs/_static/example.json) and test it with EQL.

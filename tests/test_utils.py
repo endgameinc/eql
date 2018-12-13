@@ -39,5 +39,5 @@ class TestUtils(unittest.TestCase):
         """Check streaming of jsonlines."""
         example = [{'a': '1'}, {'b': '2'}, {'c': '3'}]
         jsonl = '\n'.join(json.dumps(item) for item in example)
-        parsed = list(eql.utils.stream_json(jsonl.splitlines()))
+        parsed = list(eql.utils.stream_json_lines(jsonl.splitlines()))
         self.assertEqual(parsed, example, "JSON lines didn't stream properly.")
