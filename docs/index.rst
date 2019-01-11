@@ -57,6 +57,7 @@ Next Steps
     query-guide/index
     cli
     api/index
+    resources
 
 License
 ^^^^^^^^^^
