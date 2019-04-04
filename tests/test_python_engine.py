@@ -391,3 +391,22 @@ class TestPythonEngine(TestEngine):
             expected_ids = analytic.metadata['_info']['expected_event_ids']
             actual_ids = output_ids[analytic.id]
             self.validate_results(actual_ids, expected_ids, query)
+
+    def test_custom_pid_keys(self):
+        config = {'flatten': True, 'pid_key': 'unique_pid', 'ppid_key': 'unique_ppid'}
+        input_events = []
+        import copy
+        for i in "abcdef":
+            events = copy.deepcopy(self.get_events())
+            for event in events:
+                event.data['unique_pid'] = i + ':' + event.data['unique_pid']
+                if 'unique_ppid' in event.data:
+                    event.data['unique_ppid'] = i + ':' + event.data['unique_ppid']
+            input_events.extend(events)
+
+        import logging
+        logging.warning(input_events)
+        query = "process where child of [process where process_name == 'python.exe'] and subtype != 'terminate'"
+        output = self.get_output(queries=[parse_query(query)], config=config, events=input_events)
+        event_ids = [event.data['unique_pid'] for event in output]
+        self.validate_results(event_ids, [i + ':unique pid 3' for i in "abcdef"], "Custom pid keys failed")

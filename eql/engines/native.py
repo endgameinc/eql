@@ -850,7 +850,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         def check_ancestor(event):  # type: (Event) -> None
             pid = event.data.get('pid', 0)
             if pid != 0 and ancestor_match(event):
-                sources.add(pid)
+                sources.add(event.data.get(self.pid_key))
 
         def check_if_descendant(scope):  # type: (Scope) -> bool
             return scope.event.data.get(self.pid_key) in descendants
@@ -896,7 +896,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         def match_processes(event):  # type: (Event) -> None
             pid = event.data.get('pid', 0)
             if pid != 0 and process_match(event):
-                parents.add(pid)
+                parents.add(event.data.get(self.pid_key))
 
         def check_if_child(scope):  # type: (Scope) -> None
             return scope.event.data.get(self.pid_key) in children
@@ -934,7 +934,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         def match_processes(event):  # type: (Event) -> None
             pid = event.data.get('pid', 0)
             if pid != 0 and process_match(event):
-                processes.add(pid)
+                processes.add(event.data.get(self.pid_id))
 
         def check_for_match(scope):  # type: (Scope) -> None
             return scope.event.data.get(self.pid_key) in processes
