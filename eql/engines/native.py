@@ -51,6 +51,8 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         self._query_pipes = []
         self._reducer_hooks = defaultdict(list)
         self.host_key = self.get_config('host_key', 'hostname')
+        self.pid_key = self.get_config('pid_key', 'pid')
+        self.ppid_key = self.get_config('ppid_key', 'ppid')
 
         if self.get_config('data_source') == 'endgame':
             self.process_subtype = "opcode"
@@ -819,8 +821,8 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         @self.event_callback("process")
         def update_descendants(event):  # type: (Event) -> None
-            ppid = event.data.get('ppid')
-            pid = event.data.get('pid')
+            ppid = event.data.get(self.ppid_key)
+            pid = event.data.get(self.pid_key)
             subtype = event.data.get(process_subtype)
 
             for pending_pid in dead_processes:
@@ -831,7 +833,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
             dead_processes.clear()
 
-            if subtype in creates and pid == 4 and event.data.get('process_name') == "System":
+            if subtype in creates and event.data.get('pid') == 4 and event.data.get('process_name') == "System":
                 # Reset all state on a sensor or machine boot up
                 descendants.clear()
                 sources.clear()
@@ -851,7 +853,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 sources.add(pid)
 
         def check_if_descendant(scope):  # type: (Scope) -> bool
-            return scope.event.data.get('pid') in descendants
+            return scope.event.data.get(self.pid_key) in descendants
 
         return check_if_descendant
 
@@ -865,8 +867,8 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         @self.event_callback("process")
         def update_children(event):  # type: (Event) -> None
-            ppid = event.data.get('ppid')
-            pid = event.data.get('pid')
+            ppid = event.data.get(self.ppid_key)
+            pid = event.data.get(self.pid_key)
             subtype = event.data.get(process_subtype)
 
             for pending_pid in dead_processes:
@@ -877,7 +879,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
             dead_processes.clear()
 
-            if subtype in creates and pid == 4 and event.data.get('process_name') == "System":
+            if subtype in creates and event.data.get('pid') == 4 and event.data.get('process_name') == "System":
                 # Reset all state on a sensor or machine boot up
                 children.clear()
                 parents.clear()
@@ -897,7 +899,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 parents.add(pid)
 
         def check_if_child(scope):  # type: (Scope) -> None
-            return scope.event.data.get('pid') in children
+            return scope.event.data.get(self.pid_key) in children
 
         return check_if_child
 
@@ -910,7 +912,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         @self.event_callback("process")
         def purge_on_terminate(event):  # type: (Event) -> None
-            pid = event.data.get('pid')
+            pid = event.data.get(self.pid_key)
             subtype = event.data.get(process_subtype)
 
             for pending_pid in dead_processes:
@@ -919,7 +921,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
             dead_processes.clear()
 
-            if subtype in creates and pid == 4 and event.data.get('process_name') == "System":
+            if subtype in creates and event.data.get('pid') == 4 and event.data.get('process_name') == "System":
                 # Reset all state on a sensor or machine boot up
                 processes.clear()
 
@@ -935,7 +937,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 processes.add(pid)
 
         def check_for_match(scope):  # type: (Scope) -> None
-            return scope.event.data.get('pid') in processes
+            return scope.event.data.get(self.pid_key) in processes
 
         return check_for_match
 
