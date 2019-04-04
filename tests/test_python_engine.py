@@ -392,21 +392,66 @@ class TestPythonEngine(TestEngine):
             actual_ids = output_ids[analytic.id]
             self.validate_results(actual_ids, expected_ids, query)
 
-    def test_custom_pid_keys(self):
+    def test_relationship_pid_collision(self):
         config = {'flatten': True, 'pid_key': 'unique_pid', 'ppid_key': 'unique_ppid'}
-        input_events = []
-        import copy
-        for i in "abcdef":
-            events = copy.deepcopy(self.get_events())
-            for event in events:
-                event.data['unique_pid'] = i + ':' + event.data['unique_pid']
-                if 'unique_ppid' in event.data:
-                    event.data['unique_ppid'] = i + ':' + event.data['unique_ppid']
-            input_events.extend(events)
+        events = [Event.from_data(d) for d in [
+            {
+                "event_type": "process",
+                "pid": 1001,
+                "ppid": 1000,
+                "unique_pid": "host1-1001",
+                "unique_ppid": "host1-1000",
+                "process_name": "explorer.exe",
+                "subtype": "create"
+            },
+            {
+                "event_type": "process",
+                "pid": 1002,
+                "ppid": 1001,
+                "unique_pid": "host1-1002",
+                "unique_ppid": "host1-1001",
+                "process_name": "powershell.exe",
+                "subtype": "create"
+            },
+            {
+                "event_type": "process",
+                "pid": 1003,
+                "ppid": 1002,
+                "unique_pid": "host1-1003",
+                "unique_ppid": "host1-1002",
+                "process_name": "whoami.exe",
+                "subtype": "create"
+            },
+            {
+                "event_type": "process",
+                "pid": 1001,
+                "ppid": 1000,
+                "unique_pid": "host2-1001",
+                "unique_ppid": "host2-1000",
+                "process_name": "explorer.exe",
+                "subtype": "create"
+            },
+            {
+                "event_type": "process",
+                "pid": 1002,
+                "ppid": 1001,
+                "unique_pid": "host2-1002",
+                "unique_ppid": "host2-1001",
+                "process_name": "cmd.exe",
+                "subtype": "create"
+            },
+            {
+                "event_type": "process",
+                "pid": 1003,
+                "ppid": 1002,
+                "unique_pid": "host2-1003",
+                "unique_ppid": "host2-1002",
+                "process_name": "whoami.exe",
+                "subtype": "create"
+            }
+        ]]
 
-        import logging
-        logging.warning(input_events)
-        query = "process where child of [process where process_name == 'python.exe'] and subtype != 'terminate'"
-        output = self.get_output(queries=[parse_query(query)], config=config, events=input_events)
+        query = "process where child of [process where process_name == 'powershell.exe']"
+        output = self.get_output(queries=[parse_query(query)], config=config, events=events)
         event_ids = [event.data['unique_pid'] for event in output]
-        self.validate_results(event_ids, [i + ':unique pid 3' for i in "abcdef"], "Custom pid keys failed")
+        self.validate_results(event_ids, ['host1-1003'], "Relationships failed due to pid collision")
