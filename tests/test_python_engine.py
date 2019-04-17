@@ -393,6 +393,7 @@ class TestPythonEngine(TestEngine):
             self.validate_results(actual_ids, expected_ids, query)
 
     def test_relationship_pid_collision(self):
+        """Confirm that the field used for tracking lineage can be dynamically set."""
         config = {'flatten': True, 'pid_key': 'unique_pid', 'ppid_key': 'unique_ppid'}
         events = [Event.from_data(d) for d in [
             {
