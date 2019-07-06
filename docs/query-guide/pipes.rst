@@ -124,3 +124,24 @@ Get the top five network connections that transmitted the most data
     | sort total_out_bytes
     | tail 5
 
+``window``
+---------
+The ``window`` pipe will buffer events based on the timespan specify, which allows other pipes to function on a sliding
+window.
+
+Get suspicious recon commands that were executed within a 5 minute window
+
+  .. code-block:: eql
+
+    process where process_name in ("whoami.exe", "netstat.exe", "hostname.exe", "net.exe", "sc.exe", "systeminfo.exe")
+    | window 5m
+    | unique hostname, process_name
+    | unique_count process_name
+    | filter count >= 3
+
+.. note::
+
+    The window buffer will emit the most recent event first, as this will provide a stream of events when using
+    ``unique`` pipe or ``unique_count`` pipe. However, this means when using ``filter`` pipe in the example above,
+    the first few events may be absent, e.g. ``filter count >=  3`` will not show the first two events in the output
+    results.

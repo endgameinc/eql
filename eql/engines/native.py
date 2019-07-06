@@ -706,8 +706,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
                 window_buf.append((events[0].time, events))
 
-                # forward the entire buffer along the pipe
-                for result in window_buf:
+                # forward the entire buffer along the pipe, reversed so that events[0] exposes new information for
+                # unique pipe etc
+                for result in reversed(window_buf):
                     next_pipe(result[1])
                 next_pipe(PIPE_EOF)
 

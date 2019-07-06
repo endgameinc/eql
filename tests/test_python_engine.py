@@ -372,21 +372,21 @@ class TestPythonEngine(TestEngine):
             {
                 "event_type": "process",
                 "process_name": "c",
-                "timestamp": convert_time(11)
+                "timestamp": convert_time(11.1)
             },
             {
                 "event_type": "process",
-                "process_name": "d",
+                "process_name": "c",
                 "timestamp": convert_time(12)
             },
             {
                 "event_type": "process",
-                "process_name": "e",
+                "process_name": "d",
                 "timestamp": convert_time(13)
             },
             {
                 "event_type": "process",
-                "process_name": "f",
+                "process_name": "e",
                 "timestamp": convert_time(20.2)
             },
             {
@@ -396,11 +396,22 @@ class TestPythonEngine(TestEngine):
             }
         ]]
 
+        '''
+        0: [a]
+        1: [a,b]
+        10.1: [b]
+        11.1: [b,c]
+        12: [b,c,c]
+        13: [b,c,c,d]
+        20.2: [c,c,d,e]
+        31: [a]
+        '''
+
         query = 'process where true | window 10s | unique hostname, process_name | unique_count hostname | filter count > 1'
         results = self.get_output(queries=[parse_query(query)], config=config, events=events)
         self.assertGreater(len(results), 1, "Window pipe returned no results")
-        self.assertListEqual([event.data['process_name'] for event in results], ['a', 'b', 'b', 'b', 'c'], "Window didn't output expected results.")
-        self.assertListEqual([event.data['count'] for event in results], [2, 2, 3, 4, 4], "Window didn't output expected results.")
+        self.assertListEqual([event.data['process_name'] for event in results], ['b', 'c', 'c', 'd', 'e'], "Window didn't output expected results.")
+        self.assertListEqual([event.data['count'] for event in results], [2, 2, 2, 3, 3], "Window didn't output expected results.")
 
     @staticmethod
     def _custom_echo(x):
