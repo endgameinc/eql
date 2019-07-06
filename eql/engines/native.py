@@ -558,11 +558,13 @@ class PythonEngine(BaseEngine, BaseTranspiler):
     def _convert_count_pipe(self, node, next_pipe):  # type: (CountPipe, callable) -> callable
         if len(node.arguments) == 0:
             # Counting only the total
-            summary = {'key': 'totals', 'count': 0}
+            summary = {'count': 0}
 
             def count_total_callback(events):
                 if events is PIPE_EOF:
-                    next_pipe([Event(EVENT_TYPE_GENERIC, 0, summary)])
+                    # event must be immutable, as the counter will be reset
+                    event = {'key': 'totals', 'count': summary['count']}
+                    next_pipe([Event(EVENT_TYPE_GENERIC, 0, event)])
                     summary['count'] = 0
                     next_pipe(PIPE_EOF)
                 else:
@@ -751,11 +753,13 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         """Aggregate counts coming into the pipe."""
         if len(node.arguments) == 0:
             # Counting only the total
-            result = {'key': 'totals', 'count': 0}
+            result = {'count': 0}
 
             def count_total_aggregates(events):  # type: (list[Event]) -> None
                 if events is PIPE_EOF:
-                    next_pipe([Event(EVENT_TYPE_GENERIC, 0, result)])
+                    # event must be immutable, as the counter will be reset
+                    event = {'key': 'totals', 'count': result['count']}
+                    next_pipe([Event(EVENT_TYPE_GENERIC, 0, event)])
                     result['count'] = 0
                     next_pipe(PIPE_EOF)
                 else:
