@@ -3,7 +3,7 @@ import random
 import uuid
 from collections import defaultdict
 
-from eql.engines.base import Event, AnalyticOutput
+from eql.engines.base import Event, AnalyticOutput, DEFAULT_TIME_UNIT
 from eql.engines.build import get_reducer, get_engine, get_post_processor
 from eql.engines.native import PythonEngine
 from eql.parser import parse_query, parse_analytic
@@ -347,6 +347,60 @@ class TestPythonEngine(TestEngine):
         self.assertGreater(len(results), 1, "Count pipe returned no results")
         sorted_results = list(sorted(results, key=lambda e: (e.data['count'], e.data['key'])))
         self.assertListEqual(sorted_results, results, "Count didn't output expected results")
+
+    def test_window_pipe(self):
+        def convert_time(seconds):
+            return int(float(seconds) * DEFAULT_TIME_UNIT)
+
+        config = {'flatten': True}
+        events = [Event.from_data(d) for d in [
+            {
+                "event_type": "process",
+                "process_name": "a",
+                "timestamp": convert_time(0)
+            },
+            {
+                "event_type": "process",
+                "process_name": "b",
+                "timestamp": convert_time(1)
+            },
+            {
+                "event_type": "process",
+                "process_name": "b",
+                "timestamp": convert_time(10.1)
+            },
+            {
+                "event_type": "process",
+                "process_name": "c",
+                "timestamp": convert_time(11)
+            },
+            {
+                "event_type": "process",
+                "process_name": "d",
+                "timestamp": convert_time(12)
+            },
+            {
+                "event_type": "process",
+                "process_name": "e",
+                "timestamp": convert_time(13)
+            },
+            {
+                "event_type": "process",
+                "process_name": "f",
+                "timestamp": convert_time(20.2)
+            },
+            {
+                "event_type": "process",
+                "process_name": "a",
+                "timestamp": convert_time(31)
+            }
+        ]]
+
+        query = 'process where true | window 10s | unique hostname, process_name | unique_count hostname | filter count > 1'
+        results = self.get_output(queries=[parse_query(query)], config=config, events=events)
+        self.assertGreater(len(results), 1, "Window pipe returned no results")
+        self.assertListEqual([event.data['process_name'] for event in results], ['a', 'b', 'b', 'b', 'c'], "Window didn't output expected results.")
+        self.assertListEqual([event.data['count'] for event in results], [2, 2, 3, 4, 4], "Window didn't output expected results.")
 
     @staticmethod
     def _custom_echo(x):

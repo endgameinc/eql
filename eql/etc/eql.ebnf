@@ -23,6 +23,7 @@ pipe_command::Pipe
 
 pipe_arguments
     =
+    | @+:time_unit
     | &(atom atom) {atom}
     | expressions
     | {}

@@ -556,30 +556,23 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
     @pipes.add(CountPipe)
     def _convert_count_pipe(self, node, next_pipe):  # type: (CountPipe, callable) -> callable
-        host_key = self.host_key
         if len(node.arguments) == 0:
             # Counting only the total
             summary = {'key': 'totals', 'count': 0}
-            hosts = set()
 
             def count_total_callback(events):
                 if events is PIPE_EOF:
-                    if len(hosts):
-                        summary['total_hosts'] = len(hosts)
-                        summary['hosts'] = list(sorted(hosts))
-
                     next_pipe([Event(EVENT_TYPE_GENERIC, 0, summary)])
+                    summary['count'] = 0
                     next_pipe(PIPE_EOF)
                 else:
                     summary['count'] += 1
-                    if host_key in events[0].data:
-                        hosts.add(events[0].data[host_key])
 
             return count_total_callback
 
         else:
             get_key = self._convert_key(node.arguments, scoped=True, piped=True)
-            count_table = defaultdict(lambda: {'count': 0, 'hosts': set()})
+            count_table = defaultdict(lambda: {'count': 0})
 
             def count_tuple_callback(events):  # type: (list[Event]) -> None
                 if events is PIPE_EOF:
@@ -590,21 +583,15 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                     total = sum(tbl['count'] for tbl in count_table.values())
 
                     for key, details in sorted(converted_count_table.items(), key=lambda kv: (kv[1]['count'], kv[0])):
-                        hosts = details.pop('hosts')
-                        if len(hosts):
-                            details['hosts'] = list(sorted(hosts))
-                            details['total_hosts'] = len(hosts)
-
                         details['key'] = key
                         details['percent'] = float(details['count']) / total
                         next_pipe([Event(EVENT_TYPE_GENERIC, 0, details)])
+                    count_table.clear()
                     next_pipe(PIPE_EOF)
                 else:
                     key = get_key(events)
 
                     count_table[key]['count'] += 1
-                    if host_key in events[0].data:
-                        count_table[key]['hosts'].add(events[0].data[host_key])
 
             return count_tuple_callback
 
@@ -630,6 +617,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         def head_callback(events):
             if totals[0] < max_count:
                 if events is PIPE_EOF:
+                    totals[0] = 0
                     next_pipe(PIPE_EOF)
                 else:
                     totals[0] += 1
@@ -648,6 +636,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             if events is PIPE_EOF:
                 for output in output_buffer:
                     next_pipe(output)
+                output_buffer.clear()
                 next_pipe(PIPE_EOF)
             else:
                 output_buffer.append(events)
@@ -670,6 +659,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 output_buffer.sort(key=get_converted_key)
                 for output in output_buffer:
                     next_pipe(output)
+                output_buffer.clear()
                 next_pipe(PIPE_EOF)
             else:
                 output_buffer.append(events)
@@ -684,6 +674,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         def unique_callback(events):
             if events is PIPE_EOF:
+                seen.clear()
                 next_pipe(PIPE_EOF)
             else:
                 key = get_unique_key(events)
@@ -693,11 +684,37 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return unique_callback
 
+    @pipes.add(WindowPipe)
+    @reducers.add(WindowPipe)
+    def _aggregate_time_window_pipe(self, node, next_pipe):  # type: (WindowPipe, callable) -> callable
+        """Maintains a buffer of events in a specified time window and forwards all events in the buffer."""
+
+        window_buf = deque()    # tuple of (timestamp, events)
+        timespan = self.convert(node.timespan)
+
+        def time_window_callback(events):  # type: (list[Event]) -> None
+            if events is PIPE_EOF:
+                next_pipe(PIPE_EOF)
+            else:
+                minimum_start = events[0].time - timespan
+
+                # Remove any events that no longer sit within the time window
+                while len(window_buf) > 0 and window_buf[0][0] < minimum_start:
+                    window_buf.popleft()
+
+                window_buf.append((events[0].time, events))
+
+                # forward the entire buffer along the pipe
+                for result in window_buf:
+                    next_pipe(result[1])
+                next_pipe(PIPE_EOF)
+
+        return time_window_callback
+
     @pipes.add(UniqueCountPipe)
     @reducers.add(UniqueCountPipe)
     def _aggregate_unique_counts(self, node, next_pipe):  # type: (CountPipe) -> callable
         """Aggregate counts coming into the pipe."""
-        host_key = self.host_key
         get_unique_key = self._convert_key(node.arguments, scoped=True, piped=True)
         results = OrderedDict()
 
@@ -707,13 +724,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 total = sum(result[0].data['count'] for result in results.values())
 
                 for result in results.values():
-                    hosts = result[0].data.pop('hosts')  # type: set
-                    if len(hosts) > 0:
-                        result[0].data['hosts'] = list(sorted(hosts))
-                        result[0].data['total_hosts'] = len(hosts)
-
                     result[0].data['percent'] = float(result[0].data['count']) / total
                     next_pipe(result)
+                results.clear()
                 next_pipe(PIPE_EOF)
 
             else:
@@ -721,56 +734,38 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 events = [events[0].copy()] + events[1:]
                 piece = events[0].data
                 key = get_unique_key(events)
-                hosts = piece.pop('hosts', [])
-                host = piece.pop(host_key, None)
                 count = piece.pop('count', 1)
 
                 if key not in results:
                     results[key] = events
                     match = piece
-                    match['hosts'] = set()
                     match['count'] = count
                 else:
                     match = results[key][0].data
                     match['count'] += count
-
-                if host:
-                    match['hosts'].add(host)
-                else:
-                    match['hosts'].update(hosts)
 
         return count_unique_callback
 
     @reducers.add(CountPipe)
     def _aggregate_counts(self, node, next_pipe):  # type: (CountPipe) -> callable
         """Aggregate counts coming into the pipe."""
-        host_key = self.host_key
         if len(node.arguments) == 0:
             # Counting only the total
-            result = {'key': 'totals', 'count': 0, 'hosts': set()}
+            result = {'key': 'totals', 'count': 0}
 
             def count_total_aggregates(events):  # type: (list[Event]) -> None
                 if events is PIPE_EOF:
-                    hosts = result.pop('hosts')  # type: set
-                    if len(hosts) > 0:
-                        result['hosts'] = list(sorted(hosts))
-                        result['total_hosts'] = len(hosts)
-
                     next_pipe([Event(EVENT_TYPE_GENERIC, 0, result)])
+                    result['count'] = 0
                     next_pipe(PIPE_EOF)
                 else:
                     piece = events[0].data
                     result['count'] += piece['count']
 
-                    if host_key in piece:
-                        result['hosts'].add(piece[host_key])
-                    elif 'hosts' in piece:
-                        results['hosts'].update(piece['hosts'])
-
             return count_total_aggregates
 
         else:
-            results = defaultdict(lambda: {'count': 0, 'hosts': set()})
+            results = defaultdict(lambda: {'count': 0})
 
             def count_tuple_callback(events):  # type: (list[Event]) -> None
                 if events is PIPE_EOF:
@@ -780,23 +775,16 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                     total = sum(result['count'] for result in converted_results.values())
 
                     for key, result in sorted(converted_results.items(), key=lambda kr: (kr[1]['count'], kr[0])):
-                        hosts = result.pop('hosts')  # type: set
-                        if len(hosts) > 0:
-                            result['hosts'] = list(sorted(hosts))
-                            result['total_hosts'] = len(hosts)
                         result['key'] = key
                         result['percent'] = float(result['count']) / total
                         next_pipe([Event(EVENT_TYPE_GENERIC, 0, result)])
+                    results.clear()
                     next_pipe(PIPE_EOF)
                 else:
                     piece = events[0].data
                     key = events[0].data['key']
                     key = tuple(key) if len(node.arguments) > 1 else key
                     results[key]['count'] += piece['count']
-                    if host_key in piece:
-                        results[key]['hosts'].add(piece[host_key])
-                    elif 'hosts' in piece:
-                        results[key]['hosts'].update(piece['hosts'])
 
             return count_tuple_callback
 

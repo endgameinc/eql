@@ -124,7 +124,7 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             if name.startswith(unit.rstrip('s') or 's'):
                 return TimeRange(datetime.timedelta(seconds=val * interval))
 
-        raise self._error(node.unit, "Unknown time unit")
+        raise self._error(node, "Unknown time unit")
 
     # fields
     def walk__field(self, node):

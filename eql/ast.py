@@ -55,6 +55,7 @@ __all__ = (
     "CountPipe",
     "FilterPipe",
     "UniqueCountPipe",
+    "WindowPipe",
 
     # full queries
     "PipedQuery",
@@ -1012,6 +1013,27 @@ class FilterPipe(PipeCommand):
 @PipeCommand.register('ucount')
 class UniqueCountPipe(ByPipe):
     """Returns unique results but adds a count field."""
+
+
+@PipeCommand.register('window')
+class WindowPipe(ByPipe):
+    """Maintains a time window buffer for streaming events."""
+
+    _timespan = None
+
+    minimum_args = 1
+    maximum_args = 1
+
+    @property
+    def timespan(self):
+        # cache timerange conversion
+        if not self._timespan:
+            self._timespan = TimeRange.convert(self.arguments[0])
+        return self._timespan
+
+    def validate(self):
+        if not self.timespan or self.timespan.delta < datetime.timedelta(0):
+            return 0
 
 
 class PipedQuery(EqlNode):
