@@ -3,12 +3,12 @@ import random
 import uuid
 from collections import defaultdict
 
-from eql.engines.base import Event, AnalyticOutput
-from eql.engines.build import get_reducer, get_engine, get_post_processor
-from eql.engines.native import PythonEngine
-from eql.parser import parse_query, parse_analytic
+from eql import *  # noqa: F403
+from eql.ast import *  # noqa: F403
+from eql.parser import ignore_missing_functions
+from eql.functions import Wildcard, Match
 from eql.schema import EVENT_TYPE_GENERIC
-from .base import TestEngine
+from eql.tests.base import TestEngine
 
 
 class TestPythonEngine(TestEngine):
@@ -104,29 +104,32 @@ class TestPythonEngine(TestEngine):
             'process where 1==1 | count process_name | filter percent > 0.5',
             'process where a > 100000000000000000000000000000000',
         ]
-        for query in queries:
-            # Make sure every query can be converted without raising any exceptions
-            parsed_query = parse_query(query)
-            engine.add_query(parsed_query)
 
-            # Also try to load it as an analytic
-            parsed_analytic = parse_analytic({'metadata': {'id': uuid.uuid4()}, 'query': query})
-            engine.add_analytic(parsed_analytic)
+        with ignore_missing_functions:
+            for query in queries:
+                # Make sure every query can be converted without raising any exceptions
+                parsed_query = parse_query(query)
+                engine.add_query(parsed_query)
+
+                # Also try to load it as an analytic
+                parsed_analytic = parse_analytic({'metadata': {'id': uuid.uuid4()}, 'query': query})
+                engine.add_analytic(parsed_analytic)
 
     def test_raises_errors(self):
         """Confirm that exceptions are raised when expected."""
         queries = [
             # ('process where bad_field.sub_field == 100', AttributeError),
-            ('process where length(0)', TypeError),
+            # ('process where length(0)', TypeError),
             # ('file where file_name.abc', AttributeError),
             # ('file where pid.something', AttributeError),
             ('registry where invalidFunction(pid, ppid)', KeyError),
         ]
 
         # Make sure that these all work as expected queries
-        for query, expected_error in queries:
-            parsed_query = parse_query(query)
-            self.assertRaises(expected_error, self.get_output, queries=[parsed_query])
+        with ignore_missing_functions:
+            for query, expected_error in queries:
+                parsed_query = parse_query(query)
+                self.assertRaises(expected_error, self.get_output, queries=[parsed_query])
 
     def test_query_output(self):
         """Confirm that the known queries and data return expected output."""
@@ -359,15 +362,17 @@ class TestPythonEngine(TestEngine):
     def test_custom_functions(self):
         """Custom functions in python."""
         config = {'flatten': True}
-        query = "process where echo(process_name) == \"SvcHost.*\" and command_line == \"* -k *NetworkRes*d\""
-        output = self.get_output(queries=[parse_query(query)], config=config)
-        event_ids = [event.data['serial_event_id'] for event in output]
-        self.validate_results(event_ids, [15, 16, 25], "Custom function 'echo' failed")
 
-        query = "process where length(user_domain)>0 and reverse(echo(user_domain)) = \"YTIROHTUA TN\" | tail 3"
-        output = self.get_output(queries=[parse_query(query)], config=config)
-        event_ids = [event.data['serial_event_id'] for event in output]
-        self.validate_results(event_ids, [43, 45, 52], "Custom function 'reverse'")
+        with ignore_missing_functions:
+            query = "process where echo(process_name) == 'SvcHost.*' and command_line == '* -k *NetworkRes*d'"
+            output = self.get_output(queries=[parse_query(query)], config=config)
+            event_ids = [event.data['serial_event_id'] for event in output]
+            self.validate_results(event_ids, [15, 16, 25], "Custom function 'echo' failed")
+
+            query = "process where length(user_domain)>0 and reverse(echo(user_domain)) = \"YTIROHTUA TN\" | tail 3"
+            output = self.get_output(queries=[parse_query(query)], config=config)
+            event_ids = [event.data['serial_event_id'] for event in output]
+            self.validate_results(event_ids, [43, 45, 52], "Custom function 'reverse'")
 
     def test_analytic_output(self):
         """Confirm that analytics return the same results as queries."""
@@ -391,6 +396,40 @@ class TestPythonEngine(TestEngine):
             expected_ids = analytic.metadata['_info']['expected_event_ids']
             actual_ids = output_ids[analytic.id]
             self.validate_results(actual_ids, expected_ids, query)
+
+    def test_engine_schema(self):
+        """Test loading the engine with a custom schema."""
+        queries = [
+            'movie where name == "*Breakfast*" and IN_80s(release)',
+            'person where name == "John Hughes"',
+        ]
+
+        analytic_dicts = [{'query': q} for q in queries]
+        definitions = """
+        macro IN_80s(date) date == "*/*/1980"
+        """
+
+        config = {
+            'schema': {
+                'events': {
+                    'movie': {'name': 'string', 'release': 'string'}, 'person': {}
+                }
+            },
+            'definitions': parse_definitions(definitions),
+            'analytics': analytic_dicts
+        }
+
+        pp = PreProcessor()
+        pp.add_definitions(config['definitions'])
+
+        with Schema(**config['schema']):
+            expected = [parse_analytic(d, preprocessor=pp) for d in analytic_dicts]
+
+        engine = BaseEngine(config)
+        with engine:
+            engine.add_analytics([parse_analytic(d) for d in analytic_dicts])
+
+        self.assertListEqual(engine.analytics, expected, "Analytics were not loaded and expanded properly.")
 
     def test_relationship_pid_collision(self):
         """Confirm that the field used for tracking lineage can be dynamically set."""
@@ -456,3 +495,26 @@ class TestPythonEngine(TestEngine):
         output = self.get_output(queries=[parse_query(query)], config=config, events=events)
         event_ids = [event.data['unique_pid'] for event in output]
         self.validate_results(event_ids, ['host1-1003'], "Relationships failed due to pid collision")
+
+    def test_mutli_line_functions(self):
+        """Test wildcard and match functions."""
+        sources = [
+            "this is a single line comment",
+            """This is
+            a multiline
+            comment""",
+            "this\nis\nalso\na\nmultiline\ncomment"
+        ]
+
+        for source in sources:
+            self.assertTrue(Match.run(source, ".*comment"))
+            # \n newlines must match on \n \s etc. but won't match on " "
+            self.assertTrue(Match.run(source, ".*this\sis\s.*comment"))
+            self.assertTrue(Match.run(source, "t.+a.+c.+"))
+            self.assertFalse(Match.run(source, "MiSsInG"))
+
+        for source in sources:
+            self.assertTrue(Wildcard.run(source, "*comment"))
+            self.assertTrue(Wildcard.run(source, "this*is*comment"))
+            self.assertTrue(Wildcard.run(source, "t*a*c*"))
+            self.assertFalse(Wildcard.run(source, "MiSsInG"))

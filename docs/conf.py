@@ -179,67 +179,9 @@ epub_exclude_files = ['search.html']
 
 
 # -- Extension configuration -------------------------------------------------
-
-# Write a custom lexer for EQL to integrate with Pygments and get syntax highlighting
-from pygments.lexer import RegexLexer, bygroups, include
-from pygments import token
+from eql.highlighters import EqlLexer
 from sphinx.highlighting import lexers
-from eql.ast import PipeCommand
-from eql.functions import builtins
-
-
-class EqlLexer(RegexLexer):
-    name = 'eql'
-    aliases = ['eql']
-    filenames = ['.eql']
-
-    _sign = r'[\-+]'
-    _integer = r'\d+'
-    _float = r'\d*\.\d+([Ee][-+]?\d+)?'
-    _time_units = 's|sec\w+|m|min\w+|h|hour|hr|d|day'
-    _name = r'[a-zA-Z][_a-zA-Z0-9]*'
-    _pipe_names = set(PipeCommand.lookup.keys())
-
-    tokens = {
-        'whitespace': [
-            (r'//(\n|[\w\W]*?[^\\]\n)', token.Comment.Single),
-            (r'/[*][\w\W]*?[*]/', token.Comment.Multiline),
-            (r'/[*][\w\W]*', token.Comment.Multiline),
-            (r'\s+', token.Text),
-        ],
-        'root': [
-            include('whitespace'),
-            (r'(and|in|not|or)\b', token.Operator.Word),  # Keyword.Pseudo can also work
-            (r'(join|sequence|until|where)\b', token.Keyword),
-            (r'(const)(\s+)(%s)\b' % _name, bygroups(token.Keyword.Declaration, token.Whitespace, token.Name.Constant)),
-            (r'(macro)(\s+)(%s)\b' % _name, bygroups(token.Keyword.Declaration, token.Whitespace, token.Name.Constant)),
-            (r'(by|of|with)\b', token.Keyword.QueryModifier),
-            (r'(true|false|null)\b', token.Name.Builtin),
-
-            # built in pipes
-            (r'(\|)(\s*)(%s)' % '|'.join(_pipe_names), bygroups(token.Operator, token.Whitespace, token.Name.Function.Magic)),
-
-            # built in functions
-            (r'(%s)(\s*\()' % '|'.join(builtins), bygroups(token.Name.Function, token.Text)),
-
-            # all caps names
-            (r'[A-Z][_A-Z0-9]+\b', token.Name.Other),
-            (_name, token.Name),
-
-            # time units
-            (r'(%s|%s)[ \t]*(%s)\b' % (_float, _integer, _time_units), token.Literal.Date),
-
-            (_sign + '?' + _float, token.Number.Float),
-            (_sign + '?' + _integer, token.Number.Integer),
-
-            (r'"(\\[btnfr"\'\\]|[^\r\n"\\])*"', token.String),
-            (r"'(\\[btnfr'\"\\]|[^\r\n'\\])*'", token.String),
-            (r'\?"(\\"|[^"])*"', token.String.Regex),
-            (r"\?'(\\'|[^'])*'", token.String.Regex),
-            (r'(==|=|!=|<|<=|>=|>)', token.Operator),
-            (r'[()\[\],.]', token.Punctuation),
-        ]
-    }
 
 
 lexers['eql'] = EqlLexer(startinline=True)
+

@@ -2,13 +2,16 @@
 from __future__ import print_function
 
 import json
-import re
+import functools
 from collections import defaultdict, deque, OrderedDict, namedtuple
 
-from eql.ast import *  # noqa
-from eql.engines.base import BaseEngine, BaseTranspiler, NodeMethods, Event, AnalyticOutput
-from eql.schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC
-from eql.utils import is_string, is_number, get_type_converter, to_unicode
+from .ast import *  # noqa: F403
+from .errors import EqlCompileError
+from .pipes import *  # noqa: F403
+from .transpilers import BaseEngine, BaseTranspiler
+from .events import Event, AnalyticOutput
+from .schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC
+from .utils import is_string, is_array, is_number, get_type_converter
 
 PIPE_EOF = object()
 
@@ -33,11 +36,6 @@ class Scope(namedtuple('Scope', ['events', 'variables'])):
 class PythonEngine(BaseEngine, BaseTranspiler):
     """Converter from EQL to Python callbacks."""
 
-    converters = NodeMethods()
-    pipes = NodeMethods()
-    reducers = NodeMethods()
-    special_functions = NodeMethods()
-
     def __init__(self, config=None):
         """Create a python engine for EQL."""
         super(PythonEngine, self).__init__(config)
@@ -56,37 +54,14 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         if self.get_config('data_source') == 'endgame':
             self.process_subtype = "opcode"
-            self.create_values = (1, 3)
+            self.create_values = (1, 3, 9)
             self.terminate_values = (2, 4)
         else:
             self.process_subtype = "subtype"
-            self.create_values = ["create"]
+            self.create_values = ["create", "fork"]
             self.terminate_values = ["terminate"]
 
-        self.add_custom_function('length', self._length)
-        self.add_custom_function('arrayContains', self._array_contains)
-        self.add_custom_function('safe', self._convert_safe_callback)
-
-        # String functions
-        self.add_custom_function('match', self._match)
-        self.add_custom_function('matchLite', self._match)
-        self.add_custom_function('startsWith', self._str_starts_with)
-        self.add_custom_function('endsWith', self._str_ends_width)
-        self.add_custom_function('stringContains', self._str_contains)
-        self.add_custom_function('indexOf', self._str_index_of)
-        self.add_custom_function('substring', self._str_substring)
-        self.add_custom_function('string', to_unicode)
-        self.add_custom_function('concat', self._concat)
-        self.add_custom_function('number', self._number)
-
-        # Math functions
-        self.add_custom_function('add', self._add)
-        self.add_custom_function('subtract', self._subtract)
-        self.add_custom_function('multiply', self._multiply)
-        self.add_custom_function('divide', self._divide)
-        self.add_custom_function('modulo', self._modulo)
-
-        self._scoped = list()
+        self._scoped = []
 
         for name, fn in self.get_config('functions', {}).items():
             self.add_custom_function(name, fn)
@@ -100,100 +75,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             self._default_emitter = self.output_single_events
         else:
             self._default_emitter = self.get_result_emitter()
-
-    @staticmethod
-    def _length(value):
-        if value is None:
-            return 0
-        else:
-            return len(value)
-
-    @staticmethod
-    def _match(pattern, value):
-        return value is not None and re.match(pattern, value, re.IGNORECASE) is not None
-
-    @staticmethod
-    def _str_starts_with(a, b):  # type: (str, str) -> bool
-        return is_string(a) and is_string(b) and a.lower().startswith(b.lower())
-
-    @staticmethod
-    def _str_ends_width(a, b):  # type: (str, str) -> bool
-        return is_string(a) and is_string(b) and a.lower().endswith(b.lower())
-
-    @staticmethod
-    def _str_contains(a, b):  # type: (str, str) -> bool
-        return is_string(a) and is_string(b) and b.lower() in a.lower()
-
-    @staticmethod
-    def _str_index_of(a, b, start=0):  # type: (str, str, int) -> int
-        if is_string(a) and is_string(b):
-            a = a.lower()
-            b = b.lower()
-            if b in a[start:]:
-                return a.index(b, start)
-
-    @staticmethod
-    def _add(a, b):  # type: (int|float, int|float) -> (int|float)
-        return (a or 0) + (b or 0)
-
-    @staticmethod
-    def _subtract(a, b):  # type: (int|float, int|float) -> (int|float)
-        return (a or 0) - (b or 0)
-
-    @staticmethod
-    def _divide(a, b):  # type: (int|float, int|float) -> (int|float)
-        if not b:
-            return float('NaN')
-        return (a or 0) / b
-
-    @staticmethod
-    def _multiply(a, b):  # type: (int|float, int|float) -> (int|float)
-        return (a or 0) * (b or 0)
-
-    @staticmethod
-    def _modulo(a, b):  # type: (int|float, int|float) -> (int|float)
-        if not b:
-            return float('NaN')
-        return (a or 0) % b
-
-    @staticmethod
-    def _str_substring(a, start=None, end=None):  # type: (str, int, int) -> str
-        if is_string(a):
-            return a[start:end]
-
-    @staticmethod
-    def _concat(*args):
-        return u"".join(to_unicode(arg) for arg in args)
-
-    @staticmethod
-    def _number(arg, base=10):  # type: (str, int) -> int|float
-        if is_number(arg):
-            return arg
-        elif is_string(arg):
-            if '.' in arg:
-                return float(arg)
-            if arg.startswith('0x'):
-                arg = arg[2:]
-                base = 16
-            try:
-                return int(arg, base)
-            except ValueError:
-                return None
-
-    @staticmethod
-    def _array_contains(array, value):
-        if array is None:
-            return False
-
-        if is_string(value):
-            value = value.lower()
-
-        for item in array:
-            if item == value:
-                return True
-            elif is_string(item) and item.lower() == value:
-                return True
-        return False
 
     def print_event(self, event):  # type: (Event) -> None
         """Print an event to stdout."""
@@ -240,7 +121,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         else:
             return output_results
 
-    def convert(self, node, piped=False, scoped=False):
+    def convert(self, node, *args, **kwargs):
         """Convert an eql AST to a python callback function.
 
         :param EqlNode node: The eql AST
@@ -249,21 +130,40 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         :return A python callback function that takes an event.
         :rtype: (Event|Scope|list[Event]) -> object
         """
-        cb = PythonEngine.converters(self, node)
+        piped = kwargs.pop("piped", False)
+        scoped = kwargs.pop("scoped", False)
+        method = self.get_node_method(node, "_convert_")
+
+        if not method:
+            raise EqlCompileError(u"Unable to convert {}".format(node))
+
+        cb = method(node, *args, **kwargs)
+
         if not scoped:
             return cb
         elif piped:
+            @functools.wraps(cb)
             def wrapped(events):
                 return cb(Scope(events, []))
 
             return wrapped
         else:
+            @functools.wraps(cb)
             def wrapped(event):
                 return cb(Scope([event], []))
 
             return wrapped
 
-    def _convert_key(self, args, scoped=True, piped=False):
+    @classmethod
+    def _remove_case(cls, key):
+        if is_string(key):
+            return key.lower()
+        elif is_array(key):
+            return tuple(cls._remove_case(k) for k in key)
+        else:
+            return key
+
+    def _convert_key(self, args, scoped=True, piped=False, insensitive=True):
         """Convert a tuple of AST nodes to a callback function that returns a key.
 
         :param list[Event] args:
@@ -271,18 +171,23 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         :param bool scoped: Wrap the callback with variable scoping
         :rtype: (Scope|Event|list[Event]) -> tuple[object]
         """
+        remove_case = self._remove_case
+
         if len(args) == 0:
             return lambda e: None
 
         elif len(args) == 1:
-            return self.convert(args[0], scoped=scoped, piped=piped)
+            callback = self.convert(args[0], scoped=scoped, piped=piped)
+            if insensitive:
+                return lambda e: remove_case(callback(e))
+            return callback
 
         callbacks = [self.convert(arg, scoped=scoped, piped=piped) for arg in args]
 
-        def to_tuple_callback(value):
-            return tuple(callback(value) for callback in callbacks)
-
-        return to_tuple_callback
+        if insensitive:
+            return lambda e: tuple(remove_case(cb(e)) for cb in callbacks)
+        else:
+            return lambda e: tuple(cb(e) for cb in callbacks)
 
     def _convert_tuple(self, args):
         """Convert a tuple of AST nodes to a callback function that returns a tuple of values.
@@ -308,7 +213,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         :param (list[eql.engines.base.Event]) -> None next_pipe: An already converted pipe
         :rtype: (list[eql.engines.base.Event]) -> None
         """
-        return self.pipes(self, node, next_pipe)
+        return self.convert(node, next_pipe)
 
     def convert_reducer(self, node, next_pipe):
         """Convert an EQL reducer into a callback function.
@@ -317,10 +222,10 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         :param (list[eql.engines.base.Event]) -> None next_pipe: An already converted reducer
         :rtype: (list[eql.engines.base.Event]) -> None
         """
-        return self.reducers(self, node, next_pipe)
+        method = self.get_node_method(node, "_reduce_") or self.get_node_method(node, "_convert_")
+        return method(node, next_pipe)
 
-    @converters.add(Not)
-    def _negate(self, node):  # type: (Not) -> callable
+    def _convert_not(self, node):  # type: (Not) -> callable
         get_value = self.convert(node.term)
 
         def negate(scope):  # type: (Scope) -> bool
@@ -328,24 +233,22 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return negate
 
-    @converters.add(Literal)
-    @converters.add(String)
-    @converters.add(Boolean)
-    @converters.add(Null)
-    @converters.add(Number)
-    def _get_value(self, node):  # type: (Literal) -> callable
+    def _convert_literal(self, node):  # type: (Literal) -> callable
         literal_value = node.value
         return lambda scope: literal_value
 
-    @converters.add(Field)
-    def _get_field(self, node):  # type: (Field) -> callable
+    def _convert_field(self, node):  # type: (Field) -> callable
         def walk_path(value):
             for key in node.path:
                 if value is None:
                     break
+                elif is_string(value) and is_string(key):
+                    # expand subtype.create -> subtype == "create"
+                    # if there's a string field called "subtype"
+                    value = (value == key)
                 elif isinstance(value, dict):
                     value = value.get(key)
-                elif key < len(value):
+                elif isinstance(key, int) and is_array(value) and key < len(value):
                     value = value[key]
                 else:
                     return
@@ -381,15 +284,11 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
             return query_event_callback
 
-    @staticmethod
-    def _is_name(node):  # type: (EqlNode) -> bool
-        return isinstance(node, Field) and not node.path
-
     def _create_custom_callback(self, arguments, body):
         """Convert an EQL callback with named arguments.
 
         :param list[Field] arguments: List of named arguments for the callback function
-        :param Expression arguments: List of named arguments for the callback function
+        :param Expression body: List of named arguments for the callback function
         :rtype: (Scope, object) -> object
         """
         names = [arg.base for arg in arguments]
@@ -401,39 +300,38 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return callback
 
-    @special_functions.add('safe')
-    def _convert_safe_callback(self, arguments):
+    def _function_safe(self, arguments):
         get_value = self.convert(arguments[0])
 
         def callback(scope):
             try:
                 return get_value(scope)
-            except:
+            except Exception:
                 pass
 
         return callback
 
-    @special_functions.add('wildcard')
-    def _convert_wildcard(self, arguments):
-        patterns = []
-        for literal in arguments[1:]:
-            regex = re.escape(literal.value.lower())
-            regex = "^" + regex.replace('\\*', '.*?') + "$"
-            patterns.append(regex)
+    def _function_array_count(self, arguments):
+        node = FunctionCall('arrayCount', arguments)
+        if len(arguments) == 3 and self.is_variable(arguments[1]):
+            array, name, body = arguments
+            get_array = self.convert(array)
+            callback = self._create_custom_callback([name], body)
 
-        compound = re.compile('|'.join(patterns), re.I)
-        get_source = self.convert(arguments[0])
+            def walk_array(scope):  # type: (Scope) -> bool
+                array = get_array(scope)
+                count = 0
+                if isinstance(array, list):
+                    for item in array:
+                        if scope.call(callback, item):
+                            count = count + 1
+                return count
+            return walk_array
+        raise TypeError(u"Invalid signature {}".format(node))
 
-        def check_match(scope):
-            text = get_source(scope)
-            return text is not None and compound.match(text) is not None
-
-        return check_match
-
-    @special_functions.add('arraySearch')
-    def _convert_array_search(self, arguments):
+    def _function_array_search(self, arguments):
         node = FunctionCall('arraySearch', arguments)
-        if len(arguments) == 3 and self._is_name(arguments[1]):
+        if len(arguments) == 3 and self.is_variable(arguments[1]):
             array, name, body = arguments
             get_array = self.convert(array)
             callback = self._create_custom_callback([name], body)
@@ -445,18 +343,25 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                         if scope.call(callback, item):
                             return True
                 return False
-
             return walk_array
         raise TypeError(u"Invalid signature {}".format(node))
 
-    @converters.add(FunctionCall)
-    def _get_function_call(self, node):  # type: (FunctionCall) -> callable
+    def _convert_function_call(self, node):  # type: (FunctionCall) -> callable
         name = node.name
-        if name in self.special_functions:
-            unbound = self.special_functions[node.name]
-            return unbound(self, node.arguments)
+        method = getattr(self, "_function_{}".format(self.camelized(name)), None)
+        if method:
+            return method(node.arguments)
 
-        func = self._functions[node.name]
+        # if a function isn't found, pull a specific callback in from the function registry
+        func = self._functions.get(node.name, node.signature)
+
+        # if it's a function signature, then get the methods
+        if hasattr(func, "get_callback"):
+            func = func.get_callback(*node.arguments)
+
+        if not callable(func):
+            raise KeyError("Unknown function {}".format(node.name))
+
         get_arguments = self._convert_tuple(node.arguments)
 
         def wrapped_function(scope):  # type: (Scope) -> bool
@@ -464,8 +369,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return wrapped_function
 
-    @converters.add(InSet)
-    def _check_in_set(self, node):  # type: (InSet) -> callable
+    def _convert_in_set(self, node):  # type: (InSet) -> callable
         if all(isinstance(item, Literal) for item in node.container):
             values = set()
             for item in node.container:
@@ -488,8 +392,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         else:
             return self.convert(node.synonym)
 
-    @converters.add(Comparison)
-    def _compare(self, node):  # type: (Comparison) -> callable
+    def _convert_comparison(self, node):  # type: (Comparison) -> callable
         get_left = self.convert(node.left)
         get_right = self.convert(node.right)
 
@@ -536,7 +439,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return callback
 
-    @converters.add(And)
     def _convert_and(self, node):  # type: (CompoundTerm) -> callable
         get_terms = [self.convert(term) for term in node.terms]
 
@@ -545,7 +447,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return and_terms
 
-    @converters.add(Or)
     def _convert_or(self, node):  # type: (CompoundTerm) -> callable
         get_terms = [self.convert(term) for term in node.terms]
 
@@ -554,7 +455,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return or_terms
 
-    @pipes.add(CountPipe)
     def _convert_count_pipe(self, node, next_pipe):  # type: (CountPipe, callable) -> callable
         host_key = self.host_key
         if len(node.arguments) == 0:
@@ -578,16 +478,20 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             return count_total_callback
 
         else:
-            get_key = self._convert_key(node.arguments, scoped=True, piped=True)
+            get_key = self._convert_key(node.arguments, scoped=True, piped=True, insensitive=False)
+            # we want to aggregate counts for keys insensitively, but need to keep the case of the first one we see
+            key_lookup = {}
             count_table = defaultdict(lambda: {'count': 0, 'hosts': set()})
+            remove_case = self._remove_case
 
             def count_tuple_callback(events):  # type: (list[Event]) -> None
                 if events is PIPE_EOF:
                     # This may seem a little tricky, but we need to effectively learn the type(s) to perform comparison
                     # Python 3 doesn't allow you to use a key function that returns various types
-                    converter = get_type_converter(count_table)
-                    converted_count_table = {converter(k): v for k, v in count_table.items()}
-                    total = sum(tbl['count'] for tbl in count_table.values())
+                    case_sensitive_table = {key_lookup[k]: v for k, v in count_table.items()}
+                    converter = get_type_converter(case_sensitive_table)
+                    converted_count_table = {converter(k): v for k, v in case_sensitive_table.items()}
+                    total = sum(tbl['count'] for tbl in converted_count_table.values())
 
                     for key, details in sorted(converted_count_table.items(), key=lambda kv: (kv[1]['count'], kv[0])):
                         hosts = details.pop('hosts')
@@ -601,15 +505,15 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                     next_pipe(PIPE_EOF)
                 else:
                     key = get_key(events)
+                    insensitive_key = remove_case(key)
+                    key_lookup.setdefault(insensitive_key, key)
 
-                    count_table[key]['count'] += 1
+                    count_table[insensitive_key]['count'] += 1
                     if host_key in events[0].data:
-                        count_table[key]['hosts'].add(events[0].data[host_key])
+                        count_table[insensitive_key]['hosts'].add(events[0].data[host_key])
 
             return count_tuple_callback
 
-    @pipes.add(FilterPipe)
-    @reducers.add(FilterPipe)
     def _convert_filter_pipe(self, node, next_pipe):  # type: (FilterPipe, callable) -> callable
         check_filter = self.convert(node.expression, piped=True, scoped=True)
 
@@ -621,8 +525,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return filter_callback
 
-    @pipes.add(HeadPipe)
-    @reducers.add(HeadPipe)
     def _convert_head_pipe(self, node, next_pipe):  # type: (HeadPipe, callable) -> callable
         totals = [0]  # has to be mutable because of python scoping
         max_count = node.count
@@ -639,8 +541,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return head_callback
 
-    @pipes.add(TailPipe)
-    @reducers.add(TailPipe)
     def _convert_tail_pipe(self, node, next_pipe):  # type: (TailPipe, callable) -> callable
         output_buffer = deque(maxlen=node.count)
 
@@ -654,8 +554,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return tail_callback
 
-    @pipes.add(SortPipe)
-    @reducers.add(SortPipe)
     def _convert_sort_pipe(self, node, next_pipe):  # type: (SortPipe, callable) -> callable
         output_buffer = []
         sort_key = self._convert_key(node.arguments, scoped=True, piped=True)
@@ -676,8 +574,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return sort_callback
 
-    @pipes.add(UniquePipe)
-    @reducers.add(UniquePipe)
     def _convert_unique_pipe(self, node, next_pipe):  # type: (UniquePipe, callable) -> callable
         seen = set()
         get_unique_key = self._convert_key(node.arguments, scoped=True, piped=True)
@@ -693,9 +589,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return unique_callback
 
-    @pipes.add(UniqueCountPipe)
-    @reducers.add(UniqueCountPipe)
-    def _aggregate_unique_counts(self, node, next_pipe):  # type: (CountPipe) -> callable
+    def _convert_unique_count_pipe(self, node, next_pipe):  # type: (CountPipe) -> callable
         """Aggregate counts coming into the pipe."""
         host_key = self.host_key
         get_unique_key = self._convert_key(node.arguments, scoped=True, piped=True)
@@ -741,8 +635,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         return count_unique_callback
 
-    @reducers.add(CountPipe)
-    def _aggregate_counts(self, node, next_pipe):  # type: (CountPipe) -> callable
+    def _reduce_count_pipe(self, node, next_pipe):  # type: (CountPipe) -> callable
         """Aggregate counts coming into the pipe."""
         host_key = self.host_key
         if len(node.arguments) == 0:
@@ -800,8 +693,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
             return count_tuple_callback
 
-    @converters.add(NamedSubquery)
-    def _get_named_of(self, node):  # type: (NamedSubquery) -> callable
+    def _convert_named_subquery(self, node):  # type: (NamedSubquery) -> callable
         if node.query_type == NamedSubquery.DESCENDANT:
             return self._get_descendant_of(node.query)
         elif node.query_type == NamedSubquery.CHILD:
@@ -833,7 +725,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
             dead_processes.clear()
 
-            if subtype in creates and event.data.get('pid') == 4 and event.data.get('process_name') == "System":
+            if subtype in creates and pid == 4 and event.data.get('process_name') == "System":
                 # Reset all state on a sensor or machine boot up
                 descendants.clear()
                 sources.clear()
@@ -849,8 +741,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         @self.event_callback(node.event_type)
         def check_ancestor(event):  # type: (Event) -> None
             pid = event.data.get('pid', 0)
-            if pid != 0 and ancestor_match(event):
-                sources.add(event.data.get(self.pid_key))
+            pid_key = event.data.get(self.pid_key)
+            if pid != 0 and ancestor_match(event) and pid_key:
+                sources.add(pid_key)
 
         def check_if_descendant(scope):  # type: (Scope) -> bool
             return scope.event.data.get(self.pid_key) in descendants
@@ -879,7 +772,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
             dead_processes.clear()
 
-            if subtype in creates and event.data.get('pid') == 4 and event.data.get('process_name') == "System":
+            if subtype in creates and pid == 4 and event.data.get('process_name') == "System":
                 # Reset all state on a sensor or machine boot up
                 children.clear()
                 parents.clear()
@@ -895,10 +788,11 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         @self.event_callback(node.event_type)
         def match_processes(event):  # type: (Event) -> None
             pid = event.data.get('pid', 0)
-            if pid != 0 and process_match(event):
-                parents.add(event.data.get(self.pid_key))
+            pid_key = event.data.get(self.pid_key)
+            if pid != 0 and process_match(event) and pid_key:
+                parents.add(pid_key)
 
-        def check_if_child(scope):  # type: (Scope) -> None
+        def check_if_child(scope):  # type: (Scope) -> bool
             return scope.event.data.get(self.pid_key) in children
 
         return check_if_child
@@ -921,7 +815,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
             dead_processes.clear()
 
-            if subtype in creates and event.data.get('pid') == 4 and event.data.get('process_name') == "System":
+            if subtype in creates and pid == 4 and event.data.get('process_name') == "System":
                 # Reset all state on a sensor or machine boot up
                 processes.clear()
 
@@ -933,15 +827,15 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         @self.event_callback(node.event_type)
         def match_processes(event):  # type: (Event) -> None
             pid = event.data.get('pid', 0)
-            if pid != 0 and process_match(event):
-                processes.add(event.data.get(self.pid_id))
+            pid_key = event.data.get(self.pid_key)
+            if pid != 0 and process_match(event) and pid_key:
+                processes.add(pid_key)
 
-        def check_for_match(scope):  # type: (Scope) -> None
+        def check_for_match(scope):  # type: (Scope) -> bool
             return scope.event.data.get(self.pid_key) in processes
 
         return check_for_match
 
-    @converters.add(EventQuery)
     def _convert_event_query(self, node):  # type: (EventQuery) -> callable
         check_match = self.convert(node.query, scoped=True)
         expected_type = node.event_type
@@ -954,7 +848,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         else:
             return match_event_callback
 
-    @converters.add(Join)
     def _convert_join(self, node, next_pipe):  # type: (Join, callable) -> callable
         size = len(node.queries)
         lookup = defaultdict(lambda: [None] * size)  # type: dict[object, list[Event]]
@@ -1029,11 +922,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                         sequence.append(event)
                         next_pipe(sequence)
 
-    @converters.add(TimeRange)
-    def _convert_range(self, node):
-        return int(node.delta.total_seconds() * self._time_unit)
+    def _convert_time_range(self, node):
+        return int(node.delta.total_seconds() * self.time_unit)
 
-    @converters.add(Sequence)
     def _convert_sequence(self, node, next_pipe):  # type: (Sequence, callable) -> callable
         # Two lookups can help avoid unnecessary calls
         size = len(node.queries)
@@ -1115,7 +1006,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         self._query_multiple_events = prev_query_value
         return output_pipe
 
-    @converters.add(PipedQuery)
     def _convert_piped_query(self, node, output_pipe=None):  # type: (PipedQuery, callable) -> callable
         base_query = node.first
 

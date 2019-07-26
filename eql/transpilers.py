@@ -1,13 +1,8 @@
-"""Base class for constructing an analytic engine with analytics."""
-from collections import namedtuple
-
-from eql.ast import *  # noqa
-from eql.parser import parse_definitions
-from eql.schema import EVENT_TYPE_GENERIC, use_schema
-from eql.utils import is_string
-
-
-DEFAULT_TIME_UNIT = 10000000  # Windows FileTime 0.1 microseconds
+"""Core EQL functionality for query translation."""
+from .ast import PreProcessor, Field
+from .parser import parse_definitions, ignore_missing_functions
+from .utils import is_string, ParserConfig
+from .walkers import ConfigurableWalker
 
 
 class NodeMethods(dict):
@@ -29,6 +24,18 @@ class NodeMethods(dict):
 
         return decorator
 
+    def replace(self, key):
+        """Add a callback method to the dictionary for a specific class.
+
+        :param BaseNode key: The class of the object passed in
+        """
+        def decorator(f):
+            """The function decorator that registers a method by node type."""
+            self[key] = f
+            return f
+
+        return decorator
+
     def __call__(self, transpiler, node, *args, **kwargs):  # type: (BaseTranspiler, BaseNode) -> object
         """Call the bound method for a node."""
         cls = type(node)
@@ -39,39 +46,26 @@ class NodeMethods(dict):
         return unbound(transpiler, node, *args, **kwargs)
 
 
-class ConfigurableWalker(AstWalker):
-    """Subclass for adding configurations to an walkers."""
-
-    def __init__(self, config=None):
-        """Create the walker with optional configuration."""
-        self.config = config or {}
-        self.stack = []
-        self.schema = self.get_config('schema')
-        super(ConfigurableWalker, self).__init__()
-
-    def get_config(self, name, default=None):
-        """Get a property from the config dict."""
-        return self.config.get(name, default)
-
-
 class BaseTranspiler(ConfigurableWalker):
     """Base Transpiler class for converting ASTs from one language to another."""
-
-    converters = NodeMethods()
-    renderers = NodeMethods()
 
     def __init__(self, config=None):
         """Instantiate the transpiler."""
         super(BaseTranspiler, self).__init__(config)
         self.config = config or {}
         self.stack = []  # type: list[BaseNode]
-        self._time_unit = self.get_config('time_unit', DEFAULT_TIME_UNIT)  # type: int
         self._counter = 0
 
-    def counter(self):
+    @staticmethod
+    def is_variable(node):  # type: (EqlNode) -> bool
+        """Check if a node is a variable for a callback function."""
+        return isinstance(node, Field) and not node.path
+
+    def counter(self, reset=False):
         """Increment counter and get current value."""
-        self._counter += 1
-        return self._counter
+        current = 0 if reset else self._counter
+        self._counter = current + 1
+        return current
 
     def push(self, node):  # type: (BaseNode) -> None
         """Push node onto stack."""
@@ -87,21 +81,20 @@ class BaseTranspiler(ConfigurableWalker):
         self.stack[-count:] = []
         return popped
 
-    def convert(self, node):  # type: (BaseNode) -> BaseNode
-        """Convert an AST node with the registered converter functions."""
-        return self.converters(self, node)
 
-
-class BaseEngine(ConfigurableWalker):
+class BaseEngine(ConfigurableWalker, ParserConfig):
     """Add and render EQL analytics to the generic engines."""
 
     def __init__(self, config=None):
         """Create the engine with an optional list of files."""
-        super(BaseEngine, self).__init__(config)
+        ConfigurableWalker.__init__(self, config)
         self.analytics = []  # type: list[EqlAnalytic]
         self.preprocessor = PreProcessor()
 
-        with use_schema(self.schema):
+        # Set the context for `with engine:` syntax
+        ParserConfig.__init__(self, preprocessor=self.preprocessor, schema=self._schema)
+
+        with self.schema:
             definitions = self.get_config('definitions', [])
             if is_string(definitions):
                 definitions = parse_definitions(definitions)
@@ -109,7 +102,8 @@ class BaseEngine(ConfigurableWalker):
             self.preprocessor.add_definitions(definitions)
 
             for path in self.get_config('definitions_files', []):
-                with open(path, 'r') as f:
+                # skip missing function errors, because these are actually macros
+                with ignore_missing_functions, open(path, 'r') as f:
                     definitions = parse_definitions(f.read())
                 self.preprocessor.add_definitions(definitions)
 
@@ -125,7 +119,6 @@ class BaseEngine(ConfigurableWalker):
             self.add_analytic(analytic)
 
 
-# noinspection PyAbstractClass
 class TextEngine(BaseEngine):
     """Converter for EQL to a target language script."""
 
@@ -181,47 +174,9 @@ class TextEngine(BaseEngine):
         return '\n'.join(output_lines)
 
 
-class Event(namedtuple('Event', ['type', 'time', 'data'])):
-    """Event for python engine in EQL."""
-
-    @classmethod
-    def from_data(cls, data):
-        """Load an event from a dictionary.
-
-        :param dict data: Dictionary with the event type, time, and keys.
-        """
-        data = data.get('data_buffer', data)
-        timestamp = data.get('timestamp', 0)
-
-        if is_string(data.get('event_type')):
-            event_type = data['event_type']
-        elif 'event_type_full' in data:
-            event_type = data['event_type_full']
-            if event_type.endswith('_event'):
-                event_type = event_type[:-len('_event')]
-        else:
-            event_type = EVENT_TYPE_GENERIC
-
-        return cls(event_type, timestamp, data)
-
-    def copy(self):
-        """Create a copy of the event."""
-        data = self.data.copy()
-        return Event(self.type, self.time, data)
-
-
 def register_extension(ext):
     """Decorator used for registering TextEngines with specific file extensions building."""
     def decorator(cls):
         TextEngine.extensions[ext] = cls
         return cls
     return decorator
-
-
-class AnalyticOutput(namedtuple('AnalyticOutput', ['analytic_id', 'events'])):
-    """AnalyticOutput for python engine in EQL."""
-
-    @classmethod
-    def from_data(cls, events, analytic_id=None):  # type: (list[dict], str) -> AnalyticOutput
-        """Load up an analytic output event."""
-        return cls(analytic_id, [Event.from_data(e) for e in events])

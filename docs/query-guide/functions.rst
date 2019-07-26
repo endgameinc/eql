@@ -40,6 +40,22 @@ math, string manipulation or more sophisticated expressions to be expressed.
       arraySearch(my_array, item, arraySearch(item.props, p, p.level == 2))  // returns true
 
 
+
+.. function:: arrayCount(array, variable, expression)
+
+  Count the number of matches in an array to an expression.
+
+  .. code-block:: eql
+
+      // {my_array: [{user: "root", props: [{level: 1}, {level: 2}]},
+      //             {user: "guest", props: [{level: 1}]}]
+
+      arrayCount(my_array, item, item.user == "root")                           // returns 1
+      arrayCount(my_array, item, item.props[0].level == 1)                      // returns 2
+      arrayCount(my_array, item, item.props[1].level == 4)                      // returns 0
+      arrayCount(my_array, item, arrayCount(item.props, p, p.level == 2) == 1)  // returns 1
+
+
 .. function:: concat(...)
 
     Returns a concatenated string of all the input arguments.
@@ -55,7 +71,6 @@ math, string manipulation or more sophisticated expressions to be expressed.
 .. function:: endsWith(x, y)
 
     Checks if the string ``x`` ends with the substring ``y``.
-
 
 .. function:: length(s)
 

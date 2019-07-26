@@ -1,11 +1,11 @@
 """Entry point to project."""
-from __future__ import print_function
+from __future__ import print_function, unicode_literals
 
-from eql.ast import EqlAnalytic, PipedQuery
-from eql.engines.native import PythonEngine
-from eql.engines.base import TextEngine
-from eql.parser import parse_analytic, parse_query
-from eql.utils import is_string
+from .ast import EqlAnalytic, PipedQuery
+from .engine import PythonEngine
+from .transpilers import TextEngine
+from .parser import parse_analytic, parse_query
+from .utils import is_string, load_extensions
 
 
 def render_engine(analytics, engine_type, config=None, analytics_only=False):
@@ -17,6 +17,9 @@ def render_engine(analytics, engine_type, config=None, analytics_only=False):
     :param boolean analytics_only: Render the analytics without the core engine code.
     :return str: Returns the base engine
     """
+    load_extensions(force=False)
+    if engine_type not in TextEngine.extensions:
+        raise KeyError("Unable to translate to unknown extension {}.".format(engine_type))
     engine_cls = TextEngine.extensions[engine_type]
 
     engine = engine_cls(config)
