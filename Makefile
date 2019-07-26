@@ -81,4 +81,4 @@ docs: $(VENV) install
 .PHONY: upload
 upload: $(VENV)
 	$(PIP) install twine~=1.13
-	(VENV_BIN)/twine upload  dist/*
+	$(VENV_BIN)/twine upload  dist/*
