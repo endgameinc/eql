@@ -52,26 +52,8 @@ Anyone is encouraged to make a PR for open issues that have a clear path forward
 Finally, the CLI is an area we are always looking to expand. This may include new input file types, new processing features, new tables, etc. Some shell functionality, like tab completions ANSI coloring, and history often varies across different operating systems. If possible, please test new functionality across a few different operating systems if you have access, and Python 2.7 and 3.6+. If you find any unusual behavior in the shell related to compatibility, please let us know in an issue.
 
 ## Resources
-For additional resources on EQL, check [here](https://eql.readthedocs.io/en/latest/resources.html)
+See the [resources page](https://eql.readthedocs.io/en/latest/resources.html) on ReadTheDocs for a full list of resources
 
-* Press Releases
-  * [Public Availability of EQL](https://www.endgame.com/news/press-releases/endgame-announces-public-availability-eql)
-* Blogs
-  * [Introducing EQL](https://www.endgame.com/blog/technical-blog/introducing-event-query-language)
-  * [EQL For the Masses](https://www.endgame.com/blog/technical-blog/eql-for-the-masses)
-  * [Getting Started with EQL](https://www.endgame.com/blog/technical-blog/getting-started-eql)
-* Conferences and Webinars
-  * BlackHat 2019: Fantastic Red-Team Attacks and How to Find Them [(abstract)](https://www.blackhat.com/us-19/briefings/schedule/index.html#fantastic-red-team-attacks-and-how-to-find-them-16540)
-  * BSIDES SATX 2019: The Hunter Games [(abstract)](https://www.bsidessatx.com/presentations-2019.html)
-  * Circle City Con 2019: The Hunter Games [(video)](https://www.youtube.com/watch?v=K47gX3WHcm8)
-  * Atomic Friday ([slides](https://eql.readthedocs.io/en/latest/_static/eql-crash-course.pdf)) ([video](https://www.youtube.com/watch?v=yvqxS5Bjc-s))
-  * MITRE(TM) ATT&CK Con 2018: *From Technique to Detection*  [(video)](https://www.youtube.com/watch?v=a3hIIzJrH14)
-* Read the Docs
-  * [EQL](https://eql.readthedocs.io/)
-  * [EQL Analytics Library](https://eqllib.readthedocs.io/)
-* GitHub
-  * [EQL](https://github.com/endgameinc/eql)
-  * [EQL Analytics Library](https://github.com/endgameinc/eqllib)
-  
+
 ## Licenses
 The Event Query Language is licensed under [AGPL](LICENSE)
