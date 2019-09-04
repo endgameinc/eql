@@ -102,6 +102,14 @@ math, string manipulation or more sophisticated expressions to be expressed.
 
     Returns true if ``b`` is a substring of ``a``
 
+.. function:: strip(s[, leading, trailing])
+
+    :param: s: The string that will be stripped
+    :param: leading: strip whitespace from the beginning of ``s``. Default is ``True``.
+    :param: trailing: strip whitespace from the end of ``s``. Default is ``True``.
+
+    Returns a string with whitespace removed from the beginning and end of input string ``s``.
+
 .. function:: subtract(x, y)
 
     Returns ``x - y``

@@ -319,6 +319,29 @@ class StringContains(FunctionSignature):
             return substring.lower() in source.lower()
         return False
 
+@register
+class Strip(FunctionSignature):
+    """Strip leading & trailing whitespace from a string."""
+    
+    name = "strip"
+    argument_types = [STRING, BOOLEAN, BOOLEAN]
+    return_value = STRING
+    minimum_args = 1
+
+    @classmethod
+    def run(cls, source, leading=True, trailing=True):
+        """Strip whitespace from source."""
+
+        if not is_string(source):
+            return None
+
+        stripped = source
+        if leading:
+            stripped = stripped.lstrip()
+        if trailing:
+            stripped = stripped.rstrip()
+
+        return stripped
 
 @register
 class Substring(FunctionSignature):
