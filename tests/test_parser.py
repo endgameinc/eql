@@ -108,13 +108,13 @@ class TestParser(unittest.TestCase):
             '()',  # nothing inside
             '',
             '"invalid"string"',
-            'descendant of [event_type where true'
+            'descendant of [event_type where true',
             '--100',
             '1000   100',
             '""    100',
             # literal values as fields and functions
-            'true.100'
-            'true()'
+            'true.100',
+            'true()',
             'null.abc',
             'abc[0].null',
             # require escape slashes,
