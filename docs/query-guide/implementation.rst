@@ -55,7 +55,7 @@ are independently sequenced.
     // nothing happens, because user has an empty state 1
 
     {id:  4, event_type: "process", user_name: "root", process_name: "hostname"}
-    // sequence [2, 3] now in root's state 2
+    // sequence [2, 4] now in root's state 2
     // root's state 1 is empty
 
     {id:  5, event_type: "process", user_name: "root", process_name: "hostname"}
@@ -65,19 +65,18 @@ are independently sequenced.
     // sequence [6] created in user's state 1
 
     {id:  7, event_type: "process", user_name: "root", process_name: "whoami"}
-    // sequence [6] created in root's state 1
+    // sequence [7] created in root's state 1
 
     {id:  8, event_type: "process", user_name: "user", process_name: "hostname"}
     // sequence [6, 8] now in user's state 2
     // user's state 1 is now empty
 
     {id:  9, event_type: "process", user_name: "root", process_name: "ifconfig"}
-    // sequence [2, 3, 7] completes the sequence for root
+    // sequence [2, 4, 9] completes the sequence for root
     // root still has [6] in state 1
 
     {id: 10, event_type: "process", user_name: "user", process_name: "ifconfig"}
-    // sequence [6, 8, 10] completes the sequence for root
+    // sequence [6, 8, 10] completes the sequence for user
 
     {id: 11, event_type: "process", user_name: "root", process_name: "ifconfig"}
     // nothing happens because root has an empty state 2
-
