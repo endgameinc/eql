@@ -1063,7 +1063,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
     def add_reducer(self, query, analytic_id=None, output_pipe=None):
         """Reduce the output from multiple queries.
 
-        :param PipedQuery|EqlAnalytic query: The analytic to extra the reuce logic from
+        :param PipedQuery|EqlAnalytic query: The analytic to extra the reduce logic from
         :param str analytic_id: Optional analytic_id to add to AnalyticOutput results
         :param callable output_pipe: Next pipe to reduce to
         """
