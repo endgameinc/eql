@@ -10,8 +10,11 @@ Abstract Syntax Tree
 
 .. autoclass:: eql.ast.EqlNode
 
-.. autoclass:: eql.ast.AstWalker
+.. autoclass:: eql.ast.Walker
     :members:
+
+.. autoclass:: eql.walkers.RecursiveWalker
+.. autoclass:: eql.walkers.DepthFirstWalker
 
 .. autoclass:: eql.ast.Expression
 .. autoclass:: eql.ast.Literal
@@ -34,14 +37,14 @@ Abstract Syntax Tree
 .. autoclass:: eql.ast.Sequence
 
 .. autoclass:: eql.ast.PipeCommand
-.. autoclass:: eql.ast.ByPipe
-.. autoclass:: eql.ast.HeadPipe
-.. autoclass:: eql.ast.TailPipe
-.. autoclass:: eql.ast.SortPipe
-.. autoclass:: eql.ast.UniquePipe
-.. autoclass:: eql.ast.CountPipe
-.. autoclass:: eql.ast.FilterPipe
-.. autoclass:: eql.ast.UniqueCountPipe
+.. autoclass:: eql.pipes.ByPipe
+.. autoclass:: eql.pipes.HeadPipe
+.. autoclass:: eql.pipes.TailPipe
+.. autoclass:: eql.pipes.SortPipe
+.. autoclass:: eql.pipes.UniquePipe
+.. autoclass:: eql.pipes.CountPipe
+.. autoclass:: eql.pipes.FilterPipe
+.. autoclass:: eql.pipes.UniqueCountPipe
 
 .. autoclass:: eql.ast.PipedQuery
 .. autoclass:: eql.ast.EqlAnalytic

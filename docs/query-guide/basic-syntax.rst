@@ -44,8 +44,8 @@ Wildcard matching
 Function calls
   .. code-block:: eql
 
-      length(field_name)
       concat(user_domain, "\\", user_name)
+      length(command_line) > 400
       add(timestamp, 300)
 
 
@@ -54,6 +54,20 @@ Lookups against static or dynamic values
 
       user_name in ("Administrator", "SYSTEM", "NETWORK SERVICE")
       process_name in ("cmd.exe", parent_process_name)
+
+Strings
+-------
+Strings are represented with single quotes ``'`` or double quotes ``"``,
+with special characters escaped by a single backslash. Additionally, raw strings are
+represented with a leading ``?`` character before the string, which disables escape sequences
+for all characters except the quote character.
+
+.. code-block:: eql
+
+  "hello world"
+  "hello world with 'substring'"
+  'example \t of \n escaped \b characters \r etc. \f'
+  ?"String with literal 'slash' \ characters included"
 
 
 

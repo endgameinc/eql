@@ -30,7 +30,7 @@ If Python is configured and already in the PATH, then ``eql`` will be readily av
 .. code-block:: console
 
      $ eql --version
-     eql 0.6.3
+     eql 0.7.0
 
 From there, try a :download:`sample json file <_static/example.json>` and test it with EQL.
 
@@ -38,7 +38,8 @@ From there, try a :download:`sample json file <_static/example.json>` and test i
 
     $ eql query -f example.json "process where process_name == 'explorer.exe'"
 
-    {"command_line": "C:\\Windows\\Explorer.EXE", "event_subtype_full": "already_running", "event_type_full": "process_event", "md5": "ac4c51eb24aa95b77f705ab159189e24", "opcode": 3, "pid": 2460, "ppid": 3052, "process_name": "explorer.exe", "process_path": "C:\\Windows\\explorer.exe", "serial_event_id": 34, "timestamp": 131485997150000000, "unique_pid": 34, "unique_ppid": 0, "user_domain": "research", "user_name": "researcher"}
+    {"command_line": "C:\\Windows\\Explorer.EXE", "event_type": "process", "md5": "ac4c51eb24aa95b77f705ab159189e24", "pid": 2460, "ppid": 3052, "process_name": "explorer.exe", "process_path": "C:\\Windows\\explorer.exe", "subtype": "create", "timestamp": 131485997150000000, "user": "research\\researcher", "user_domain": "research", "user_name": "researcher"}
+
 
 
 Next Steps
@@ -58,6 +59,7 @@ Next Steps
     cli
     api/index
     resources
+    licenses
 
 License
 ^^^^^^^^^^

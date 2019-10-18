@@ -1,2 +1,1 @@
-TatSu~=4.2.6
-PyYAML~=3.13
+TatSu==4.2.6

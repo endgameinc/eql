@@ -1,7 +1,7 @@
 """Serialize analytics to and from disk."""
-from eql.ast import EqlAnalytic  # noqa
-from eql.parser import parse_analytic, parse_analytics
-from eql.utils import load_dump, save_dump
+from .ast import EqlAnalytic  # noqa
+from .parser import parse_analytic, parse_analytics
+from .utils import load_dump, save_dump
 
 
 def load_analytic(filename):

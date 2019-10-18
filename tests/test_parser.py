@@ -1,0 +1,364 @@
+"""Test case."""
+import datetime
+import sys
+import traceback
+import unittest
+from collections import OrderedDict  # noqa: F403
+
+from eql.ast import *  # noqa: F403
+from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
+from eql.parser import (
+    parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal
+)
+from eql.pipes import *   # noqa: F403
+
+
+class TestParser(unittest.TestCase):
+    """Test EQL parsing."""
+
+    def test_valid_expressions(self):
+        """Test that expressions are parsed correctly."""
+        valid = [
+            "1 == 1",
+            "false != (1 == 1)",
+            'abc != "ghi"',
+            "abc > 20",
+            "startsWith(abc, 'abc')",
+            "concat(a,b,c,d,)",
+            "a in (1,2,3,4,)",
+            "length(abc) < length(hij)",
+            "length(concat(abc))",
+            'abc == substring("abc", 1, 3)',
+            "1",
+            '(1)',
+            "true",
+            "false",
+            "null",
+            "not null",
+            "abc",
+            '"string"',
+            'abc and def',
+            '(1==abc) and def',
+            'abc == (1 and 2)',
+            'abc == (def and 2)',
+            'abc == (def and def)',
+            'abc == (def and ghi)',
+            '"\\b\\t\\r\\n\\f\\\\\\"\\\'"',
+        ]
+
+        for query in valid:
+            parse_expression(query)
+
+    def test_parse_field(self):
+        """Test that fields are parsed correctly."""
+        self.assertEquals(parse_field("process_name  "), Field("process_name"))
+        self.assertEquals(parse_field("TRUE  "), Field("TRUE"))
+        self.assertEquals(parse_field("  data[0]"), Field("data", [0]))
+        self.assertEquals(parse_field("data[0].nested.name"), Field("data", [0, "nested", "name"]))
+
+        self.assertRaises(EqlParseError, parse_field, "  ")
+        self.assertRaises(EqlParseError, parse_field, "100.5")
+        self.assertRaises(EqlParseError, parse_field, "true")
+        self.assertRaises(EqlParseError, parse_field, "and")
+        self.assertRaises(EqlParseError, parse_field, "length(name) and path")
+
+    def test_parse_literal(self):
+        """Test that fields are parsed correctly."""
+        self.assertEquals(parse_literal("true"), Boolean(True))
+        self.assertEquals(parse_literal("null"), Null())
+        self.assertEquals(parse_literal("  100.5  "), Number(100.5))
+        self.assertEquals(parse_literal("true"), Boolean(True))
+        self.assertEquals(parse_literal("'C:\\\\windows\\\\system32\\\\cmd.exe'"),
+                          String("C:\\windows\\system32\\cmd.exe"))
+
+        self.assertRaises(EqlParseError, parse_field, "and")
+        self.assertRaises(EqlParseError, parse_literal, "process_name")
+        self.assertRaises(EqlParseError, parse_literal, "length('abc')")
+        self.assertRaises(EqlParseError, parse_literal, "True")
+
+    def test_functions(self):
+        """Test that functions are being parsed correctly."""
+        # Make sure that functions are parsing all arguments
+        with ignore_missing_functions:
+            fn = parse_expression('somefunction( a and c, false, d or g) ')
+        self.assertIsInstance(fn, FunctionCall)
+        self.assertEqual(len(fn.arguments), 3)
+
+    def test_invalid_expressions(self):
+        """Test that expressions are parsed correctly."""
+        invalid = [
+            '',  # empty
+            'a xor b',  # made up comparator
+            'a ^ b',  # made up comparator
+            'a % "b"',  # made up comparator
+            'a b c d',  # missing syntax
+            'def[]',  # no index
+            'def[ghi]',  # index not a number
+            'def[-1]',  # negative indexes not supported
+            'someFunc().abc',  # invalid function
+            'length().abc',  # can't index these
+            '1.2.3',  # invalid number
+            'a.1',
+            '(field',  # unclosed paren
+            '(field xx',  # unclosed paren and bad syntax
+            'field[',  # unclosed bracket
+            'field[0',  # unclosed bracket
+            '(',
+            ')',
+            '()',  # nothing inside
+            '',
+            '"invalid"string"',
+            'descendant of [event_type where true',
+            '--100',
+            '1000   100',
+            '""    100',
+            # literal values as fields and functions
+            'true.100',
+            'true()',
+            'null.abc',
+            'abc[0].null',
+            # require escape slashes,
+            '\\R',
+            '\\W',
+            # minimum of 1 argument
+            'length()',
+            'concat()',
+        ]
+
+        keywords = [
+            'and', 'by', 'in', 'join', 'macro', 'not', 'of', 'or', 'sequence', 'until', 'where', 'with'
+        ]
+
+        for query in invalid:
+            self.assertRaises(EqlParseError, parse_expression, query)
+
+        for keyword in keywords:
+            self.assertRaises(EqlSyntaxError, parse_expression, keyword)
+            parse_expression(keyword.upper())
+
+    def test_valid_queries(self):
+        """Make sure that EQL queries are properly parsed."""
+        valid = [
+            'file where true',
+            'file where true and true',
+            'file where false or true',
+            'registry where not pid',
+            'process where process_name == "net.exe" and command_line == "* user*.exe"',
+            'process where command_line == "~!@#$%^&*();\'[]{}\\\\|<>?,./:\\"-= \' "',
+            'process where \n\n\npid ==\t 4',
+            'process where process_name in ("net.exe", "cmd.exe", "at.exe")',
+            'process where command_line == "*.exe *admin*" or command_line == "* a b*"',
+            'process where pid in (1,2,3,4,5,6,7,8) and abc == 100 and def == 200 and ghi == 300 and jkl == x',
+            'process where ppid != pid',
+            'image_load where not x != y',
+            'image_load where not x == y',
+            'image_load where not not not not x < y',
+            'image_load where not x <= y',
+            'image_load where not x >= y',
+            'image_load where not x > y',
+            'process where pid == 4 or pid == 5 or pid == 6 or pid == 7 or pid == 8',
+            'network where pid == 0 or pid == 4 or (ppid == 0 or ppid = 4) or (abc == defgh) and process_name == "*" ',
+            'network where pid = 4',
+            'process where descendant of [process where process_name == "lsass.exe"] and process_name == "cmd.exe"',
+            'join \t\t\t[process where process_name == "*"] [  file where file_path == "*"\n]',
+            'join by pid [process where name == "*"] [file where path == "*"] until [process where opcode == 2]',
+            'sequence [process where name == "*"] [file where path == "*"] until [process where opcode == 2]',
+            'sequence by pid [process where name == "*"] [file where path == "*"] until [process where opcode == 2]',
+            'join [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
+            'sequence [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
+            'sequence by pid [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=200 [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2s [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2sec [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2seconds [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence with maxspan=2.5m [process where x == x] by pid [file where file_path == "*"] by ppid',
+            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=1.0075d [process where process_name == "*"] [file where file_path == "*"]',
+            'dns where pid == 100 | head 100 | tail 50 | unique pid',
+            'network where pid == 100 | unique command_line | count',
+            'security where user_domain == "endgame" | count user_name a b | tail 5',
+            'process where 1==1 | count user_name, unique_pid, concat(field2,a,bc)',
+            'process where 1==1 | unique user_name, concat(field2,a,bc), field2',
+            'registry where a.b',
+            'registry where a[0]',
+            'registry where a.b.c.d.e',
+            'registry where a.b.c[0]',
+            'registry where a[0].b',
+            'registry where a[0][1].b',
+            'registry where a[0].b[1]',
+            'registry where topField.subField[100].subsubField == 0',
+            'process where true | filter true',
+            'process where 1==1 | filter abc == def',
+            'process where 1==1 | filter abc == def and 1 != 2',
+            'process where 1==1 | count process_name | filter percent > 0.5',
+            'process where a > 100000000000000000000000000000000',
+            'any where true | unique a b c | sort a b c | count',
+            'any where true | unique a, b,   c | sort a b c | count',
+            'any where true | unique a, b,   c | sort a,b,c | count',
+            'any where true | window 5s | unique a, b | unique_count a | filter count > 5',
+            'file where child of [registry where true]',
+            'file where event of [registry where true]',
+            'file where event of [registry where true]',
+            'file where descendant of [registry where true]',
+            # multiple by values
+            'sequence by field1  [file where true] by f1 [process where true] by f1',
+            'sequence by a,b,c,d [file where true] by f1,f2 [process where true] by f1,f2',
+            'sequence [file where 1] by f1,f2 [process where 1] by f1,f2 until [process where 1] by f1,f2',
+            'sequence by f [file where true] by a,b [process where true] by c,d until [process where 1] by e,f',
+            # sequence with named params
+            'sequence by unique_pid [process where true] [file where true] fork',
+            'sequence by unique_pid [process where true] [file where true] fork=true',
+            'sequence by unique_pid [process where true] [file where true] fork=1',
+            'sequence by unique_pid [process where true] [file where true] fork=false',
+            'sequence by unique_pid [process where true] [file where true] fork=0 [network where true]',
+            'sequence by unique_pid [process where true] [file where true] fork=0',
+        ]
+
+        datetime.datetime.now()
+
+        for i, text in enumerate(valid):
+            try:
+                query = parse_query(text)
+                rendered = query.render()
+                self.assertEqual(text.split()[0], rendered.split()[0])
+
+                # parse it again to make sure it's still valid and doesn't change
+                parse_again = parse_query(rendered)
+                rendered_again = parse_again.render()
+
+                # repr + eval should also restore it properly
+                # Test that eval + repr works
+                actual_repr = repr(query)
+                eval_actual = eval(actual_repr)
+
+                self.assertEqual(query, parse_again, "Query didn't reparse correctly.")
+                self.assertEqual(rendered, rendered_again)
+                self.assertEqual(query, eval_actual)
+
+            except (EqlSyntaxError, EqlSemanticError):
+                ex_type, ex, tb = sys.exc_info()
+                traceback.print_exc(ex)
+                traceback.print_tb(tb)
+                self.fail("Unable to parse query #{}: {}".format(i, text))
+
+    def test_invalid_queries(self):
+        """Test that invalid queries throw the proper error."""
+        invalid = [
+            '',  # empty
+            'process where process_name == "abc.exe"     garbage extraneous \"input\"',
+            'garbage process where process_name < "abc.e"xe"',
+            'process',
+            'process where abc == "extra"quote"',
+            'file where and',
+            'file where file_name and',
+            'file_name and',
+            'file_name )',
+            'file_name (\r\n\r\n',
+            'file_name where (\r\n\r\n)',
+            'process where _badSymbol == 100',
+            'process where 1field == 2field',
+            'sequence where 1field == 2field',
+            'process where true | filter',
+            'process where true | badPipe',
+            'process where true | badPipe a b c',
+            'process where true | head -100',
+            'process where descendant of []',
+            'file where nothing of [process where true]',
+            'file where DescenDant of [process where true]',
+            'garbage',
+            'process where process_name == "abc.exe" | count 100',
+            'process where process_name == "abc.exe" | unique 100',
+            'process where process_name == "abc.exe" | sort 100',
+            'process where process_name == "abc.exe" | head 100 abc',
+            'process where process_name == "abc.exe" | head abc',
+            'process where process_name == "abc.exe" | head abc()',
+            'process where process_name == "abc.exe" | head abc(def, ghi)',
+            'process where process_name == "abc.exe" | window abc',
+            'process where process_name == "abc.exe" | window 10g',
+            'sequence [process where pid == pid]',
+            'sequence [process where pid == pid] []',
+            'sequence with maxspan=false [process where true] [process where true]',
+            'sequence with maxspan=10g [process where true] [process where true]',
+            'sequence with badparam=100 [process where true] [process where true]',
+            # check that the same number of BYs are in every subquery
+            'sequence [file where true] [process where true] by field1',
+            'sequence [file where true] by field [file where true] by field1 until [file where true]',
+            'sequence by a,b,c [file where true] by field [file where true] by field1 until [file where true]',
+            'sequence [file where 1] by field [file where 1] by f1 until [file where 1] by f1,f2 | unique field',
+            'sequence [process where 1] fork=true [network where 1]',
+            'sequence [process where 1] [network where 1] badparam=true',
+            'sequence [process where 1] [network where 1] fork=true fork=true',
+            'sequence [process where 1] [network where 1] fork fork',
+            'process where descendant of [file where true] bad=param',
+            '| filter true'
+        ]
+        for query in invalid:
+            self.assertRaises(EqlParseError, parse_query, query)
+
+    def test_query_events(self):
+        """Test that event queries work with events[n].* syntax in pipes."""
+        base_queries = ['abc', 'abc[123]', 'abc.def.ghi', 'abc.def[123].ghi[456]']
+        for text in base_queries:
+            field_query = parse_expression(text)  # type: Field
+            events_query = parse_expression('events[0].' + text)  # type: Field
+
+            index, query = field_query.query_multiple_events()
+            self.assertEqual(index, 0, "Didn't query from first event")
+            self.assertEqual(query, field_query, "Didn't unconvert query")
+
+            index, query = events_query.query_multiple_events()
+            self.assertEqual(index, 0, "Didn't query from first event")
+            self.assertEqual(query, field_query, "Didn't unconvert query")
+
+        for event_index, text in enumerate(base_queries):
+            events_text = 'events[{}].{}'.format(event_index, text)
+            field_query = parse_expression(text)  # type: Field
+            events_query = parse_expression(events_text)  # type: Field
+            index, query = events_query.query_multiple_events()
+            self.assertEqual(index, event_index, "Didn't query from {} event".format(event_index))
+            self.assertEqual(query, field_query, "Didn't unconvert query")
+
+    def test_comments(self):
+        """Test that comments are valid syntax but stripped from AST."""
+        match = parse_query("process where pid=4 and ppid=0")
+
+        query = parse_query("""process where pid = 4 /* multi\nline\ncomment */ and ppid=0""")
+        self.assertEqual(match, query)
+
+        query = parse_query("""process where pid = 4 // something \n and ppid=0""")
+        self.assertEqual(match, query)
+
+        query = parse_query("""process where pid
+            = 4 and ppid=0
+        """)
+        self.assertEqual(match, query)
+
+        query = parse_query("""process where
+            // test
+            //
+            //line
+            //comments
+            pid = 4 and ppid = 0
+        """)
+        self.assertEqual(match, query)
+
+        match = parse_expression("true")
+        query = parse_expression("true // something else \r\n /* test\r\n something \r\n*/")
+        self.assertEqual(match, query)
+
+        commented = parse_definitions("macro test() pid = 4 and /* comment */ ppid = 0")
+        macro = parse_definitions("macro test() pid = 4 and ppid = 0")
+        self.assertEqual(commented, macro)
+
+    def test_invalid_comments(self):
+        """Test that invalid/overlapping comments fail."""
+        query_text = "process where /* something */ else */ true"
+        self.assertRaises(EqlParseError, parse_query, query_text)
+
+        # Test nested comments (not supported)
+        query_text = "process where /* outer /* nested */ outer */ true"
+        self.assertRaises(EqlParseError, parse_query, query_text)
+
+        query_text = "process where // true"
+        self.assertRaises(EqlParseError, parse_query, query_text)

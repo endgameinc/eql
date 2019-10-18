@@ -7,14 +7,14 @@ from collections import OrderedDict
 from operator import lt, le, eq, ne, ge, gt
 from string import Template
 
-from eql.utils import to_unicode, is_string, is_number
-
+from .functions import get_function
+from .signatures import SignatureMixin
+from .types import STRING, BOOLEAN, NUMBER, NULL, PRIMITIVES
+from .utils import to_unicode, is_string, is_number, ParserConfig
 
 __all__ = (
     # base classes
     "BaseNode",
-    "AstWalker",
-
     "Expression",
     "EqlNode",
 
@@ -47,15 +47,6 @@ __all__ = (
 
     # pipes
     "PipeCommand",
-    "ByPipe",
-    "HeadPipe",
-    "TailPipe",
-    "SortPipe",
-    "UniquePipe",
-    "CountPipe",
-    "FilterPipe",
-    "UniqueCountPipe",
-    "WindowPipe",
 
     # full queries
     "PipedQuery",
@@ -119,6 +110,10 @@ class BaseNode(object):
         return "{}({})".format(type(self).__name__, ", ".join('{}={}'.format(name, repr(slot))
                                                               for name, slot in self.iter_slots()))
 
+    def __iter__(self):
+        """Iterate recursively through all nodes in the tree."""
+        return Walker().iter_node(self)
+
     def __unicode__(self):
         """Render the AST back as a valid EQL string."""
         return self.render()
@@ -130,67 +125,6 @@ class BaseNode(object):
         if not isinstance(unicoded, str):
             unicoded = unicoded.encode('utf-8')
         return unicoded
-
-
-class AstWalker(object):
-    """Base class that provides functionality for walking abstract syntax trees of eql.BaseNode."""
-
-    @classmethod
-    def walk(cls, node, func):
-        """Walk the syntax tree top-down, until callback returns False.
-
-        :param BaseNode node: Any AST node
-        :param (BaseNode) -> bool func: Walk function
-        """
-        if isinstance(node, BaseNode):
-            if not func(node):
-                return
-
-            for slot, child in node.iter_slots():
-                cls.walk(child, func)
-        elif isinstance(node, (list, tuple)):
-            for child in node:
-                cls.walk(child, func)
-        elif isinstance(node, dict):
-            for key, child in node.items():
-                cls.walk(child, func)
-
-    def transform(self, node, func, optimize=True):
-        """Recursively transform the syntax tree by walking bottom-up.
-
-        :param BaseNode node: Any AST node
-        :param function func: Callback function for walking with the signature
-            ``func(original_node, transformed_node) -> bool``
-        :param bool optimize: Return an optimized copy of the AST
-        :rtype: BaseNode
-        """
-        if isinstance(node, BaseNode):
-            cls = type(node)
-            args = [self.transform(child, func, optimize=optimize) for _, child in node.iter_slots()]
-            transformed = cls(*args)
-            if optimize:
-                transformed = transformed.optimize()
-
-            output = func(transformed, node)  # type: BaseNode
-
-            if optimize:
-                return output.optimize()
-            return output
-        elif isinstance(node, (list, tuple)):
-            return [self.transform(child, func, optimize=optimize) for child in node]
-        elif isinstance(node, dict):
-            return {key: self.transform(child, func, optimize=optimize) for key, child in node.items()}
-        else:
-            return node
-
-    def copy(self, node, optimize=True):
-        """Create a copy of an AST.
-
-        :param BaseNode node: Any valid AST
-        :param bool optimize: Return an optimized copy of the AST
-        :rtype: BaseNode
-        """
-        return self.transform(node, lambda copy, original: copy, optimize=optimize)
 
 
 # noinspection PyAbstractClass
@@ -254,11 +188,33 @@ class Literal(Expression):
 
     __slots__ = 'value',
     precedence = Expression.precedence + 1
+    type_hint = PRIMITIVES
 
     def __init__(self, value):
         """Create an EQL value from a python value."""
-        assert type(self) is not Literal, "Illegal usage of Literal AST node"
+        if type(self) is Literal:
+            raise TypeError("Literal AST nodes can't be created directly. Try Literal.from_python")
         self.value = value
+
+    @classmethod
+    def find_type(cls, python_value):
+        """Find the corresponding AST node type for a python value."""
+        if python_value is None:
+            return Null
+        elif python_value is True or python_value is False:
+            return Boolean
+        elif is_number(python_value):
+            return Number
+        elif is_string(python_value):
+            return String
+        else:
+            raise TypeError("Unable to convert python value to a literal.")
+
+    @classmethod
+    def from_python(cls, python_value):
+        """Convert a python value to a literal."""
+        subcls = cls.find_type(python_value)
+        return subcls(python_value)
 
     def __and__(self, other):
         """Shortcut ANDing of Static Value nodes together."""
@@ -286,12 +242,16 @@ class Literal(Expression):
 class Boolean(Literal):
     """Boolean literal."""
 
+    type_hint = BOOLEAN
+
     def _render(self):
         return 'true' if self.value else 'false'
 
 
 class Null(Literal):
     """Null literal."""
+
+    type_hint = NULL
 
     def __init__(self, value=None):
         """Null literal value."""
@@ -303,6 +263,8 @@ class Null(Literal):
 
 class Number(Literal):
     """Numeric literal."""
+
+    type_hint = NUMBER
 
     def _render(self):
         return to_unicode(self.value)
@@ -323,6 +285,7 @@ class String(Literal):
     }
     reverse_patterns = {v: k for k, v in escape_patterns.items()}
     escape_re = r'[{}]'.format('|'.join(escape_patterns.values()))
+    type_hint = STRING
 
     @classmethod
     def escape(cls, s):
@@ -410,6 +373,11 @@ class Field(Expression):
                 return self.path[0], Field(self.path[1], self.path[2:])
         return 0, self
 
+    @property
+    def full_path(self):  # type: () -> list[str]
+        """Get the full path for a field."""
+        return [self.base] + self.path
+
     def _render(self):
         text = self.base
         for key in self.path:
@@ -437,21 +405,29 @@ class FunctionCall(Expression):
         self.name = name
         self.arguments = arguments or []
 
+    @property
+    def callback(self):
+        """Get the callback for this node."""
+        return self.signature.get_callback(*self.arguments)
+
+    @property
+    def signature(self):
+        """Get the matching function signature."""
+        return get_function(self.name)
+
     def optimize(self):
         """Optimize function calls that can be determined at compile time."""
-        if self.name == 'wildcard':
-            if any(isinstance(arg, Literal) and not isinstance(arg, String) for arg in self.arguments):
-                return Boolean(False)
+        func = get_function(self.name)
+        arguments = [arg.optimize() for arg in self.arguments]
 
-            if len(self.arguments) >= 2 and all(isinstance(arg, String) for arg in self.arguments):
-                source = self.arguments[0].value
-                regex = '|'.join('^{}$'.format(r'.*?'.join(re.escape(sequence)
-                                                           for sequence in literal.value.split('*')))
-                                 for literal in self.arguments[1:])
-                return Boolean(re.match(regex, source, re.IGNORECASE) is not None)
-        elif self.name == 'length' and all(isinstance(arg, String) for arg in self.arguments):
-            return Number(len(*(arg.value for arg in self.arguments)))
-        return self
+        if func and all(isinstance(arg, Literal) for arg in arguments):
+            try:
+                rv = func.run(*[arg.value for arg in arguments])
+                return Literal.from_python(rv)
+            except NotImplementedError:
+                pass
+
+        return FunctionCall(self.name, arguments)
 
     def render(self, precedence=None):
         """Convert wildcards back to the short hand syntax."""
@@ -512,6 +488,14 @@ class Comparison(Expression):
         self.right = right
         self.function = self.func_lookup[comparator]
 
+    def __invert__(self):
+        """Convert a comparison by flipping the operators."""
+        if self.comparator == self.EQ:
+            return Comparison(self.left, Comparison.NE, self.right).optimize()
+        elif self.comparator == self.NE:
+            return Comparison(self.left, Comparison.EQ, self.right).optimize()
+        return super(Comparison, self).__invert__()
+
     def optimize(self):
         """Optimize comparisons against literal values."""
         if isinstance(self.left, Literal) and isinstance(self.right, Literal):
@@ -533,6 +517,24 @@ class Comparison(Expression):
             return Boolean(self.comparator in (Comparison.EQ, Comparison.LE, Comparison.GE))
 
         return self
+
+    def __or__(self, other):
+        """Check for one field being compared to multiple values, and switch to a set."""
+        if self.comparator == Comparison.EQ and isinstance(self.right, Literal):
+            if isinstance(other, Comparison) and self.left == other.left and other.comparator == Comparison.EQ:
+                if isinstance(other.right, Literal):
+                    return InSet(self.left, [self.right, other.right])
+            elif isinstance(other, InSet) and self.left == other.expression and other.is_literal():
+                container = [self.right]
+                container.extend(other.container)
+                return InSet(self.left, container)
+        return super(Comparison, self).__or__(other)
+
+    def __and__(self, other):
+        """Check if a comparison is ANDed to a set."""
+        if self.comparator == Comparison.EQ and isinstance(other, InSet) and self.left == other.expression:
+            return InSet(self.left, [self.right]) & other
+        return super(Comparison, self).__and__(other)
 
 
 class InSet(Expression):
@@ -570,14 +572,32 @@ class InSet(Expression):
         return values
 
     def __and__(self, other):
-        """Perform an intersection between two sets for boolean OR."""
+        """Perform an intersection between two sets for boolean AND."""
         if isinstance(other, InSet) and self.expression == other.expression:
             if self.is_literal() and other.is_literal():
                 container1 = self._get_literals()
                 container2 = other._get_literals()
 
-                intersection = [v for k, v in container1.items() if k in container2]
-                return InSet(self.expression, intersection).optimize()
+                reduced = [v for k, v in container1.items() if k in container2]
+                return InSet(self.expression, reduced).optimize()
+
+        elif isinstance(other, Not):
+            if isinstance(other.term, InSet) and self.expression == other.term.expression:
+                # Check if one set is being subtracted from another
+                if self.is_literal() and other.term.is_literal():
+                    container1 = self._get_literals()
+                    container2 = other.term._get_literals()
+
+                    reduced = [v for k, v in container1.items() if k not in container2]
+                    return InSet(self.expression, reduced).optimize()
+
+        elif isinstance(other, Comparison) and other.comparator == Comparison.EQ and self.expression == other.left:
+            if self.is_literal() and isinstance(other.right, Literal):
+                return super(InSet, self).__and__(InSet(other.left, [other.right])).optimize()
+
+        elif isinstance(other, Comparison) and other.comparator == Comparison.NE and self.expression == other.left:
+            if self.is_literal() and isinstance(other.right, Literal):
+                return super(InSet, self).__and__(~ InSet(other.left, [other.right])).optimize()
 
         return super(InSet, self).__and__(other)
 
@@ -591,6 +611,10 @@ class InSet(Expression):
 
                 union = [v for v in container.values()]
                 return InSet(self.expression, union).optimize()
+
+        elif isinstance(other, Comparison) and self.expression == other.left:
+            if self.is_literal() and isinstance(other.right, Literal):
+                return super(InSet, self).__or__(InSet(other.left, [other.right]))
 
         return super(InSet, self).__or__(other)
 
@@ -694,13 +718,25 @@ class Not(Expression):
         """
         self.term = term
 
+    def demorgans(self):
+        """Apply DeMorgan's law."""
+        if isinstance(self, Or):
+            return And([~ t for t in self.terms]).optimize()
+
+        elif isinstance(self, And):
+            return Or([~ t for t in self.terms]).optimize()
+
+        else:
+            return ~ self.term.optimize()
+
     def optimize(self):
         """Optimize NOT terms, by flattening them."""
-        return ~ self.term.optimize()
+        optimized_term = self.term.optimize()
+        return ~ optimized_term
 
     def __invert__(self):
         """Convert ``not not X`` to X."""
-        return self.term
+        return self.term.optimize()
 
     def render(self, precedence=None):
         """Convert wildcard functions back to the short hand syntax."""
@@ -719,10 +755,18 @@ class And(BaseCompound):
 
     def optimize(self):
         """Optimize AND terms, by flattening them."""
-        node = self.terms[0]
+        terms = []
+        current = self.terms[0]
         for term in self.terms[1:]:
-            node &= term
-        return node
+            current = current & term
+            if isinstance(current, And):
+                terms.extend(current.terms[:-1])
+                current = current.terms[-1]
+
+        if terms:
+            terms.append(current)
+            return And(terms)
+        return current
 
     def __and__(self, other):
         """Flatten multiple ``and`` terms."""
@@ -742,10 +786,18 @@ class Or(BaseCompound):
 
     def optimize(self):
         """Optimize OR terms, by flattening them."""
-        node = self.terms[0]
+        terms = []
+        current = self.terms[0]
         for term in self.terms[1:]:
-            node |= term
-        return node
+            current = current | term
+            if isinstance(current, Or):
+                terms.extend(current.terms[:-1])
+                current = current.terms[-1]
+
+        if terms:
+            terms.append(current)
+            return Or(terms)
+        return current
 
     def __or__(self, other):
         """Flatten multiple ``or`` terms."""
@@ -879,161 +931,39 @@ class Sequence(EqlNode):
 
 
 # noinspection PyAbstractClass
-class PipeCommand(EqlNode):
+class PipeCommand(EqlNode, SignatureMixin):
     """Base class for an EQL pipe."""
 
     __slots__ = 'arguments',
-    pipe_name = None  # type: str
+    name = None  # type: str
     lookup = {}  # type: dict[str, PipeCommand|type]
-    minimum_args = None
-    maximum_args = None
 
     def __init__(self, arguments=None):  # type: (list[Expression]) -> None
         """Create a pipe with optional arguments."""
         self.arguments = arguments or []
         super(PipeCommand, self).__init__()
 
-    def validate(self):
-        """Find the first invalid argument. Return None if all are valid."""
-        pass
-
     @classmethod
     def register(cls, name):
         """Register a pipe class by name."""
         def decorator(pipe_class):
-            pipe_class.pipe_name = name
+            pipe_class.name = name
             if name in cls.lookup:
                 raise KeyError("Pipe {} already registered as {}".format(cls.lookup[name], name))
             cls.lookup[name] = pipe_class
             return pipe_class
         return decorator
 
+    @classmethod
+    def output_schemas(cls, arguments, type_hints, event_schemas):
+        # type: (list, list, list[Schema]) -> list[Schema]
+        """Output a list of schemas for each event in the pipe."""
+        return event_schemas
+
     def _render(self):
         if len(self.arguments) == 0:
-            return self.pipe_name
-        return self.pipe_name + ' ' + ', '.join(arg.render() for arg in self.arguments)
-
-
-class ByPipe(PipeCommand):
-    """Pipe that takes a value (field, function, etc.) as a key."""
-
-    minimum_args = 1
-
-    def validate(self):
-        """Find the first invalid argument. Return None if all are valid."""
-        for i, arg in enumerate(self.arguments):
-            if isinstance(arg, Literal) or isinstance(arg, NamedSubquery):
-                return i
-
-
-@PipeCommand.register('head')
-class HeadPipe(PipeCommand):
-    """Node representing the head pipe, analogous to the unix head command."""
-
-    maximum_args = 1
-    DEFAULT = 50
-
-    @property
-    def count(self):  # type: () -> int
-        """Get the number of elements to emit."""
-        if len(self.arguments) == 0:
-            return self.DEFAULT
-        return self.arguments[0].value
-
-    def validate(self):
-        """Find the first invalid argument. Return None if all are valid."""
-        if len(self.arguments) > 0:
-            arg = self.arguments[0]
-            if not (isinstance(arg, Literal) and isinstance(arg.value, int) and arg.value > 0):
-                return 0
-
-
-@PipeCommand.register('tail')
-class TailPipe(PipeCommand):
-    """Node representing the tail pipe, analogous to the unix tail command."""
-
-    maximum_args = 1
-    DEFAULT = 50
-
-    @property
-    def count(self):  # type: () -> int
-        """Get the number of elements to emit."""
-        if len(self.arguments) == 0:
-            return self.DEFAULT
-        return self.arguments[0].value
-
-    def validate(self):
-        """Find the first invalid argument. Return None if all are valid."""
-        if len(self.arguments) == 0:
-            return
-        elif len(self.arguments) > 1:
-            return 1
-        else:
-            arg = self.arguments[0]
-            if not (isinstance(arg, Literal) and isinstance(arg.value, int)) or arg.value <= 0:
-                return 0
-
-
-@PipeCommand.register('sort')
-class SortPipe(ByPipe):
-    """Sorts the pipes by field comparisons."""
-
-
-@PipeCommand.register('unique')
-class UniquePipe(ByPipe):
-    """Filters events on a per-field basis, and only outputs the first event seen for a field."""
-
-
-@PipeCommand.register('count')
-class CountPipe(ByPipe):
-    """Counts number of events that match a field, or total number of events if none specified."""
-
-    minimum_args = 0
-
-
-@PipeCommand.register('filter')
-class FilterPipe(PipeCommand):
-    """Takes data coming into an existing pipe and filters it further."""
-
-    minimum_args = 1
-    maximum_args = 1
-
-    @property
-    def expression(self):
-        """Get the filter expression."""
-        return self.arguments[0]
-
-    def validate(self):
-        """Validate that exactly one expression is sent."""
-        if not isinstance(self.expression, Expression):
-            return 0
-
-
-@PipeCommand.register('unique_count')
-@PipeCommand.register('ucount')
-class UniqueCountPipe(ByPipe):
-    """Returns unique results but adds a count field."""
-
-
-@PipeCommand.register('window')
-class WindowPipe(ByPipe):
-    """Maintains a time window buffer for streaming events."""
-
-    _timespan = None
-
-    minimum_args = 1
-    maximum_args = 1
-
-    @property
-    def timespan(self):
-        # cache timerange conversion
-        if not self._timespan:
-            self._timespan = TimeRange.convert(self.arguments[0])
-        return self._timespan
-
-    def validate(self):
-        if not self.timespan or self.timespan.delta < datetime.timedelta(0):
-            return 0
+            return self.name
+        return self.name + ' ' + ', '.join(arg.render() for arg in self.arguments)
 
 
 class PipedQuery(EqlNode):
@@ -1058,17 +988,15 @@ class PipedQuery(EqlNode):
 class EqlAnalytic(EqlNode):
     """Analytics are the top-level nodes for matching and returning events."""
 
-    __slots__ = 'query', 'actions', 'metadata'
+    __slots__ = 'query', 'metadata'
 
-    def __init__(self, query, actions=None, metadata=None):
+    def __init__(self, query, metadata=None):
         """Init.
 
         :param PipedQuery query: Analytic query
-        :param list[str] actions: List of actions for the query
         :param dict metadata: Metadata for the analytic
         """
         self.query = query
-        self.actions = actions
         self.metadata = metadata or {}
 
     @property
@@ -1081,16 +1009,16 @@ class EqlAnalytic(EqlNode):
         """Return the name from metadata."""
         return self.metadata.get('name')
 
-    def __str__(self):
-        """Print a string instead of the dictionary that render returns."""
-        return self.__repr__()
-
     def __unicode__(self):
         """Print a string instead of the dictionary that render returns."""
-        return self.__repr__()
+        return self.query.__unicode__()
+
+    def __str__(self):
+        """Print a string instead of the dictionary that render returns."""
+        return self.query.__str__()
 
     def _render(self):
-        return {'metadata': self.metadata, 'actions': self.actions, 'query': self.query.render()}
+        return {'metadata': self.metadata, 'query': self.query.render()}
 
 
 class Definition(object):
@@ -1122,7 +1050,7 @@ class Constant(Definition, EqlNode):
 class BaseMacro(Definition):
     """Base macro class."""
 
-    def expand(self, arguments, walker=None, optimize=True):
+    def expand(self, arguments):
         """Expand a macro with a set of arguments."""
         raise NotImplementedError
 
@@ -1134,17 +1062,15 @@ class CustomMacro(BaseMacro):
         """Python macro to allow for more dynamic or sophisticated macros.
 
         :param str name: The name of the macro.
-        :param (list[EqlNode], AstWalker) -> EqlNode callback: A callback to expand out the macro.
+        :param (list[EqlNode]) -> EqlNode callback: A callback to expand out the macro.
         """
         super(CustomMacro, self).__init__(name)
         self.callback = callback
 
-    def expand(self, arguments, walker=None, optimize=True):
+    def expand(self, arguments):
         """Make the callback do the dirty work for expanding the AST."""
-        node = self.callback(arguments, walker)
-        if optimize:
-            return node.optimize()
-        return node
+        node = self.callback(arguments)
+        return node.optimize()
 
     @classmethod
     def from_name(cls, name):
@@ -1168,15 +1094,16 @@ class Macro(BaseMacro, EqlNode):
         :param list[str]: The names of the parameters.
         :param Expression expression: The parameterized expression to return.
         """
-        super(Macro, self).__init__(name)
+        BaseMacro.__init__(self, name)
+        EqlNode.__init__(self)
         self.parameters = parameters
         self.expression = expression
 
-    def expand(self, arguments, walker=None, optimize=True):
+    def expand(self, arguments):
         """Expand a node.
 
         :param list[BaseNode node] arguments: The arguments the macro is called with
-        :param AstWalker walker: An optional syntax tree walker.
+        :param Walker walker: An optional syntax tree walker.
         :param bool optimize: Return an optimized copy of the AST
         :rtype: BaseNode
         """
@@ -1185,17 +1112,15 @@ class Macro(BaseMacro, EqlNode):
                 self.name, len(self.parameters), len(arguments)))
 
         lookup = dict(zip(self.parameters, arguments))
-        walker = walker or AstWalker()
 
-        def expand_variables(node, _):
-            """Callback for walking the AST that expands the variables into the passed in expression."""
-            if isinstance(node, Field):
-                if node.base in lookup and not node.path:
-                    node = walker.copy(lookup[node.base])
+        def _walk_field(node):
+            if node.base in lookup and not node.path:
+                return lookup[node.base].optimize()
             return node
 
-        expanded = walker.transform(self.expression, expand_variables, optimize=optimize)
-        return expanded
+        walker = RecursiveWalker()
+        walker.register_func(Field, _walk_field)
+        return walker.walk(self.expression).optimize()
 
     def _render(self):
         expr = self.expression.render()
@@ -1205,14 +1130,33 @@ class Macro(BaseMacro, EqlNode):
         return super(Macro, self)._render()
 
 
-class PreProcessor(object):
+class PreProcessor(ParserConfig):
     """An EQL preprocessor stores definitions and is used for macro expansion and constants."""
 
     def __init__(self, definitions=None):
         """Initialize a preprocessor environment that can load definitions."""
-        self.walker = AstWalker()
         self.constants = OrderedDict()  # type: dict[str, Constant]
-        self.macros = OrderedDict()  # type: dict[str, BaseMacro]
+        self.macros = OrderedDict()  # type: dict[str, BaseMacro|CustomMacro|Maco]
+
+        class PreProcessorWalker(RecursiveWalker):
+            """Custom walker class for this preprocessor."""
+
+            preprocessor = self
+
+            def _walk_field(self, node, *args, **kwargs):
+                if node.base in self.preprocessor.constants and not node.path:
+                        return self.preprocessor.constants[node.base].value
+                return self._walk_base_node(node, *args, **kwargs)
+
+            def _walk_function_call(self, node, *args, **kwargs):
+                if node.name in self.preprocessor.macros:
+                    macro = self.preprocessor.macros[node.name]
+                    arguments = [self.walk(arg, *args, **kwargs) for arg in node.arguments]
+                    return macro.expand(arguments)
+                return self._walk_base_node(node, *args, **kwargs)
+
+        self.walker_cls = PreProcessorWalker
+        ParserConfig.__init__(self, preprocessor=self)
         self.add_definitions(definitions or [])
 
     def add_definitions(self, definitions):
@@ -1220,7 +1164,7 @@ class PreProcessor(object):
         for definition in definitions:
             self.add_definition(definition)
 
-    def add_definition(self, definition):  # type: (Definition) -> None
+    def add_definition(self, definition):  # type: (BaseMacro|Constant) -> None
         """Add a named definition to the preprocessor."""
         name = definition.name
         if isinstance(definition, BaseMacro):
@@ -1232,27 +1176,17 @@ class PreProcessor(object):
                 raise KeyError("Constant {} already defined".format(name))
             self.constants[name] = definition
 
-    def expand(self, root, optimize=True):
+    def expand(self, root):
         """Expand the function calls that match registered macros.
 
         :param EqlNode root: The input node, macro, expression, etc.
         :param bool optimize: Toggle AST optimizations while expanding
         :rtype: EqlNode
         """
-        if not optimize and not self.constants and not self.macros:
+        if not self.constants and not self.macros:
             return root
 
-        def expand_callback(node, _):
-            if isinstance(node, FunctionCall):
-                if node.name in self.macros:
-                    macro = self.macros[node.name]
-                    expanded = macro.expand(node.arguments, self.walker, optimize=optimize)
-                    node = expanded
-            elif isinstance(node, Field) and not node.path:
-                if node.base in self.constants:
-                    node = self.constants[node.base].value
-            return node
-        return self.walker.transform(root, expand_callback, optimize=optimize)
+        return self.walker_cls().walk(root)
 
     def copy(self):
         """Create a shallow copy of a preprocessor."""
@@ -1260,3 +1194,7 @@ class PreProcessor(object):
         preprocessor.constants.update(self.constants)
         preprocessor.macros.update(self.macros)
         return preprocessor
+
+
+# circular dependency
+from .walkers import Walker, RecursiveWalker  # noqa: E402

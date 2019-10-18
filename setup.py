@@ -12,19 +12,20 @@ try:  # for pip >= 10
 except ImportError:  # for pip <= 9.0.3
     from pip.req import parse_requirements
 
-from setuptools import setup, Command, find_packages
+from setuptools import setup, Command
 from setuptools.command.test import test as TestCommand
 
 
 with io.open('eql/__init__.py', 'rt', encoding='utf8') as f:
     __version__ = re.search(r'__version__ = \'(.*?)\'', f.read()).group(1)
 
-
 install_requires = parse_requirements('requirements.txt', session=False)
 install_requires = [str(req.req) for req in install_requires]
 
 test_requires = parse_requirements('requirements_test.txt', session=False)
 test_requires = [str(req.req) for req in test_requires]
+
+etc_files = [os.path.relpath(fn, 'eql') for fn in glob.glob('eql/etc/*') if not fn.endswith('.py')]
 
 
 class Lint(Command):
@@ -53,32 +54,45 @@ class Lint(Command):
 class Test(TestCommand):
     """Use pytest (http://pytest.org/latest/) in place of the standard unittest library."""
 
+    user_options = [("pytest-args=", "a", "Arguments to pass to pytest")]
+
     def initialize_options(self):
         """Need to ensure pytest_args exists."""
         TestCommand.initialize_options(self)
         self.pytest_args = []
 
-    def finalize_options(self):
-        """Zero test_args and force test_suite to run."""
-        TestCommand.finalize_options(self)
-        self.test_args = [
-            '--cov-report=xml', '--cov-report=html', '--cov=eql', '--junitxml=junit.xml', '-x', '-v'
-        ]
-        self.test_suite = True
-
     def run_tests(self):
         """Run pytest."""
         import pytest
-        sys.exit(pytest.main(self.test_args))
+        sys.exit(pytest.main(self.pytest_args))
 
-
-etc_files = [os.path.relpath(fn, 'eql') for fn in glob.glob('eql/etc/*') if not fn.endswith('.py')]
 
 setup(
     name='eql',
     version=__version__,
     description='Event Query Language',
     install_requires=install_requires,
+    author='Endgame, Inc.',
+    author_email='eql@endgame.com',
+    license='AGPLv3',
+    classifiers=[
+        'Intended Audience :: Developers',
+        'Intended Audience :: Information Technology',
+        'Intended Audience :: Science/Research',
+        'Intended Audience :: System Administrators',
+        'Natural Language :: English',
+        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Topic :: Database',
+        'Topic :: Internet :: Log Analysis',
+        'Topic :: Scientific/Engineering :: Information Analysis',
+    ],
+    url='https://eql.readthedocs.io',
     tests_require=test_requires,
     cmdclass={
         'lint': Lint,
@@ -88,16 +102,30 @@ setup(
         'console_scripts': [
             'eql=eql.main:main',
         ],
+        'pygments.lexers': [
+            'eql=eql.highlighters:EqlLexer'
+        ]
     },
     extras_require={
+        'docs': [
+            'sphinx',
+            'sphinx_rtd_theme',
+        ],
+        'cli': [
+            'pygments',
+            'prompt_toolkit',
+        ],
         'lint': test_requires,
         'test': test_requires,
         'loaders': [
             'pyyaml',
             'toml',
+        ],
+        'highlighters': [
+            'pygments',
         ]
     },
-    packages=find_packages(),
+    packages=['eql', 'eql.tests', 'eql.etc'],
     package_data={
         'eql': etc_files,
     },

@@ -1,12 +1,41 @@
 .. include:: links.rst
 
 ======================
-Command-Line Utility
+Interactive Shell
 ======================
 
-The EQL python package provides a command line interface that will stream over `JSON`_,
-and output as matches are found. An input file can be provided with ``-f`` in JSON or as lines of JSON (``.jsonl``).
-Lines of JSON can also be processed as streams from stdin.
+The EQL python package provides an interactive shell for data exploration,
+as well as commands to directly search over `JSON`_ and output matches to
+the console. First install Python and then use ``pip`` to install EQL.
+
+.. code-block:: console
+
+    $ pip install eql
+
+
+For the optimal shell experience, use Python 3.6+ and install the optional dependencies for EQL:
+
+.. code-block:: console
+
+    $ pip install eql[cli]
+
+Once the shell is installed. Run the ``eql`` command to interact with and search data sets.
+Type ``help`` within the shell to get a list of commands and ``exit`` when finished.
+
+|asciicast|
+
+.. |asciicast| image:: https://asciinema.org/a/259453.svg
+   :target: https://asciinema.org/a/259453
+
+.. note::
+
+    In Python 2.7, the argument parsing is a little different. Instead of running ``eql`` directly
+    to invoke the interactive shell, run ``eql shell``.
+
+
+In addition, the ``query`` command within EQL will stream over `JSON`_, and
+output as matches are found. An input file can be provided with ``-f`` in JSON
+or as lines of JSON (``.jsonl``). Lines of JSON can also be processed as streams from stdin.
 
 
 .. code-block:: console

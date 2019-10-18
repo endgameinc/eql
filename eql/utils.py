@@ -5,17 +5,10 @@ import io
 import json
 import os
 import sys
+import threading
 
-# Lazy load dynamic loaders
-try:
-    import yaml
-except ImportError:
-    yaml = None
-
-try:
-    import toml
-except ImportError:
-    toml = None
+PLUGIN_PREFIX = "eql_"
+_loaded_plugins = False
 
 # Python2 and Python3 compatible type checking
 unicode_t = type(u"")
@@ -34,14 +27,31 @@ else:
     numbers = int, float
 
 
+# Optionally load dynamic loaders
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+try:
+    import toml
+except ImportError:
+    toml = None
+
+
 def is_string(s):
     """Check if a python object is a unicode or ascii string."""
     return isinstance(s, strings)
 
 
-def is_number(s):
+def is_number(n):
     """Check if a python object is a unicode or ascii string."""
-    return isinstance(s, numbers)
+    return isinstance(n, numbers)
+
+
+def is_array(a):
+    """Check if a number is array-like."""
+    return isinstance(a, (list, tuple))
 
 
 def str_presenter(dumper, data):
@@ -140,17 +150,17 @@ def save_dump(contents, filename):
 
 def stream_json_lines(json_input):
     """Iterate over json lines to get Events."""
+    decoder = json.JSONDecoder()
     for line in json_input:
-        line = line.strip()
-        if line.strip():
-            yield json.loads(line)
+        if "{" in line:
+            yield decoder.decode(line)
 
 
 def stream_file_events(file_path, file_format=None, encoding="utf8"):
     """Stream a file as JSON.
 
     :param str file_path: Path to the file
-    :param str file_format: One of json.jgz, json.gz
+    :param str file_format: One of json/jsonl [.gz]
     :param str encoding: File encoding (ascii, utf8, utf16, etc.)
     """
     gz_ext = '.gz'
@@ -204,3 +214,135 @@ def stream_events(fileobj, file_format="json"):
         return json.load(fileobj)
 
     raise NotImplementedError("Unexpected format: {}".format(file_format))
+
+
+def is_stateful(query):
+    """Determine if a query requires any state tracking or if logic is atomic.
+
+    :param ast.PipedQuery|ast.Analytic query: The parsed query AST to analyze
+    :rtype: bool
+    """
+    # Resolve circular dependency for is_stateless
+    from . import ast  # noqa: E402
+    from . import pipes  # noqa: E402
+
+    if not isinstance(query, ast.EqlNode):
+        raise TypeError("unsupported type {} to is_stateful. Expected {}".format(type(query), ast.EqlNode))
+
+    stateful_nodes = (
+        ast.SubqueryBy,  # join/sequence
+        ast.NamedSubquery,  # child/descendant/event of
+        pipes.CountPipe, pipes.UniqueCountPipe,  # pipes count/unique_count
+
+        # some pipe combinations, such as "| sort field | head 5" are questionable
+    )
+
+    return any(isinstance(node, stateful_nodes) for node in query)
+
+
+def match_kv(condition):
+    """Take a list of key value pairs and generate an EQL expression.
+
+    :param dict condition: The source text query
+    :rtype: ast.Expression
+    """
+    # Resolve circular dependency for match_kv
+    from . import ast  # noqa: E402
+    from .parser import parse_expression
+
+    if not isinstance(condition, dict):
+        raise TypeError("unsupported type {} to match_kv. Expected {}".format(type(condition), ast.EqlNode))
+
+    and_node = ast.Boolean(True)
+
+    for field_text, field_match in sorted(condition.items()):
+        if not isinstance(field_match, (list, tuple)):
+            field_match = [field_match]
+
+        field_node = parse_expression(field_text)
+        if not isinstance(field_node, ast.Field):
+            raise TypeError("expected Field as key to dictionary, got {}".format(type(field_node).__name__))
+
+        exact = []
+        wildcards = []
+        for term in field_match:
+            literal = ast.Literal.from_python(term)  # this may raise a TypeError
+            if isinstance(literal, ast.String) and "*" in literal.value:
+                wildcards.append(literal)
+            else:
+                exact.append(literal)
+
+        match_node = ast.InSet(field_node, exact).optimize()
+        if wildcards:
+            match_node |= ast.FunctionCall("wildcard", [field_node] + wildcards)
+        and_node &= match_node
+
+    return and_node
+
+
+def load_extensions(force=False):
+    """Load EQL extensions."""
+    global _loaded_plugins
+
+    if force or not _loaded_plugins:
+        import pkgutil
+        import importlib
+
+        _loaded_plugins = True
+
+        for module_loader, name, ispkg in pkgutil.iter_modules():
+            if name.startswith(PLUGIN_PREFIX):
+                importlib.import_module(name)
+
+
+class ParserConfig(object):
+    """Context manager for handling parser configurations."""
+
+    __stacks = threading.local()
+
+    def __init__(self, *managers, **config):
+        """Set the current status."""
+        self.managers = managers
+        self.context = {k: v for k, v in config.items() if v is not None}
+        super(ParserConfig, self).__init__()
+
+    @classmethod
+    def get_stack(cls, name):
+        """Get a stack and initialize it to empty."""
+        return cls.__stacks.__dict__.setdefault(name, [])
+
+    @classmethod
+    def push_stack(cls, name, value):
+        """Push a value onto a stack for the current thread."""
+        cls.get_stack(name).append(value)
+
+    @classmethod
+    def pop_stack(cls, name):
+        """Pop the last value of the thread."""
+        return cls.get_stack(name).pop()
+
+    @classmethod
+    def read_stack(cls, name, default=None, silent=True):
+        """Read the current value of the thread."""
+        stack = cls.get_stack(name)
+        if silent and len(stack) == 0:
+            return default
+        return stack[-1]
+
+    def __enter__(self):
+        """Enter a with statement."""
+        for mgr in self.managers:
+            mgr.__enter__()
+
+        for k, v in self.context.items():
+            self.push_stack(k, v)
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Pop from the stack."""
+        for k in self.context:
+            self.pop_stack(k)
+
+        for mgr in reversed(self.managers):
+            mgr.__exit__(exc_type, exc_val, exc_tb)

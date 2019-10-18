@@ -6,6 +6,9 @@
 start = single_query;
 
 
+cli_query = @:piped_query [';'] $;
+
+
 piped_query::PipedQuery
     =
     | query:base_query pipes:[pipe_chain]
@@ -66,13 +69,13 @@ by_values
 
 event_query::EventQuery
     =
-    [event_type:ident 'where' ~ ] cond:expression
+    [event_type:ident 'where' ~ ] cond:root_expression
     ;
 
 
 macro::Macro
     =
-    'macro' ~ name:ident '(' params:params')' body:expression
+    'macro' ~ name:ident '(' params:params')' body:root_expression
     ;
 
 const::Constant
@@ -93,8 +96,13 @@ definition
 definitions = {definition} $;
 single_definition = definition $;
 single_query = piped_query $;
-single_expression = expression $;
+single_expression = root_expression $;
+single_atom = atom $;
 
+
+root_expression::RootExpression
+    = expr:expression
+    ;
 
 expression
     =
@@ -102,10 +110,14 @@ expression
     | subexpression
     ;
 
+# Add check for missing parenthesis
+check_paren::CheckParentheses
+    =
+    '(' ~ expr:expression ')'
+    ;
 
 or_expr::OrTerms
     = terms+:subexpression {'or' ~ terms+:subexpression}+;
-
 
 subexpression
     =
@@ -144,7 +156,7 @@ in_set::InSet
 
 # Operators
 equals::Equals = '==' | '=';
-comparator = @:('<=' | '<' | equals | '!=' | '>=' | '>');
+comparator::Comparator = comp:('<=' | '<' | equals | '!=' | '>=' | '>');
 
 
 value
@@ -152,6 +164,7 @@ value
     | function_call
     | named_subquery
     | check_paren
+    | atom
     ;
 
 function_call::FunctionCall
@@ -159,15 +172,10 @@ function_call::FunctionCall
     name:ident '(' ~ args:[expressions] ')'
     ;
 
-check_paren
-    =
-    | '(' ~ @:expression ')'
-    | atom
-    ;
-
 
 atom
     =
+    | time_unit
     | literal
     | field
     ;
@@ -181,19 +189,26 @@ expressions
 argument
     = expression;
 
+subquery_type::SubqueryType
+    = name:ident 'of' ~;
+
 named_subquery::NamedQuery
-    = name:ident 'of' ~ query:subquery;
+    = stype:subquery_type query:subquery;
 
 
 field::Field
     =
-    base:ident sub_fields:{sub_field}
+    base:ident sub_fields:{attribute | array_index}
     ;
 
-sub_field
+attribute::Attribute
+    = '.' attr:ident
+    ;
+
+
+array_index::ArrayIndex
     =
-    | '.' @:ident
-    | '[' @:unsigned_integer ']'
+    '[' value:unsigned_integer ']'
     ;
 
 
