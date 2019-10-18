@@ -1127,3 +1127,25 @@ expected_event_ids  = [57]
 query = '''
 registry where arrayContains(bytes_written_string_list, "ross", "en-US")
 '''
+
+[queries.q169]
+expected_event_ids  = [11, 50]
+description = "test window pipe"
+query = '''
+process where subtype == "create" |
+window 5m |
+unique parent_process_name, process_name |
+unique_count parent_process_name |
+filter count == 5
+'''
+
+[queries.q170]
+expected_event_ids  = [55]
+description = "test window pipe with descendant"
+query = '''
+file where event_subtype_full == "file_create_event"
+	and descendant of [process where process_name == "cmd.exe"] |
+	window 5m |
+	unique_count process_name |
+	filter count == 5
+'''
