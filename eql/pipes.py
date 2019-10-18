@@ -1,5 +1,5 @@
 """EQL Pipes."""
-from .ast import PipeCommand
+from .ast import PipeCommand, TimeRange
 from .schema import Schema, EVENT_TYPE_GENERIC
 from .types import dynamic, NUMBER, literal, PRIMITIVES, EXPRESSION, get_type
 from .utils import is_string
@@ -14,6 +14,7 @@ __all__ = (
     "CountPipe",
     "FilterPipe",
     "UniqueCountPipe",
+    "WindowPipe"
 )
 
 
@@ -152,3 +153,27 @@ class FilterPipe(PipeCommand):
     def expression(self):
         """Get the filter expression."""
         return self.arguments[0]
+
+
+@PipeCommand.register('window')
+class WindowPipe(PipeCommand):
+    """Maintains a time window buffer for streaming events."""
+
+    argument_types = [literal(NUMBER)]
+
+    minimum_args = 1
+    maximum_args = 1
+
+    @property
+    def timespan(self):
+        """Get timespan as a TimeRange object."""
+        return TimeRange.convert(self.arguments[0])
+
+    @classmethod
+    def validate(cls, arguments, type_hints=None):
+        """After performing type checks, validate that the timespan is greater than zero."""
+        index, arguments, type_hints = super(WindowPipe, cls).validate(arguments, type_hints)
+        ts = cls(arguments).timespan
+        if index is None and (ts is None or ts.delta.total_seconds() <= 0):
+            index = 0
+        return index, arguments, type_hints
