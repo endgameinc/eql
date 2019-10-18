@@ -141,7 +141,7 @@ Find suspicious recon commands that were executed within a 5 minute window
 Find processes that have network connections to a single host with over 100 unique ports within a 10 second window
   .. code-block:: eql
 
-    network where destination_address in ("10.*", "172.*", "192.*")
+    network where wildcard(destination_address, "10.*", "172.*", "192.*")
     | window 10s
     | unique_count process_name, destination_port
     | filter count >= 100
