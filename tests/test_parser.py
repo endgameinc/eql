@@ -276,6 +276,7 @@ class TestParser(unittest.TestCase):
             'sequence [process where pid == pid]',
             'sequence [process where pid == pid] []',
             'sequence with maxspan=false [process where true] [process where true]',
+            'sequence with maxspan=10g [process where true] [process where true]',
             'sequence with badparam=100 [process where true] [process where true]',
             # check that the same number of BYs are in every subquery
             'sequence [file where true] [process where true] by field1',

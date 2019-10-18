@@ -347,7 +347,7 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             if name.startswith(unit.rstrip('s') or 's'):
                 return ast.TimeRange(datetime.timedelta(seconds=val * interval)), types.literal(types.NUMBER)
 
-        raise self._error(node.unit, "Unknown time unit")
+        raise self._error(node, "Unknown time unit")
 
     def walk__check_parentheses(self, node):
         """Check that parentheses are matching."""
