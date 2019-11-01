@@ -55,6 +55,7 @@ by moving ``by user_name`` to the top of the query.
       [ file where file_name == "*.exe"] by file_path
       [ process where true] by process_path
 
+
 Managing State
 --------------
 Occasionally, a ``sequence`` needs to carefully manage and expire state. Sequences are valid

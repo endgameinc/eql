@@ -1261,7 +1261,7 @@
   },
   {
     "event_subtype_full": "request_event",
-    "event_type": "generic",
+    "event_type": "dns",
     "event_type_full": "dns_event",
     "opcode": 3008,
     "pid": 924,

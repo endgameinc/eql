@@ -1,6 +1,24 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Version 0.8
+_Released 2019-11-01_
+
+### Added
+* Method syntax
+* Mathematical operators `+`, `-`, `*`, `/`, `%`
+* Documentation for `match()` function
+* `between()` function for extracting the first substring between two strings
+* `cidrMatch()` function and several helper methods for subnet matching and regex building 
+* `extract_query_terms` to extract the original text for each event in a query
+
+### Changed
+* Parser from TatSu to Lark
+
+### Fixed
+* Examples for sequences in the Implementation Details page
+* Compatibility for `eql shell` with Python 2.7
+
 ## Version 0.7
 _Released 2019-07-24_
 
@@ -53,7 +71,7 @@ _Released 2018-12-13_
 ## Version 0.6.1
 _Released 2019-12-05_
 
-## Added
+### Added
 * Support for gzipped files
 
 ## Version 0.6

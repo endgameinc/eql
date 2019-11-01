@@ -46,7 +46,7 @@ def is_string(s):
 
 def is_number(n):
     """Check if a python object is a unicode or ascii string."""
-    return isinstance(n, numbers)
+    return isinstance(n, numbers) and not isinstance(n, bool)
 
 
 def is_array(a):
@@ -226,7 +226,10 @@ def is_stateful(query):
     from . import ast  # noqa: E402
     from . import pipes  # noqa: E402
 
-    if not isinstance(query, ast.EqlNode):
+    if isinstance(query, ast.EqlAnalytic):
+        query = query.query
+
+    elif not isinstance(query, ast.EqlNode):
         raise TypeError("unsupported type {} to is_stateful. Expected {}".format(type(query), ast.EqlNode))
 
     stateful_nodes = (
@@ -278,6 +281,23 @@ def match_kv(condition):
         and_node &= match_node
 
     return and_node
+
+
+def get_output_types(query):
+    """Get the output event types for a query."""
+    from .walkers import RecursiveWalker
+    from .ast import EqlAnalytic, PipedQuery
+
+    if isinstance(query, EqlAnalytic):
+        query = query.query
+
+    elif not isinstance(query, PipedQuery):
+        raise TypeError("unsupported type {} to get_output_types. Expected {}".format(type(query), PipedQuery))
+
+    walker = RecursiveWalker()
+    walker.walk(query)
+
+    return walker.output_event_types
 
 
 def load_extensions(force=False):

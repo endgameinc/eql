@@ -9,52 +9,72 @@ math, string manipulation or more sophisticated expressions to be expressed.
 
 .. function:: add(x, y)
 
-  Returns ``x + y``
+    Returns ``x + y``
 
-.. function:: arrayContains(some_array, value)
+    .. versionchanged:: 0.8
+        Added ``+`` operator directly.
 
-  Check if ``value`` is a member of the array ``some_array``.
+.. function:: arrayContains(some_array, value [, ...])
 
-  .. code-block:: eql
+    Check if ``value`` is a member of the array ``some_array``.
 
-      // {my_array: ["value1", "value2", "value3"]}
+    .. versionchanged:: 0.7
+        Support for additional arguments.
 
-      arrayContains(my_array, "value2")  // returns true
-      arrayContains(my_array, "value4")  // returns false
+    .. code-block:: eql
+
+        // {my_array: ["value1", "value2", "value3"]}
+
+        arrayContains(my_array, "value2")           // returns true
+        arrayContains(my_array, "value4")           // returns false
+        arrayContains(my_array, "value3", "value4)  // returns true
 
 
 .. function:: arraySearch(array, variable, expression)
 
-  Check if any member in the array matches an expression.
-  Unlike :func:`arrayContains`, this can search over nested structures in arrays, and supports
-  searching over arrays within arrays.
+    Check if any member in the array matches an expression.
+    Unlike :func:`arrayContains`, this can search over nested structures in arrays, and supports
+    searching over arrays within arrays.
 
-  .. code-block:: eql
+    .. code-block:: eql
 
-      // {my_array: [{user: "root", props: [{level: 1}, {level: 2}]},
-      //             {user: "guest", props: [{level: 1}]}]
+        // {my_array: [{user: "root", props: [{level: 1}, {level: 2}]},
+        //             {user: "guest", props: [{level: 1}]}]
 
-      arraySearch(my_array, item, item.user == "root")                       // returns true
-      arraySearch(my_array, item, item.props[0].level == 1)                  // returns true
-      arraySearch(my_array, item, item.props[1].level == 4)                  // returns false
-      arraySearch(my_array, item, arraySearch(item.props, p, p.level == 2))  // returns true
+        arraySearch(my_array, item, item.user == "root")                       // returns true
+        arraySearch(my_array, item, item.props[0].level == 1)                  // returns true
+        arraySearch(my_array, item, item.props[1].level == 4)                  // returns false
+        arraySearch(my_array, item, arraySearch(item.props, p, p.level == 2))  // returns true
 
 
 
 .. function:: arrayCount(array, variable, expression)
 
-  Count the number of matches in an array to an expression.
+    Count the number of matches in an array to an expression.
 
-  .. code-block:: eql
+    .. versionadded:: 0.7
 
-      // {my_array: [{user: "root", props: [{level: 1}, {level: 2}]},
-      //             {user: "guest", props: [{level: 1}]}]
+    .. code-block:: eql
 
-      arrayCount(my_array, item, item.user == "root")                           // returns 1
-      arrayCount(my_array, item, item.props[0].level == 1)                      // returns 2
-      arrayCount(my_array, item, item.props[1].level == 4)                      // returns 0
-      arrayCount(my_array, item, arrayCount(item.props, p, p.level == 2) == 1)  // returns 1
+        // {my_array: [{user: "root", props: [{level: 1}, {level: 2}]},
+        //             {user: "guest", props: [{level: 1}]}]
 
+        arrayCount(my_array, item, item.user == "root")                           // returns 1
+        arrayCount(my_array, item, item.props[0].level == 1)                      // returns 2
+        arrayCount(my_array, item, item.props[1].level == 4)                      // returns 0
+        arrayCount(my_array, item, arrayCount(item.props, p, p.level == 2) == 1)  // returns 1
+
+.. function:: between(source, left, right [, greedy=false, case_sensitive=false])
+
+    Extracts a substring from ``source`` that's also between ``left`` and ``right``.
+
+    :param greedy: Matches the longest string when set, similar to ``.*`` vs ``.*?``.
+    :param case_sensitive: Match case when searching for ``left`` and ``right```.
+
+    .. code-block:: eql
+
+        between("welcome to event query language", " ", " ")            // returns "to"
+        between("welcome to event query language", " ", " ", true)      // returns "to event query"
 
 .. function:: concat(...)
 
@@ -62,11 +82,25 @@ math, string manipulation or more sophisticated expressions to be expressed.
 
     .. code-block:: eql
 
-      concat("Process ", process_name, " executed with pid ", pid)
+        concat("Process ", process_name, " executed with pid ", pid)
+
+.. function:: cidrMatch(ip_address, cidr_block [, ...])
+
+    Returns ``true`` if the source address matches any of the provided CIDR blocks.
+
+    .. versionchanged:: 0.8
+
+    .. code-block:: eql
+
+        // ip_address = "192.168.152.12"
+        cidrMatch(ip_address, "10.0.0.0/8", "192.168.0.0/16")     // returns true
 
 .. function:: divide(m, n)
 
     Return ``m / n``
+
+    .. versionchanged:: 0.8
+        Added ``/`` operator directly.
 
 .. function:: endsWith(x, y)
 
@@ -76,17 +110,31 @@ math, string manipulation or more sophisticated expressions to be expressed.
 
     Returns the length of a string. Non-string values return 0.
 
+.. function:: match(source, pattern, [, ...])
+
+    Checks if multiple regular expressions are matched against a source string.
+
+    .. code-block:: eql
+
+        match("event query language", ?"[a-z]+ [a-z]+ [a-z]")   // returns true
+
 .. function:: modulo(m, n)
 
     Performs the `modulo`_ operator and returns the remainder of ``m / n``.
+
+    .. versionchanged:: 0.8
+        Added ``%`` operator directly.
 
 .. function:: multiply(x, y)
 
     Returns ``x * y``
 
-.. function:: number(s[, base])
+    .. versionchanged:: 0.8
+        Added ``*`` operator directly.
 
-    :param: base: The `base` of a number. Default value is 10 if not provided.
+.. function:: number(s[, base=10])
+
+    :param number base: The `base` of a number
 
     Returns a number constructed from the string ``s``.
 
@@ -116,3 +164,21 @@ math, string manipulation or more sophisticated expressions to be expressed.
         command_line == "* create *" or command_line == "* config *" or command_line == "* start *"
 
         wildcard(command_line, "* create *", "* config *", "* start *")
+
+Methods
+-------
+Calling functions with values returned from other functions can often be difficult to read
+for complex expressions. EQL also provides an alternative method syntax that flows more
+naturally from left to right.
+
+For instance, the expression:
+
+.. code-block:: eql
+
+    length(between(command_line, "-enc ", " ")) > 500
+
+is equivalent to the method syntax:
+
+.. code-block:: eql
+
+    command_line:between(command_line, "-enc ", " "):length() > 500

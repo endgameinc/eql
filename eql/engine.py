@@ -327,7 +327,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                             count = count + 1
                 return count
             return walk_array
-        raise TypeError(u"Invalid signature {}".format(node))
+        raise EqlCompileError(u"Invalid signature {}".format(node))
 
     def _function_array_search(self, arguments):
         node = FunctionCall('arraySearch', arguments)
@@ -344,7 +344,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                             return True
                 return False
             return walk_array
-        raise TypeError(u"Invalid signature {}".format(node))
+        raise EqlCompileError(u"Invalid signature {}".format(node))
 
     def _convert_function_call(self, node):  # type: (FunctionCall) -> callable
         name = node.name
@@ -360,7 +360,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             func = func.get_callback(*node.arguments)
 
         if not callable(func):
-            raise KeyError("Unknown function {}".format(node.name))
+            raise EqlCompileError("Unknown function {}".format(node.name))
 
         get_arguments = self._convert_tuple(node.arguments)
 
@@ -430,7 +430,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             def compare(x, y):
                 return types_match(x, y) and x >= y
         else:
-            raise NotImplementedError("Unknown comparator {}".format(node.comparator))
+            raise EqlCompileError("Unknown comparator {}".format(node.comparator))
 
         def callback(scope):  # type: (Scope) -> bool
             left = get_left(scope)
@@ -438,6 +438,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             return compare(left, right)
 
         return callback
+
+    def _convert_math_operation(self, node):  # type: (MathOperation) -> callable
+        return self.convert(node.to_function_call())
 
     def _convert_and(self, node):  # type: (CompoundTerm) -> callable
         get_terms = [self.convert(term) for term in node.terms]
@@ -701,7 +704,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         elif node.query_type == NamedSubquery.EVENT:
             return self._get_event_of(node.query)
         else:
-            raise ValueError("Unknown query type {}".format(node.query_type))
+            raise EqlCompileError("Unknown query type {}".format(node.query_type))
 
     def _get_descendant_of(self, node):  # type: (EventQuery) -> callable
         sources = set()
@@ -1029,7 +1032,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             self._convert_sequence(base_query, output_pipe)
 
         else:
-            raise NotImplementedError("Unsupported {}".format(type(base_query).__name__))
+            raise EqlCompileError("Unsupported {}".format(type(base_query).__name__))
 
     def _convert_analytic(self, analytic):  # type: (EqlAnalytic) -> callable
         analytic_id = analytic.id or analytic.name
@@ -1117,7 +1120,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             elif isinstance(data, dict):
                 events = [Event.from_data(data)]
             else:
-                raise ValueError("Unable to reduce {}".format(data))
+                raise EqlCompileError("Unable to reduce {}".format(data))
 
             for reducer in self._reducer_hooks[analytic_id]:
                 reducer(events)

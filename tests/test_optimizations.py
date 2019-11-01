@@ -139,11 +139,19 @@ class TestParseOptimizations(unittest.TestCase):
             '2 >= 1',
             '2 >= 2',
             '2 != 1',
+            '(1 * 2 + 3 * 4 + 10 / 2) == (2 + 12 + 5)',
+            '(1 * 2 + 3 * 4 + 10 / 2) == 19',
+            '1 * 2 + 3 * 4 + 10 / 2 == 2 + 12 + 5',
             '"ABC" <= "ABC"',
             "length('abcdefg') == 7",
             "100 in (1, 2, 3, 4, 100, 105)",
             "'rundll' in (abc.def[100], 'RUNDLL')",
             "not 'rundll' in ('100', 'nothing')",
+            '1 - -2 == 3',
+            '1 - +2 == -1',
+            '1 +- length(a) == 1 - length(a)',
+            '100:concat():length() == 3',
+            '995 == (100 * 10):subtract("hello":length())',
         ]
 
         expected_false = [
@@ -155,6 +163,8 @@ class TestParseOptimizations(unittest.TestCase):
             '"ABC*DEF" == " ABC    DEF    "',
             '"abc" > "def"',
             '"abc" != "abc"',
+            # check that these aren't left to right
+            '1 * 2 + 3 * 4 + 10 / 2 == 15',
         ]
 
         for expression in expected_true:

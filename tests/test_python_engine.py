@@ -6,7 +6,6 @@ from collections import defaultdict
 from eql import *  # noqa: F403
 from eql.ast import *  # noqa: F403
 from eql.parser import ignore_missing_functions
-from eql.functions import Wildcard, Match
 from eql.schema import EVENT_TYPE_GENERIC
 from eql.tests.base import TestEngine
 
@@ -122,7 +121,7 @@ class TestPythonEngine(TestEngine):
             # ('process where length(0)', TypeError),
             # ('file where file_name.abc', AttributeError),
             # ('file where pid.something', AttributeError),
-            ('registry where invalidFunction(pid, ppid)', KeyError),
+            ('registry where invalidFunction(pid, ppid)', EqlCompileError),
         ]
 
         # Make sure that these all work as expected queries
@@ -495,26 +494,3 @@ class TestPythonEngine(TestEngine):
         output = self.get_output(queries=[parse_query(query)], config=config, events=events)
         event_ids = [event.data['unique_pid'] for event in output]
         self.validate_results(event_ids, ['host1-1003'], "Relationships failed due to pid collision")
-
-    def test_mutli_line_functions(self):
-        """Test wildcard and match functions."""
-        sources = [
-            "this is a single line comment",
-            """This is
-            a multiline
-            comment""",
-            "this\nis\nalso\na\nmultiline\ncomment"
-        ]
-
-        for source in sources:
-            self.assertTrue(Match.run(source, ".*comment"))
-            # \n newlines must match on \n \s etc. but won't match on " "
-            self.assertTrue(Match.run(source, ".*this\sis\s.*comment"))
-            self.assertTrue(Match.run(source, "t.+a.+c.+"))
-            self.assertFalse(Match.run(source, "MiSsInG"))
-
-        for source in sources:
-            self.assertTrue(Wildcard.run(source, "*comment"))
-            self.assertTrue(Wildcard.run(source, "this*is*comment"))
-            self.assertTrue(Wildcard.run(source, "t*a*c*"))
-            self.assertFalse(Wildcard.run(source, "MiSsInG"))

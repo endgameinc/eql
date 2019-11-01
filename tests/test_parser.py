@@ -8,8 +8,10 @@ from collections import OrderedDict  # noqa: F403
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
 from eql.parser import (
-    parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal
+    parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
+    extract_query_terms
 )
+from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
 
 
@@ -39,6 +41,7 @@ class TestParser(unittest.TestCase):
             '"string"',
             'abc and def',
             '(1==abc) and def',
+            '1 * 2 + 3 * 4 + 10 / 2',
             'abc == (1 and 2)',
             'abc == (def and 2)',
             'abc == (def and def)',
@@ -90,7 +93,6 @@ class TestParser(unittest.TestCase):
             '',  # empty
             'a xor b',  # made up comparator
             'a ^ b',  # made up comparator
-            'a % "b"',  # made up comparator
             'a b c d',  # missing syntax
             'def[]',  # no index
             'def[ghi]',  # index not a number
@@ -156,6 +158,14 @@ class TestParser(unittest.TestCase):
             'image_load where not x <= y',
             'image_load where not x >= y',
             'image_load where not x > y',
+            'process where _leadingUnderscore == 100',
+            'network where 1 * 2 + 3 * 4 + 10 / 2 == 2 + 12 + 5',
+            'file where 1 - -2',
+            'file where 1 + (-2)',
+            'file where 1 * (-2)',
+            'file where 3 * -length(file_path)',
+            'network where a * b + c * d + e / f == g + h + i',
+            'network where a * (b + c * d) + e / f == g + h + i',
             'process where pid == 4 or pid == 5 or pid == 6 or pid == 7 or pid == 8',
             'network where pid == 0 or pid == 4 or (ppid == 0 or ppid = 4) or (abc == defgh) and process_name == "*" ',
             'network where pid = 4',
@@ -255,7 +265,6 @@ class TestParser(unittest.TestCase):
             'file_name )',
             'file_name (\r\n\r\n',
             'file_name where (\r\n\r\n)',
-            'process where _badSymbol == 100',
             'process where 1field == 2field',
             'sequence where 1field == 2field',
             'process where true | filter',
@@ -358,3 +367,62 @@ class TestParser(unittest.TestCase):
 
         query_text = "process where // true"
         self.assertRaises(EqlParseError, parse_query, query_text)
+
+    def test_method_syntax(self):
+        """Test correct parsing and rendering of methods."""
+        parse1 = parse_expression("(a and b):concat():length()")
+        parse2 = parse_expression("a and b:concat():length()")
+        self.assertNotEquals(parse1, parse2)
+
+        class Unmethodize(DepthFirstWalker):
+            """Strip out the method metadata, so its rendered directly as a node."""
+
+            def _walk_function_call(self, node):
+                node.as_method = False
+                return node
+
+        without_method = Unmethodize().walk(parse1)
+        expected = parse_expression("length(concat(a and b))")
+
+        self.assertEquals(parse1, parse_expression("(a and b):concat():length()"))
+        self.assertIsNot(parse1, without_method)
+        self.assertEquals(without_method, expected)
+
+    def test_term_extraction(self):
+        """Test that EQL terms are correctly extracted."""
+        process_event = """
+            process where process_name == "net.exe" and child of [
+                network where destination_port == 443
+            ]
+        """
+        file_event = "file where false"
+        network_event = "   network   where\n\n\n\n   destination_address='1.2.3.4'\n\t  and destination_port == 8443"
+
+        sequence_template = "sequence with maxspan=10m [{}] by field1, field2, [{}] by field2, field3 [{}] by f4, f5"
+        join_template = "join [{}] by a [{}] by b [{}] by c until [dns where false] by d"
+
+        # basic sequence with by
+        terms = [process_event, network_event, file_event]
+        stripped = [t.strip() for t in terms]
+        sequence_extracted = extract_query_terms(sequence_template.format(*terms))
+        self.assertListEqual(sequence_extracted, stripped)
+
+        # sequence with by and pipes
+        terms = [network_event, process_event, process_event]
+        stripped = [t.strip() for t in terms]
+        sequence_extracted = extract_query_terms(sequence_template.format(*terms) + "| head 100 | tail 10")
+        self.assertListEqual(sequence_extracted, stripped)
+
+        # join with by
+        terms = [network_event, process_event, process_event]
+        stripped = [t.strip() for t in terms]
+        join_extracted = extract_query_terms(join_template.format(*terms))
+        self.assertListEqual(join_extracted, stripped)
+
+        # simple query without pipes
+        simple_extracted = extract_query_terms(network_event)
+        self.assertListEqual(simple_extracted, [network_event.strip()])
+
+        # simple query with pipes
+        simple_extracted = extract_query_terms(network_event + "| unique process_name, user_name\n\n| tail 10")
+        self.assertListEqual(simple_extracted, [network_event.strip()])

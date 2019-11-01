@@ -7,9 +7,6 @@ VENV_BIN := $(VENV)/bin
 PYTHON := $(VENV_BIN)/python
 PIP := $(PYTHON) -m pip
 SPHINXBUILD ?= $(VENV_BIN)/sphinx-build
-VERSION ?=
-
-PARSER_FILE := eql/_parsergen.py
 
 
 $(VENV):
@@ -19,16 +16,9 @@ $(VENV):
 	$(PIP) install setuptools -U
 
 
-$(PARSER_FILE): $(VENV)
-	$(PYTHON) -m tatsu eql/etc/eql.ebnf -o $(PARSER_FILE)
-
-.PHONY: parser
-parser: $(PARSER_FILE)
-
-
 .PHONY: clean
 clean:
-	rm -rf $(VENV) *.egg-info .eggs *.egg htmlcov build dist .build .tmp .tox *.egg-info .coverage coverage.xml junit.xml .pytest_cache $(PARSER_FILE)
+	rm -rf $(VENV) *.egg-info .eggs *.egg htmlcov build dist .build .tmp .tox *.egg-info .coverage coverage.xml junit.xml .pytest_cache
 	find . -type f -name '*.pyc' -delete
 	find . -type f -name '__pycache__' -delete
 
@@ -37,12 +27,12 @@ testdeps:
 	$(PIP) install -r requirements_test.txt
 
 .PHONY: pytest
-pytest: $(VENV) parser testdeps
+pytest: $(VENV) testdeps
 	$(PYTHON) setup.py -q test
 
 
 .PHONY: pylint
-pylint: $(VENV) parser testdeps
+pylint: $(VENV) testdeps
 	$(PYTHON) setup.py -q lint
 
 
@@ -51,22 +41,22 @@ test: $(VENV) pylint pytest
 
 
 .PHONY: sdist
-sdist: $(VENV) parser
+sdist: $(VENV)
 	$(PYTHON) setup.py sdist
 
 
 .PHONY: bdist_egg
-bdist_egg: $(VENV) parser
+bdist_egg: $(VENV)
 	$(PYTHON) setup.py bdist_egg
 
 
 .PHONY: bdist_wheel
-bdist_wheel: $(VENV) parser
+bdist_wheel: $(VENV)
 	$(PYTHON) setup.py bdist_wheel
 
 
 .PHONY: install
-install: $(VENV) parser
+install: $(VENV)
 	$(PYTHON) setup.py install
 
 .PHONY: all
@@ -81,4 +71,4 @@ docs: $(VENV) install
 .PHONY: upload
 upload: $(VENV)
 	$(PIP) install twine~=1.13
-	$(VENV_BIN)/twine upload  dist/*
+	$(VENV_BIN)/twine upload dist/*
