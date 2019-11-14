@@ -70,7 +70,7 @@ For instance, if ``whoami.exe`` executed from a batch file, matching ppid of ``w
 can only be done while the parent process is alive. As a result, the sequence is valid ``until``
 the matching termination event occurs.
 
-.. code-block::eql
+.. code-block:: eql
 
     sequence
       [ process where process_name == "cmd.exe" and command_line == "* *.bat*" and event_subtype_full == "creation_event"] by pid
