@@ -7,3 +7,4 @@
 .. _unix tail: https://en.wikipedia.org/wiki/Tail(Unix)
 .. _tatsu: https://tatsu.readthedocs.io
 .. _lark: https://lark-parser.readthedocs.io
+.. _string slicing: https://docs.python.org/3/library/stdtypes.html#common-sequence-operations
