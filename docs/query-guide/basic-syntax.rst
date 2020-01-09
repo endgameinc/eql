@@ -35,6 +35,13 @@ Value comparisons
 
       <  <=  ==  !=  >=  >
 
+Mathematical operations
+  .. versionadded:: 0.8
+
+  .. code-block:: eql
+
+      +  -  *  /  %
+
 Wildcard matching
   .. code-block:: eql
 
@@ -48,11 +55,19 @@ Function calls
       length(command_line) > 400
       add(timestamp, 300)
 
+Method syntax for concise function calls
+  .. code-block:: eql
+
+      command_line:length() > 400
 
 Lookups against static or dynamic values
+  .. versionadded:: 0.8
+      Support for ``not in``
+
   .. code-block:: eql
 
       user_name in ("Administrator", "SYSTEM", "NETWORK SERVICE")
+      user_name not in ("Administrator", "SYSTEM", "NETWORK SERVICE")
       process_name in ("cmd.exe", parent_process_name)
 
 Strings
@@ -66,7 +81,7 @@ for all characters except the quote character.
 
   "hello world"
   "hello world with 'substring'"
-  'example \t of \n escaped \b characters \r etc. \f'
+  'example \t of \n escaped \r characters'
   ?"String with literal 'slash' \ characters included"
 
 

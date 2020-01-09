@@ -55,6 +55,7 @@ by moving ``by user_name`` to the top of the query.
       [ file where file_name == "*.exe"] by file_path
       [ process where true] by process_path
 
+
 Managing State
 --------------
 Occasionally, a ``sequence`` needs to carefully manage and expire state. Sequences are valid
@@ -69,7 +70,7 @@ For instance, if ``whoami.exe`` executed from a batch file, matching ppid of ``w
 can only be done while the parent process is alive. As a result, the sequence is valid ``until``
 the matching termination event occurs.
 
-.. code-block::eql
+.. code-block:: eql
 
     sequence
       [ process where process_name == "cmd.exe" and command_line == "* *.bat*" and event_subtype_full == "creation_event"] by pid

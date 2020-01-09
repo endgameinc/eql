@@ -18,6 +18,7 @@ def render_engine(analytics, engine_type, config=None, analytics_only=False):
     :return str: Returns the base engine
     """
     load_extensions(force=False)
+    engine_type = engine_type.lstrip(".")
     if engine_type not in TextEngine.extensions:
         raise KeyError("Unable to translate to unknown extension {}.".format(engine_type))
     engine_cls = TextEngine.extensions[engine_type]

@@ -1,0 +1,19 @@
+# .coveragerc to control coverage.py
+[run]
+branch = True
+
+[report]
+exclude_lines =
+    pragma: no cover
+
+    raise NotImplementedError
+    raise EqlCompileError
+
+
+omit =
+    eql/__main__.py
+    eql/highlighters.py
+    eql/shell.py
+    eql/table.py
+    eql/_parsergen.py
+    eql/tests/*

@@ -2,7 +2,6 @@
 import re
 from collections import defaultdict, deque
 from contextlib import contextmanager
-
 from .schema import Schema
 from .utils import is_string, to_unicode
 
@@ -31,6 +30,7 @@ class Walker(object):
         self.in_pipes = []
         self.base_event_types = []
         self.node_stack = []
+        self.output_event_types = []
 
     def register_func(self, node_cls, func, prefix="_walk_"):
         """Register a callback function."""
@@ -81,11 +81,14 @@ class Walker(object):
         self.event_stack.append(node.event_type)
 
     def _enter_piped_query(self, node):  # type: (PipedQuery) -> None
+        self.output_event_types = []
         self.base_event_types = []
         if isinstance(node.first, EventQuery):
             self.base_event_types.append(node.first.event_type)
         else:
             self.base_event_types.extend(q.query.event_type for q in node.first.queries)
+
+        self.output_event_types = self.base_event_types[:]
 
     def _enter_pipe_command(self, node):
         self.in_pipes = True
@@ -103,7 +106,12 @@ class Walker(object):
         self.base_event_types = []
 
     def _exit_pipe_command(self, node):
+        """Update the output schemas as they change through each pipe."""
         self.in_pipes = False
+
+        incoming_schema = [Schema({event_type: {}}) for event_type in self.output_event_types]
+        output_schemas = node.output_schemas(node.arguments, None, incoming_schema)
+        self.output_event_types = [next(iter(s.schema.keys())) for s in output_schemas]
 
     def _walk_default(self, node, *args, **kwargs):
         return node

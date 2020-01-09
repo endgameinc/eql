@@ -48,15 +48,22 @@ class TestEngine(unittest.TestCase):
         return cls.__events
 
     @classmethod
+    def filter_queries(cls, q):
+        """Helper method for filtering the test queries for subclasses."""
+        return True
+
+    @classmethod
     def get_example_queries(cls):
         """Get example queries with their expected outputs."""
         with open(cls.queries_file, "r") as f:
-            queries = list(q for _, q in sorted(toml.load(f)["queries"].items()))
-            for q in queries:
+            queries = []
+            for q in toml.load(f)["queries"]:
                 analytic = cls.get_analytic(q['query'])
                 analytic.metadata['_info'] = q.copy()
                 q['analytic'] = analytic
-            return [q for q in queries if cls.engine_name not in q.get('skip', [])]
+                queries.append(q)
+
+            return list(filter(cls.filter_queries, queries))
 
     @classmethod
     def get_example_analytics(cls):

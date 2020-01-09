@@ -159,7 +159,7 @@ class TestSchemaValidation(unittest.TestCase):
             for query in valid:
                 self.assertRaises(EqlTypeMismatchError, parse_query, query)
 
-    def test_strict_schema(self):
+    def test_strict_schema_failures(self):
         """Check that fields can't be compared to null under strict schemas."""
         queries = [
             "process where command_line != null",
@@ -173,6 +173,18 @@ class TestSchemaValidation(unittest.TestCase):
         with strict_field_schema, Schema(self.schema):
             for query in queries:
                 self.assertRaises(EqlTypeMismatchError, parse_query, query)
+
+    def test_strict_schema_success(self):
+        """Check that fields can't be compared to null under strict schemas."""
+        queries = [
+            "process where command_line != 'abc.exe'",
+            "process where elevated != true",
+            "process where not elevated",
+        ]
+
+        with strict_field_schema, Schema(self.schema):
+            for query in queries:
+                parse_query(query)
 
     def test_count_schemas(self):
         """Test that schemas are updated with counts in pipes."""

@@ -4,10 +4,9 @@ from __future__ import unicode_literals
 import datetime
 import re
 from collections import OrderedDict
-from operator import lt, le, eq, ne, ge, gt
+from operator import lt, le, eq, ne, ge, gt, mul, truediv, mod, add, sub
 from string import Template
 
-from .functions import get_function
 from .signatures import SignatureMixin
 from .types import STRING, BOOLEAN, NUMBER, NULL, PRIMITIVES
 from .utils import to_unicode, is_string, is_number, ParserConfig
@@ -36,6 +35,7 @@ __all__ = (
     "Or",
     "Not",
     "FunctionCall",
+    "MathOperation",
 
     # queries
     "EventQuery",
@@ -89,7 +89,7 @@ class BaseNode(object):
         """Check if two ASTs are not equivalent."""
         return not self == other
 
-    def render(self, precedence=None):
+    def render(self, precedence=None, **kwargs):
         """Render the AST in the target language."""
         if not self.template:
             raise NotImplementedError()
@@ -98,10 +98,10 @@ class BaseNode(object):
         for name, value in self.iter_slots():
             if isinstance(value, (list, tuple)):
                 delim = self.delims[name]
-                value = [v.render(self.precedence) if isinstance(v, BaseNode) else v for v in value]
+                value = [v.render(self.precedence, **kwargs) if isinstance(v, BaseNode) else v for v in value]
                 value = delim.join(v for v in value)
             elif isinstance(value, BaseNode):
-                value = value.render(self.precedence)
+                value = value.render(self.precedence, **kwargs)
             dicted[name] = value
         return self.template.substitute(dicted)
 
@@ -143,9 +143,9 @@ class EqlNode(BaseNode):
         # Render the template if defined
         return super(EqlNode, self).render()
 
-    def render(self, precedence=None):
+    def render(self, precedence=None, **kwargs):
         """Render an EQL node and add parentheses to support orders of operation."""
-        rendered = self._render()
+        rendered = self._render(**kwargs)
         if precedence is not None and self.precedence is not None and self.precedence > precedence:
             return '({})'.format(rendered)
         return rendered
@@ -391,12 +391,12 @@ class Field(Expression):
 class FunctionCall(Expression):
     """A call into a user-defined function by name and a list of arguments."""
 
-    __slots__ = 'name', 'arguments'
+    __slots__ = 'name', 'arguments', 'as_method'
     precedence = Literal.precedence + 1
     template = Template('$name($arguments)')
     delims = {'arguments': ', '}
 
-    def __init__(self, name, arguments):
+    def __init__(self, name, arguments, as_method=False):
         """Call the function by name.
 
         :param str name: The name of the user-defined function
@@ -404,6 +404,7 @@ class FunctionCall(Expression):
         """
         self.name = name
         self.arguments = arguments or []
+        self.as_method = as_method
 
     @property
     def callback(self):
@@ -427,13 +428,23 @@ class FunctionCall(Expression):
             except NotImplementedError:
                 pass
 
-        return FunctionCall(self.name, arguments)
+        return FunctionCall(self.name, arguments, self.as_method)
+
+    def _render(self):
+        """Determine the precedence by checking if it's called as a method."""
+        if self.as_method:
+            return '{base}:{name}({remaining})'.format(
+                base=self.arguments[0].render(self.precedence), name=self.name,
+                remaining=", ".join(arg.render(self.precedence) for arg in self.arguments[1:]))
+
+        return super(FunctionCall, self)._render()
 
     def render(self, precedence=None):
         """Convert wildcards back to the short hand syntax."""
-        if self.name == 'wildcard' and len(self.arguments) == 2 and isinstance(self.arguments[1], String):
-            lhs, rhs = self.arguments
-            return Comparison(lhs, Comparison.EQ, rhs).render(precedence)
+        if self.signature:
+            alternate_render = self.signature.alternate_render(self.arguments, precedence)
+            if alternate_render:
+                return alternate_render
 
         return super(FunctionCall, self).render()
 
@@ -467,6 +478,67 @@ class NamedSubquery(Expression):
         self.query = query
 
 
+class MathOperation(Expression):
+    """Mathematical operation between two numeric values."""
+
+    __slots__ = 'left', 'operator', 'right'
+    OPERATORS = ('*', '/', '%', '+', '-')
+
+    op_lookup = {'*': mul, '/': truediv, '%': mod, '+': add, '-': sub}
+    func_lookup = {"*": "multiply", "+": "add", "-": "subtract", "%": "modulo", "/": "divide"}
+
+    min_precedence = NamedSubquery.precedence + 1
+    max_precedence = min_precedence + 1
+    full_template = Template('$left $operator $right')
+    negative_template = Template('$operator$right')
+
+    def __init__(self, left, operator, right):  # type: (Expression, str, Expression) -> None
+        """Mathematical operation between two numeric values."""
+        self.left = left
+        self.operator = operator
+        self.right = right
+
+    def to_function_call(self):
+        """Convert a math operator to an EQL function call."""
+        return FunctionCall(self.func_lookup[self.operator], [self.left, self.right])
+
+    @property
+    def precedence(self):
+        """Get the precedence depending on the operator."""
+        if self.operator in "*/%":
+            return self.min_precedence
+        else:
+            return self.max_precedence
+
+    def optimize(self):
+        """Evaluate literals when possible."""
+        left = self.left.optimize()
+        right = self.right.optimize()
+
+        if isinstance(left, Number) and isinstance(right, Number):
+            # don't divide by zero when optimizing, leave that to the target implementation
+            if not (right.value == 0 and self.operator in ("/", "%")):
+                return Number(self.func(left.value, right.value))
+
+        if isinstance(right, MathOperation) and right.left == Number(0):
+            # a +- b parses as a + (0 - b) should become a + -b
+            if self.operator in ("-", "+") and right.operator in ("-", "+"):
+                operator = "-" if (self.operator == "-") ^ (right.operator == "-") else "+"
+                return MathOperation(left, operator, right.right)
+
+        return MathOperation(left, self.operator, right)
+
+    @property
+    def template(self):
+        """Make the template dynamic."""
+        return self.negative_template if self.left == Number(0) else self.full_template
+
+    @property
+    def func(self):
+        """Get a callback function for the specific operator."""
+        return self.op_lookup[self.operator]
+
+
 class Comparison(Expression):
     """Represents a comparison between two values, as in ``<expr> <comparator> <expr>``.
 
@@ -477,7 +549,7 @@ class Comparison(Expression):
     LT, LE, EQ, NE, GE, GT = ('<', '<=', '==', '!=', '>=', '>')
 
     func_lookup = {LT: lt, LE: le, EQ: eq, NE: ne, GE: ge, GT: gt}
-    precedence = NamedSubquery.precedence + 1
+    precedence = MathOperation.max_precedence + 1
     template = Template('$left $comparator $right')
 
     def __init__(self, left, comparator, right):
@@ -665,16 +737,17 @@ class InSet(Expression):
         """Get an equivalent node that does performs multiple comparisons with 'or' and '=='."""
         return Or([Comparison(self.expression, Comparison.EQ, v) for v in self.container])
 
-    def _render(self):
+    def _render(self, negate=False):
         values = [v.render() for v in self.container]
         expr = self.expression.render(self.precedence)
+        operator = 'not in' if negate else 'in'
 
         if len(self.container) > 3 and sum(len(v) for v in values) > 40:
             delim = ',\n'
-            return '{} in (\n{}\n)'.format(expr, self.indent(delim.join(values)))
+            return '{lhs} {op} (\n{rhs}\n)'.format(lhs=expr, op=operator, rhs=self.indent(delim.join(values)))
         else:
             delim = ', '
-            return '{} in ({})'.format(expr, delim.join(values))
+            return '{lhs} {op} ({rhs})'.format(lhs=expr, op=operator, rhs=delim.join(values))
 
 
 class BaseCompound(Expression):
@@ -740,11 +813,14 @@ class Not(Expression):
 
     def render(self, precedence=None):
         """Convert wildcard functions back to the short hand syntax."""
+        if isinstance(self.term, InSet):
+            return self.term.render(precedence, negate=True)
+
         if isinstance(self.term, FunctionCall) and self.term.name == 'wildcard':
             if len(self.term.arguments) == 2 and isinstance(self.term.arguments[1], String):
                 lhs, rhs = self.term.arguments
                 return Comparison(lhs, Comparison.NE, rhs).render(precedence)
-        return super(Not, self).render()
+        return super(Not, self).render(precedence)
 
 
 class And(BaseCompound):
@@ -1198,3 +1274,4 @@ class PreProcessor(ParserConfig):
 
 # circular dependency
 from .walkers import Walker, RecursiveWalker  # noqa: E402
+from .functions import get_function  # noqa: E402

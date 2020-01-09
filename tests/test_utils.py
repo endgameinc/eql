@@ -4,8 +4,8 @@ import os
 import unittest
 
 import eql.utils
-from eql.parser import parse_query, parse_expression, EqlParseError
-from eql.utils import is_stateful, match_kv
+from eql.parser import parse_query, parse_expression, parse_analytic, EqlParseError
+from eql.utils import is_stateful, match_kv, get_output_types
 
 
 class TestUtils(unittest.TestCase):
@@ -142,3 +142,65 @@ class TestUtils(unittest.TestCase):
         self.assertRaises(TypeError, match_kv, [])
         self.assertRaises(TypeError, match_kv, True)
         self.assertRaises(TypeError, match_kv, 1)
+
+    def test_output_types(self):
+        """Test that output types are correctly returned from eql.utils.get_output_types."""
+        query_ast = parse_query("process where true")
+        self.assertEquals(get_output_types(query_ast), ["process"])
+
+        query_ast = parse_analytic({"query": "process where descendant of [file where true]"})
+        self.assertEquals(get_output_types(query_ast), ["process"])
+
+        query_ast = parse_query("file where true | unique pid | head 1")
+        self.assertEquals(get_output_types(query_ast), ["file"])
+
+        query_ast = parse_query("file where true | unique_count file_path")
+        self.assertEquals(get_output_types(query_ast), ["file"])
+
+        query_ast = parse_query("any where true | unique_count file_path")
+        self.assertEquals(get_output_types(query_ast), ["any"])
+
+        query_ast = parse_query("file where true | count")
+        self.assertEquals(get_output_types(query_ast), ["generic"])
+
+        query_ast = parse_query("file where true | count process_name")
+        self.assertEquals(get_output_types(query_ast), ["generic"])
+
+        query_ast = parse_query("""
+        sequence
+            [registry where true]
+            [file where true]
+            [process where true]
+            [process where true]
+            [process where true]
+            [network where true]
+        """)
+        self.assertEquals(get_output_types(query_ast), ["registry", "file", "process", "process", "process", "network"])
+
+        query_ast = parse_query("""
+        sequence
+            [registry where true]
+            [file where true]
+            [process where true]
+            [process where true]
+            [process where true]
+            [network where true]
+        | count event_type
+        | head 5
+        """)
+        self.assertEquals(get_output_types(query_ast), ["generic"])
+
+        query_ast = parse_query("""
+        sequence
+            [registry where true]
+            [file where true]
+            [process where true]
+            [process where true]
+            [process where true]
+            [network where true]
+        | unique events[2].event_type
+        | sort events[1].file_size
+        | head 5
+        | filter events[4].process_name == 'test.exe'
+        """)
+        self.assertEquals(get_output_types(query_ast), ["registry", "file", "process", "process", "process", "network"])
