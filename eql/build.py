@@ -98,10 +98,13 @@ def get_engine(query, config=None):
     :param str|dict|EqlAnalytic|PipedQuery query: The query text or parsed query
     :param dict config: The configuration for PythonEngine
     """
-    if isinstance(query, dict):
-        query = parse_analytic(query)
-    elif is_string(query):
-        query = parse_query(query, implied_base=True, implied_any=True)
+    engine = PythonEngine(config)
+
+    with engine:
+        if isinstance(query, dict):
+            query = parse_analytic(query)
+        elif is_string(query):
+            query = parse_query(query, implied_base=True, implied_any=True)
 
     def run_engine(inputs):
         results = []
