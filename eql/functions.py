@@ -439,6 +439,7 @@ class Length(FunctionSignature):
             return len(array)
         return 0
 
+
 @register
 class LeftStrip(FunctionSignature):
     """Strip leading whitespace from a string."""
@@ -451,13 +452,13 @@ class LeftStrip(FunctionSignature):
     @classmethod
     def run(cls, source):
         """Strip whitespace from source."""
-
         if not is_string(source):
             return None
 
         stripped = source.lstrip()
 
         return stripped
+
 
 @register
 class Match(FunctionSignature):
@@ -536,6 +537,7 @@ class Multiply(MathFunctionSignature):
         if is_number(x) and is_number(y):
             return x * y
 
+
 @register
 class RightStrip(FunctionSignature):
     """Strip trailing whitespace from a string."""
@@ -548,13 +550,13 @@ class RightStrip(FunctionSignature):
     @classmethod
     def run(cls, source):
         """Strip whitespace from source."""
-
         if not is_string(source):
             return None
 
         stripped = source.rstrip()
 
         return stripped
+
 
 @register
 class Safe(FunctionSignature):
@@ -595,10 +597,11 @@ class StringContains(FunctionSignature):
             return substring.lower() in source.lower()
         return False
 
+
 @register
 class Strip(FunctionSignature):
     """Strip leading & trailing whitespace from a string."""
-    
+
     name = "strip"
     argument_types = [STRING]
     return_value = STRING
@@ -607,13 +610,13 @@ class Strip(FunctionSignature):
     @classmethod
     def run(cls, source):
         """Strip whitespace from source."""
-
         if not is_string(source):
             return None
 
         stripped = source.strip()
 
         return stripped
+
 
 @register
 class Substring(FunctionSignature):
