@@ -19,6 +19,32 @@ expected_event_ids = []
 query = 'process where missing_field != null'
 
 [[queries]]
+expected_event_ids = [3, 78, 80]
+query = 'process where strip(process_name) == "smss.exe"'
+
+[[queries]]
+expected_event_ids = [3, 78, 80]
+query = 'process where lstrip(process_name) == "smss.exe"'
+
+[[queries]]
+expected_event_ids = [3, 78, 80]
+query = 'process where rstrip(process_name) == "smss.exe"'
+
+[[queries]]
+expected_event_ids = [75306]
+query = 'process where rstrip(command_line) == " C:\\Windows\\system32\\net  group administrators \"findme2\""'
+
+[[queries]]
+expected_event_ids = [75306]
+query = 'process where strip(command_line) == "C:\\Windows\\system32\\net  group administrators \"findme2\""'
+
+[[queries]]
+expected_event_ids = [75306]
+query = 'process where lstrip(command_line) == "C:\\Windows\\system32\\net  group administrators \"findme2\" "'
+
+
+
+[[queries]]
 expected_event_ids  = [1, 2, 3, 4, 5]
 query = 'process where bad_field == null | head 5'
 
@@ -882,7 +908,7 @@ query = '''
 process where process_name == original_file_name
 | filter process_name='net*.exe'
 '''
-expected_event_ids  = [97, 98]
+expected_event_ids  = [97, 98, 75306]
 note = "check that case insensitive comparisons are performed for fields."
 
 [[queries]]
@@ -890,7 +916,7 @@ query = '''
 process where original_file_name == process_name
 | filter length(original_file_name) > 0
 '''
-expected_event_ids  = [97, 98, 75273, 75303]
+expected_event_ids  = [97, 98, 75273, 75303, 75306]
 description = "check that case insensitive comparisons are performed for fields."
 
 [[queries]]
