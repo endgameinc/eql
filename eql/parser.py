@@ -209,8 +209,8 @@ class LarkToEQL(Interpreter):
         column = node.column - 1 if not end else node.end_column - 1
 
         # get more lines for more informative error messages. three before + two after
-        before = self.lines[-3:line_number + 1]
-        after = self.lines[line_number+1:2]
+        before = self.lines[:line_number + 1][-3:]
+        after = self.lines[line_number + 1:][:3]
 
         source = '\n'.join(b for b in before)
         trailer = '\n'.join(a for a in after)
