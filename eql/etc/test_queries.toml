@@ -375,7 +375,6 @@ sequence
 '''
 expected_event_ids  = [1, 2, 2, 3]
 
-
 [[queries]]
 query = '''
 sequence

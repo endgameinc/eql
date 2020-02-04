@@ -533,4 +533,3 @@ class TestPythonEngine(TestEngine):
                 actual_len,
                 f"Expected results to be same when streaming events multiple times {query}"
             )
-
