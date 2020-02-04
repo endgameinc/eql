@@ -15,7 +15,7 @@ sequence: "sequence" [join_values with_params? | with_params join_values?] subqu
 join: "join" join_values? subquery_by subquery_by+ until_subquery_by?
 until_subquery_by.2: "until" subquery_by
 pipes: pipe+
-pipe: "|" name [single_atom single_atom+ | expressions]
+pipe: "|" name [single_atom single_atom+ | time_range | expressions]
 
 join_values.2: "by" expressions
 ?with_params.2: "with" named_params
