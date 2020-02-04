@@ -62,7 +62,7 @@ class EqlLexer(RegexLexer):
             (r'\?"(\\"|[^"])*"?', token.String.Regex),
             (r"\?'(\\'|[^'])*'?", token.String.Regex),
 
-            (r'(==|=|!=|<|<=|>=|>)', token.Operator),
+            (r'(==|=|!=|<|<=|>=|>|\+|\-|\*|/|\%|:)', token.Operator),
             (r'[()\[\],.]', token.Punctuation),
         ]
     }

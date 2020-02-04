@@ -2,6 +2,7 @@
 [![PyPI](https://img.shields.io/pypi/v/eql.svg)](https://pypi.python.org/pypi/eql)
 [![Gitter](https://badges.gitter.im/eventquerylang/community.svg)](https://gitter.im/eventquerylang/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 [![Documentation](https://readthedocs.org/projects/eql/badge/?version=latest)](https://eql.readthedocs.io/en/latest/?badge=latest)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 [![Twitter Follow](https://img.shields.io/twitter/follow/eventquerylang.svg?style=social)](https://twitter.com/eventquerylang)
 
@@ -20,7 +21,7 @@ If Python is configured and already in the PATH, then ``eql`` will be readily av
 
 ```console
 $ eql --version
-eql 0.7.0
+eql 0.8
 ```
 
 From there, try a [sample json file](docs/_static/example.json) and test it with EQL.

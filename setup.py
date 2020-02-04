@@ -59,7 +59,7 @@ class Test(TestCommand):
     def initialize_options(self):
         """Need to ensure pytest_args exists."""
         TestCommand.initialize_options(self)
-        self.pytest_args = []
+        self.pytest_args = ["--disable-warnings"]
 
     def run_tests(self):
         """Run pytest."""

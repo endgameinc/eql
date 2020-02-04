@@ -42,6 +42,7 @@ from .parser import (
     parse_literal,
     parse_query,
     strict_field_schema,
+    extract_query_terms,
 )
 from .schema import Schema
 from .transpilers import (
@@ -52,6 +53,7 @@ from .transpilers import (
 )
 from .utils import (
     ParserConfig,
+    get_output_types,
     is_stateful,
     load_dump,
     load_extensions,
@@ -64,7 +66,7 @@ from .walkers import (
     Walker,
 )
 
-__version__ = '0.7.0'
+__version__ = '0.8.2'
 __all__ = (
     "__version__",
     "AnalyticOutput",
@@ -91,9 +93,11 @@ __all__ = (
     "allow_enum_fields",
     "functions",
     "get_engine",
+    "get_output_types",
     "get_post_processor",
     "get_preprocessor",
     "get_reducer",
+    "extract_query_terms",
     "ignore_missing_fields",
     "ignore_missing_functions",
     "is_stateful",

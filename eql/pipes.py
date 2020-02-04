@@ -1,7 +1,7 @@
 """EQL Pipes."""
 from .ast import PipeCommand, TimeRange
-from .schema import Schema, EVENT_TYPE_GENERIC
-from .types import dynamic, NUMBER, literal, PRIMITIVES, EXPRESSION, get_type
+from .schema import Schema, EVENT_TYPE_GENERIC, MIXED_TYPES
+from .types import dynamic, NUMBER, literal, PRIMITIVES, EXPRESSION, get_type, BASE_STRING
 from .utils import is_string
 
 __all__ = (
@@ -41,10 +41,12 @@ class CountPipe(ByPipe):
     def output_schemas(cls, arguments, type_hints, event_schemas):
         # type: (list, list, list[Schema]) -> list[Schema]
         """Generate the output schema and determine the ``key`` field dyanmically."""
+        if type_hints is None:
+            type_hints = [MIXED_TYPES for _ in arguments]
         base_hints = [get_type(t) for t in type_hints]
-        base_hints = ["mixed" if not is_string(t) else t for t in base_hints]
+        base_hints = [MIXED_TYPES if not is_string(t) else t for t in base_hints]
         if len(arguments) == 0:
-            key_hint = "string"
+            key_hint = BASE_STRING
         elif len(arguments) == 1:
             key_hint = base_hints[0]
         else:
@@ -123,7 +125,7 @@ class UniquePipe(ByPipe):
 class UniqueCountPipe(ByPipe):
     """Returns unique results but adds a count field."""
 
-    minimum_args = 0
+    minimum_args = 1
 
     @classmethod
     def output_schemas(cls, arguments, type_hints, event_schemas):

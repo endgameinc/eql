@@ -16,7 +16,7 @@ from .ast import NamedSubquery
 from .engine import PythonEngine
 from .errors import EqlSyntaxError, EqlParseError
 from .functions import list_functions
-from .parser import parse_query, _get_parser, allow_enum_fields
+from .parser import parse_query, keywords, allow_enum_fields
 from .pipes import list_pipes, CountPipe
 from .schema import Schema, EVENT_TYPE_ANY, EVENT_TYPE_GENERIC
 from .table import Table
@@ -65,8 +65,11 @@ LIBEDIT = "libedit"
 PYREADLINE = "pyreadline"
 GNUREADLINE = "gnureadline"
 
-# Determine the input function that should be used for the prompt
-input_func = getattr(__builtins__, "raw_input", input)
+# Determine the input function that should be used for the prompt in a python2 and python3 compatible way
+try:
+    input_func = raw_input
+except NameError:
+    input_func = input
 
 # Determine which version of readline is installed
 for module in ["readline", "gnureadline"]:
@@ -209,23 +212,22 @@ class EqlShell(cmd.Cmd, object):
         """Get the EQL keywords."""
         if force or not cls.__eql_keywords:
             wordlist = set()
-            parser = _get_parser()
-            keywords = set(parser.keywords)
+            updated_keywords = set(keywords)
 
-            keywords.remove("in")
-            keywords.add("in (")
+            updated_keywords.remove("in")
+            updated_keywords.add("in (")
 
             wordlist.update(["true", "false", "null"])
 
-            keywords.remove("with")
+            updated_keywords.remove("with")
             wordlist.update(["with maxspan=", "fork=true"])
 
             wordlist.update("{}(".format(f) for f in list_functions())
             wordlist.update("| {}".format(p) for p in list_pipes())
-            keywords.remove("of")
+            updated_keywords.remove("of")
             wordlist.update(["{} of [".format(k) for k in NamedSubquery.supported_types])
 
-            wordlist.update(keywords)
+            wordlist.update(updated_keywords)
             cls.__eql_keywords = list(sorted(wordlist))
         return cls.__eql_keywords
 
@@ -442,7 +444,7 @@ class EqlShell(cmd.Cmd, object):
 
     def do_search(self, search_text):
         """Run an EQL search over the input data."""
-        search_lines = search_text.splitlines(keepends=False)
+        search_lines = search_text.splitlines(False)
         self.multiline = False
 
         # if only "search" is typed in, then keep prompting
@@ -463,7 +465,7 @@ class EqlShell(cmd.Cmd, object):
 
         # check if the query is fully valid, but spans multiple lines
         # we want to keep prompting until we see a semicolon, or two blank lines
-        if len(self.lastcmd.splitlines(keepends=True)) > 1:
+        if len(self.lastcmd.splitlines(True)) > 1:
             if not search_text.endswith(";") and self.empty_count < 2:
                 self.multiline = True
                 return

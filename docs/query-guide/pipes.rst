@@ -28,8 +28,9 @@ Count the number of times each value occurs
     process where true | count process_name
 
     // results look like
-    // {"count": 100, "key": "cmd.exe", "percent": .4}
-    // {"count": 50, "key": "powershell.exe", "percent": .2}
+    // {"count": 100, "key": "cmd.exe", "percent": 0.5}
+    // {"count": 50, "key": "powershell.exe", "percent": 0.25}
+    // {"count": 50, "key": "net.exe", "percent": 0.25}
 
 
 Count the number of times a set of values occur
@@ -38,8 +39,9 @@ Count the number of times a set of values occur
     process where true | count parent_process_name, process_name
 
     // results look like
-    // {"count": 100, "key": ["explorer.exe", "cmd.exe", "percent": .4}
-    // {"count": 100, "key": ["cmd.exe", "cmd.exe", "percent": .4}
+    // {"count": 100, "key": ["explorer.exe", "cmd.exe"], "percent": 0.5}
+    // {"count": 50, "key": ["explorer.exe", "powershell.exe"], "percent": 0.25}
+    // {"count": 50, "key": ["cmd.exe", "net.exe"], "percent": 0.25}
 
 
 ``unique``

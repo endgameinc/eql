@@ -1,5 +1,7 @@
 """EQL functions."""
 import re
+import socket
+import struct
 
 from .signatures import SignatureMixin
 from .errors import EqlError
@@ -10,6 +12,8 @@ from .utils import is_string, to_unicode, is_number
 
 
 _registry = {}
+REGEX_FLAGS = re.IGNORECASE | re.UNICODE | re.DOTALL
+MAX_IP = 0xffffffff
 
 
 def register(func):
@@ -38,6 +42,15 @@ class FunctionSignature(SignatureMixin):
         return cls.run
 
     @classmethod
+    def optimize(cls, arguments):
+        """Optimize each function independently."""
+        return FunctionCall(cls.name, arguments)
+
+    @classmethod
+    def alternate_render(cls, arguments, precedence=None, **kwargs):
+        """Return an alternate rendering for a function."""
+
+    @classmethod
     def run(cls, *arguments):
         """Reference implementation of the function."""
         raise NotImplementedError()
@@ -64,6 +77,14 @@ class MathFunctionSignature(FunctionSignature):
 
     argument_types = [NUMBER, NUMBER]
     return_value = NUMBER
+    operator = None
+
+    @classmethod
+    def optimize(cls, arguments):
+        """Convert to a MathOperation."""
+        if cls.operator:
+            return MathOperation(arguments[0], cls.operator, arguments[1])
+        return FunctionCall(cls.name, arguments)
 
 
 @register
@@ -121,6 +142,223 @@ class ArraySearch(DynamicFunctionSignature):
 
 
 @register
+class Between(FunctionSignature):
+    """Return a substring that's between two other substrings."""
+
+    name = "between"
+    argument_types = [STRING, STRING, STRING, literal(BOOLEAN), literal(BOOLEAN)]
+    minimum_args = 3
+    return_value = STRING
+
+    @classmethod
+    def run(cls, source_string, first, second, greedy=False, case_sensitive=False):
+        """Return the substring between two other ones."""
+        if is_string(source_string) and is_string(first) and is_string(second) and first and second:
+            match_string = source_string
+
+            if not case_sensitive:
+                match_string = match_string.lower()
+                first = first.lower()
+                second = second.lower()
+
+            before, first_match, remaining = match_string.partition(first)
+            if not first_match:
+                return ""
+
+            start_pos = len(before) + len(first_match)
+
+            if greedy:
+                between, second_match, _ = remaining.rpartition(second)
+            else:
+                between, second_match, _ = remaining.partition(second)
+
+            if not second_match:
+                return ""
+
+            end_pos = start_pos + len(between)
+            return source_string[start_pos:end_pos]
+
+
+@register
+class CidrMatch(FunctionSignature):
+    """Math an IP address against a list of IPv4 subnets in CIDR notation."""
+
+    name = "cidrMatch"
+    argument_types = [STRING, literal(STRING)]
+    additional_types = literal(STRING)
+    return_value = BOOLEAN
+
+    octet_re = r'(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])'
+    ip_re = r'\.'.join([octet_re, octet_re, octet_re, octet_re])
+    ip_compiled = re.compile(r'^{}$'.format(ip_re))
+    cidr_compiled = re.compile(r'^{}/(3[0-2]|2[0-9]|1[0-9]|[0-9])$'.format(ip_re))
+
+    # store it in native representation, then recover it in network order
+    masks = [struct.unpack(">L", struct.pack(">L", MAX_IP & ~(MAX_IP >> b)))[0] for b in range(33)]
+    mask_addresses = [socket.inet_ntoa(struct.pack(">L", m)) for m in masks]
+
+    @classmethod
+    def to_mask(cls, cidr_string):
+        """Split an IP address plus cidr block to the mask."""
+        ip_string, size = cidr_string.split("/")
+        size = int(size)
+        ip_bytes = socket.inet_aton(ip_string)
+        subnet_int, = struct.unpack(">L", ip_bytes)
+
+        mask = cls.masks[size]
+
+        return subnet_int & mask, mask
+
+    @classmethod
+    def make_octet_re(cls, start, end):
+        """Convert an octet-range into a regular expression."""
+        combos = []
+
+        if start == end:
+            return "{:d}".format(start)
+
+        if start == 0 and end == 255:
+            return cls.octet_re
+
+        # 0xx, 1xx, 2xx
+        for hundreds in (0, 100, 200):
+            h = int(hundreds / 100)
+            h_digit = "0?" if h == 0 else "{:d}".format(h)
+
+            # if the whole range is included, then add it
+            if start <= hundreds < hundreds + 99 <= end:
+                # allow for leading zeros
+                if h == 0:
+                    combos.append("{:s}[0-9]?[0-9]".format(h_digit))
+                else:
+                    combos.append("{:s}[0-9][0-9]".format(h_digit))
+                continue
+
+            # determine which of the tens ranges are entirely included
+            # so that we can do "h[a-b][0-9]"
+            hundreds_matches = []
+            full_tens = []
+
+            # now loop over h00, h10, h20
+            for tens in range(hundreds, hundreds + 100, 10):
+                t = int(tens / 10) % 10
+                t_digit = "0?" if (h == 0 and t == 0) else "{:d}".format(t)
+
+                if start <= tens < tens + 9 <= end:
+                    # fully included, add to the list
+                    full_tens.append(t)
+                    continue
+
+                # now add the final [a-b]
+                matching_ones = [one % 10 for one in range(tens, tens + 10) if start <= one <= end]
+
+                if matching_ones:
+                    ones_match = t_digit
+                    if len(matching_ones) == 1:
+                        ones_match += "{:d}".format(matching_ones[0])
+                    else:
+                        ones_match += "[{:d}-{:d}]".format(min(matching_ones), max(matching_ones))
+                    hundreds_matches.append(ones_match)
+
+            if full_tens:
+                if len(full_tens) == 1:
+                    tens_match = "{:d}".format(full_tens[0])
+                else:
+                    tens_match = "[{:d}-{:d}]".format(min(full_tens), max(full_tens))
+
+                # allow for 001 - 009
+                if h == 0 and 0 in full_tens:
+                    tens_match += "?"
+
+                tens_match += "[0-9]"
+                hundreds_matches.append(tens_match)
+
+            if len(hundreds_matches) == 1:
+                combos.append("{:s}{:s}".format(h_digit, hundreds_matches[0]))
+            elif len(hundreds_matches) > 1:
+                combos.append("{:s}({:s})".format(h_digit, "|".join(hundreds_matches)))
+
+        return "({})".format("|".join(combos))
+
+    @classmethod
+    def make_cidr_regex(cls, cidr):
+        """Convert a list of wildcards strings for matching a cidr."""
+        min_octets, max_octets = cls.to_range(cidr)
+        return r"\.".join(cls.make_octet_re(*pair) for pair in zip(min_octets, max_octets))
+
+    @classmethod
+    def to_range(cls, cidr):
+        """Get the IP range for a list of IP addresses."""
+        ip_integer, mask = cls.to_mask(cidr)
+        max_ip_integer = ip_integer | (MAX_IP ^ mask)
+
+        min_octets = struct.unpack("BBBB", struct.pack(">L", ip_integer))
+        max_octets = struct.unpack("BBBB", struct.pack(">L", max_ip_integer))
+
+        return min_octets, max_octets
+
+    @classmethod
+    def get_callback(cls, _, *cidr_matches):
+        """Get the callback function with all the masks converted."""
+        masks = [cls.to_mask(cidr.value) for cidr in cidr_matches]
+
+        def callback(source, *_):
+            if is_string(source) and cls.ip_compiled.match(source):
+                ip_integer, _ = cls.to_mask(source + "/32")
+
+                for subnet, mask in masks:
+                    if ip_integer & mask == subnet:
+                        return True
+
+            return False
+
+        return callback
+
+    @classmethod
+    def run(cls, ip_address, cidr_matches):
+        """Compare an IP address against a list of cidr blocks."""
+        if is_string(ip_address) and cls.ip_compiled.match(ip_address):
+            ip_integer, _ = cls.to_mask(ip_address + "/32")
+
+            for cidr in cidr_matches:
+                if is_string(cidr) and cls.cidr_compiled.match(cidr):
+                    subnet, mask = cls.to_mask(cidr)
+                    if ip_integer & mask == subnet:
+                        return True
+
+        return False
+
+    @classmethod
+    def validate(cls, arguments, type_hints=None):
+        """Validate the calling convention and change the argument order if necessary."""
+        # used to have just two arguments and the pattern was on the left and expression on the right
+        error_position, _, _ = super(CidrMatch, cls).validate(arguments, type_hints)
+
+        if error_position is not None:
+            return error_position, arguments, type_hints
+
+        # create a copy of the array that we can modify
+        arguments = arguments[:]
+
+        for pos, argument in enumerate(arguments[1:], 1):
+            argument = arguments[pos] = String(argument.value.strip())
+
+            if not cls.cidr_compiled.match(argument.value):
+                return pos, arguments, type_hints
+
+            # Since it does match, we should also rewrite the string
+            ip_address, size = argument.value.split("/")
+            subnet_integer, _ = cls.to_mask(argument.value)
+            subnet_bytes = struct.pack(">L", subnet_integer)
+            subnet_base = socket.inet_ntoa(subnet_bytes)
+
+            # overwrite the original argument so it becomes the subnet
+            argument.value = "{}/{}".format(subnet_base, size)
+
+        return None, arguments, type_hints
+
+
+@register
 class Concat(FunctionSignature):
     """Concatenate multiple values as strings."""
 
@@ -145,7 +383,7 @@ class Divide(MathFunctionSignature):
     @classmethod
     def run(cls, x, y):
         """Divide numeric values."""
-        if is_number(x) and is_number(y):
+        if is_number(x) and is_number(y) and y != 0:
             return float(x) / float(y)
 
 
@@ -220,7 +458,7 @@ class Match(FunctionSignature):
     def get_callback(cls, source_ast, *regex_literals):
         """Get a callback function that uses the compiled regex."""
         regs = [reg.value for reg in regex_literals]
-        compiled = re.compile("|".join(regs), re.IGNORECASE | re.UNICODE)
+        compiled = re.compile("|".join(regs), REGEX_FLAGS)
 
         def callback(source, *_):
             return is_string(source) and compiled.match(source) is not None
@@ -243,7 +481,7 @@ class Match(FunctionSignature):
             source = source.decode("utf-8", "ignore")
 
         if is_string(source):
-            match = re.match("|".join(matches), source, re.IGNORECASE | re.UNICODE | re.MULTILINE | re.DOTALL)
+            match = re.match("|".join(matches), source, REGEX_FLAGS)
             return match is not None
 
 
@@ -421,7 +659,7 @@ class Wildcard(FunctionSignature):
         """Get a callback function that uses the compiled regex."""
         wc_values = [wc.value for wc in wildcard_literals]
         pattern = cls.to_regex(*wc_values)
-        compiled = re.compile(pattern, re.IGNORECASE | re.UNICODE)
+        compiled = re.compile(pattern, REGEX_FLAGS)
 
         def callback(source, *_):
             return is_string(source) and compiled.match(source) is not None
@@ -429,8 +667,19 @@ class Wildcard(FunctionSignature):
         return callback
 
     @classmethod
+    def alternate_render(cls, arguments, precedence=None, **kwargs):
+        """Allow some functions to be rendered back as shorthand."""
+        if len(arguments) == 2 and isinstance(arguments[1], String):
+            lhs, rhs = arguments
+            return Comparison(lhs, Comparison.EQ, rhs).render(precedence, **kwargs)
+
+    @classmethod
     def run(cls, source, *wildcards):
         """Compare a string against a list of wildcards."""
         pattern = cls.to_regex(*wildcards)
-        compiled = re.compile(pattern, re.IGNORECASE | re.UNICODE | re.MULTILINE | re.DOTALL)
+        compiled = re.compile(pattern, REGEX_FLAGS)
         return is_string(source) and compiled.match(source) is not None
+
+
+# circular dependency
+from .ast import MathOperation, FunctionCall, Comparison, String  # noqa: E402

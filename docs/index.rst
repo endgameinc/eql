@@ -30,7 +30,7 @@ If Python is configured and already in the PATH, then ``eql`` will be readily av
 .. code-block:: console
 
      $ eql --version
-     eql 0.7.0
+     eql 0.8
 
 From there, try a :download:`sample json file <_static/example.json>` and test it with EQL.
 

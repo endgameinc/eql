@@ -4,14 +4,12 @@ from __future__ import unicode_literals
 import datetime
 import re
 import sys
-from collections import OrderedDict
-import threading
+from collections import OrderedDict, defaultdict
+import contextlib
 
-import tatsu
-import tatsu.exceptions
-import tatsu.objectmodel
-import tatsu.semantics
-import tatsu.walkers
+from lark import Lark, Tree, Token
+from lark.visitors import Interpreter
+from lark.exceptions import LarkError
 
 from . import ast
 from . import pipes
@@ -36,6 +34,7 @@ __all__ = (
     "ignore_missing_functions",
     "strict_field_schema",
     "allow_enum_fields",
+    "extract_query_terms",
 )
 
 
@@ -58,9 +57,6 @@ units = {
 
 RESERVED = {n.render(): n for n in [ast.Boolean(True), ast.Boolean(False), ast.Null()]}
 
-GRAMMAR = None
-compiled_parser = None
-compiler_lock = threading.Lock()
 
 NON_SPACE_WS = re.compile(r"[^\S ]+")
 
@@ -70,28 +66,43 @@ ignore_missing_fields = ParserConfig(ignore_missing_fields=False)
 strict_field_schema = ParserConfig(strict_fields=True, implied_booleans=False)
 allow_enum_fields = ParserConfig(enable_enum=True)
 
-
-local = threading.local()
-
-try:
-    from ._parsergen import EQLParser  # noqa: E402
-    local.parser = EQLParser(parseinfo=True, semantics=tatsu.semantics.ModelBuilderSemantics())
-except ImportError:
-    pass
+keywords = ("and", "by", "const", "false", "in", "join", "macro",
+            "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
+            )
 
 
-def transpose(iter):
-    """Transpose iterables."""
-    if not iter:
-        return [], []
-    return [list(t) for t in zip(*iter)]
+class KvTree(Tree):
+    """Helper class with methods for looking up child nodes by name."""
+
+    def get(self, name):
+        """Get a child by the name of the data."""
+        for match in self.get_list(name):
+            return match
+
+    def get_list(self, name):
+        """Get a list of all children for a name."""
+        return [child for child in self.children
+                if isinstance(child, Token) and child.type == name or
+                isinstance(child, KvTree) and child.data == name]
+
+    def __contains__(self, item):
+        return any(isinstance(child, Token) and child.type == item or
+                   isinstance(child, KvTree) and child.data == item for child in self.children)
+
+    def __getitem__(self, item):
+        """Helper method for getting by index."""
+        return self.get(item)
+
+    @property
+    def child_trees(self):
+        return [child for child in self.children if isinstance(child, KvTree)]
 
 
-class EqlWalker(tatsu.walkers.NodeWalker):
-    """Walker of Tatsu semantic model to convert it into a EQL AST."""
+class LarkToEQL(Interpreter):
+    """Walker of Lark tree to convert it into a EQL AST."""
 
-    def __init__(self):
-        """Walker for building an EQL syntax tree from a Tatsu syntax tree.
+    def __init__(self, text):
+        """Walker for building an EQL syntax tree from a Lark tree.
 
         :param bool implied_any: Allow for event queries to skip event type and WHERE, replace with 'any where ...'
         :param bool implied_base: Allow for queries to be built with only pipes. Base query becomes 'any where true'
@@ -99,7 +110,8 @@ class EqlWalker(tatsu.walkers.NodeWalker):
         :param bool pipes: Toggle support for pipes
         :param PreProcessor preprocessor: Use an EQL preprocessor to expand definitions and constants while parsing
         """
-        super(EqlWalker, self).__init__()
+        self.text = text
+        self._lines = None
         self.implied_base = ParserConfig.read_stack("implied_base", False)
         self.implied_any = ParserConfig.read_stack("implied_any", False)
 
@@ -132,54 +144,92 @@ class EqlWalker(tatsu.walkers.NodeWalker):
         self._pipe_schemas = []
         self._var_types = dict()
         self._check_functions = ParserConfig.read_stack("check_functions", True)
+        self._stacks = defaultdict(list)
+
+    @property
+    def lines(self):
+        """Lazily split lines in the original text."""
+        if self._lines is None:
+            self._lines = [t.rstrip("\r\n") for t in self.text.splitlines(True)]
+
+        return self._lines
+
+    @staticmethod
+    def unzip_hints(rv):
+        """Separate a list of (node, hints) into separate arrays."""
+        rv = list(rv)
+
+        if not rv:
+            return [], []
+
+        nodes, hints = zip(*rv)
+        return list(nodes), list(hints)
+
+    @contextlib.contextmanager
+    def scoped(self, **kv):
+        """Set scoped values."""
+        for k, v in kv.items():
+            self._stacks[k].append(v)
+        try:
+            yield
+        finally:
+            for k in kv:
+                self._stacks[k].pop()
+
+    def scope(self, name, default=None):
+        """Read something from the scope."""
+        stack = self._stacks[name]
+        if len(stack) == 0:
+            return default
+        return stack[-1]
 
     @property
     def multiple_events(self):
         """Check if multiple events can be queried."""
         return len(self._pipe_schemas) > 1
 
-    @property
-    def event_type(self):
-        """Get the active event type."""
-        if not self._event_types:
-            return EVENT_TYPE_ANY
-        return self._event_types[-1]
-
-    @staticmethod
-    def _error(node, message, end=False, cls=EqlSemanticError, width=None, **kwargs):
+    def _error(self, node, message, end=False, cls=EqlSemanticError, width=None, **kwargs):
+        # type: (KvTree, str) -> Exception
         """Generate."""
-        params = dict(node.ast)
+        params = {}
+        for child in node.children:
+            if isinstance(child, Token):
+                params[child.type] = child.value
+            elif isinstance(child, KvTree):
+                # TODO: Recover the original string slice
+                params[child.data] = child
+
         for k, value in params.items():
             if isinstance(value, list):
                 params[k] = ', '.join([v.render() if isinstance(v, ast.EqlNode) else to_unicode(v) for v in value])
+
         params.update(kwargs)
         message = message.format(**params)
-        line_number = node.parseinfo.line
+        line_number = node.line - 1 if not end else node.end_line - 1
+        column = node.column - 1 if not end else node.end_column - 1
 
         # get more lines for more informative error messages. three before + two after
-        before = node.parseinfo.buffer.get_lines(0, line_number)[-3:]
-        after = node.parseinfo.buffer.get_lines(line_number+1)[:2]
+        before = self.lines[:line_number + 1][-3:]
+        after = self.lines[line_number + 1:][:3]
 
-        source = '\n'.join(b.rstrip('\r\n') for b in before)
-        trailer = '\n'.join(a.rstrip('\r\n') for a in after)
+        source = '\n'.join(b for b in before)
+        trailer = '\n'.join(a for a in after)
 
         # lines = node.parseinfo.text_lines()
         # source = '\n'.join(l.rstrip() for l in lines)
-        col = node.line_info.col
 
         # Determine if the error message can easily look like this
         #                                                     ^^^^
-        if width is None and not end:
-            if not NON_SPACE_WS.search(node.text):
-                width = len(node.text)
+        if width is None and not end and node.line == node.end_line:
+            if not NON_SPACE_WS.search(self.lines[line_number][column:node.end_column]):
+                width = node.end_column - node.column
 
         if width is None:
             width = 1
 
-        return cls(message, line_number, col, source, width=width, trailer=trailer)
+        return cls(message, line_number, column, source, width=width, trailer=trailer)
 
-    @classmethod
-    def _type_error(cls, node, message, expected_type, actual_type=None, **kwargs):
+    def _type_error(self, node, message, expected_type, actual_type=None, **kwargs):
         """Return an exception for type mismatches."""
         kwargs.setdefault('cls', EqlTypeMismatchError)
         expected_spec = types.get_specifier(expected_type)
@@ -204,7 +254,7 @@ class EqlWalker(tatsu.walkers.NodeWalker):
                     if len(union_type) != 1:
                         type_strings.append("array")
                     else:
-                        type_strings.append("array[{}]".format(get_friendly_name(union_type, show_spec=False)))
+                        type_strings.append("array[{}]".format(get_friendly_name(union_type[0], show_spec=False)))
                 elif len(t) == 1 or union_type != "null":
                     type_strings.append(to_unicode(union_type))
 
@@ -218,7 +268,7 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             expected_type = get_friendly_name(expected_type, show_spec=not spec_match)
             actual_type = get_friendly_name(actual_type, show_spec=not spec_match)
 
-        return cls._error(node, message, actual_type=actual_type, expected_type=expected_type, **kwargs)
+        return self._error(node, message, actual_type=actual_type, expected_type=expected_type, **kwargs)
 
     def _walk_default(self, node, *args, **kwargs):
         """Callback function to walk the AST."""
@@ -228,39 +278,35 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             return tuple(self.walk(n, *args, **kwargs) for n in node)
         return node
 
-    def walk(self, node, *args, **kwargs):
-        """Optimize the AST while walking it."""
-        event_type = kwargs.pop("event_type", None)
-        split = kwargs.pop("split", False)
+    def visit_children(self, tree):
+        """Wrap visit_children to be more flexible."""
+        if tree is None:
+            return None
 
-        if event_type is not None:
-            self._event_types.append(event_type)
+        return Interpreter.visit_children(self, tree)
 
-        output = super(EqlWalker, self).walk(node, *args, **kwargs)
+    def visit(self, tree):
+        """Optimize a return value."""
+        if tree is None:
+            return None
 
-        if event_type is not None:
-            self._event_types.pop()
+        if isinstance(tree, list):
+            return [self.visit(t) for t in tree]
 
-        if isinstance(output, tuple) and isinstance(output[0], ast.EqlNode) and isinstance(output[1], tuple):
-            output_node, output_hint = output
+        rv = Interpreter.visit(self, tree)
+
+        if isinstance(rv, tuple) and rv and isinstance(rv[0], ast.EqlNode):
+            output_node, output_hint = rv
             output_node = output_node.optimize()
 
             # If it was optimized to a literal, the type may be constrained
             if isinstance(output_node, ast.Literal):
                 output_hint = types.get_specifier(output_hint), types.get_type(output_node.type_hint)
 
-            output = output_node, output_hint
-        elif isinstance(output, ast.EqlNode):
-            return output.optimize()
+            return output_node, output_hint
+        return rv
 
-        if split:
-            if isinstance(output, list):
-                return [list(o) for o in transpose(output)]
-            return zip(*output)
-
-        return output
-
-    def validate_signature(self, node, signature, arguments, hints):
+    def validate_signature(self, node, signature, argument_nodes, arguments, hints):
         """Validate a signature against input arguments and type hints."""
         error_node = node
         node_type = 'pipe' if issubclass(signature, ast.PipeCommand) else 'function'
@@ -278,10 +324,9 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             max_args = len(signature.argument_types)
 
         # Try to line up the error message with the argument that went wrong
-        # Strings and numbers don't generate tatsu nodes, so its difficult to recover parseinfo
         if min_args is not None and len(arguments) < min_args:
-            message = "Expected at least {} argument{} to pipe {}".format(
-                min_args, 's' if min_args != 1 else '', node.name)
+            message = "Expected at least {} argument{} to {} {}".format(
+                min_args, 's' if min_args != 1 else '', node_type, self.visit(node["name"]))
             raise self._error(error_node, message, end=len(arguments) != 0)
 
         elif max_args is not None and max_args < len(arguments):
@@ -292,12 +337,12 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             else:
                 argument_desc = 'up to {} arguments'.format(max_args)
             message = "Expected {} to {} {}".format(argument_desc, node_type, name)
-            error_node = node.args[max_args]
+            error_node = argument_nodes[max_args]
             raise self._error(error_node, message)
 
         elif bad_index is not None:
-            if isinstance(node.args[bad_index], tatsu.semantics.Node):
-                error_node = node.args[bad_index]
+            if isinstance(argument_nodes[bad_index], (KvTree, Token)):
+                error_node = argument_nodes[bad_index]
 
             actual_type = hints[bad_index]
             expected_type = signature.additional_types
@@ -312,72 +357,30 @@ class EqlWalker(tatsu.walkers.NodeWalker):
 
         return new_arguments, new_hints
 
-    def walk__root_expression(self, node, keep_hint=False, query_condition=False):
-        """Get the root expression, and rip out the type hint."""
-        expr, hint = self.walk(node.expr)
-        if query_condition and not self._implied_booleans and not types.check_types(types.BOOLEAN, hint):
-            raise self._type_error(node.expr, "Expected {expected_type} not {actual_type}", types.BOOLEAN, hint)
-        if keep_hint:
-            return expr, hint
-        return expr
+    def start(self, node):
+        """Entry point for the grammar."""
+        return self.visit(node.children[0])
 
     # literals
-    def walk__literal(self, node, **kwargs):
+    def literal(self, node):
         """Callback function to walk the AST."""
-        value = self.walk(node.value)
-        cls = ast.Literal.find_type(value)
+        value, = self.visit_children(node)
+        if is_string(value):
+            return ast.String(value), types.literal(ast.String)
+        return ast.Number(value), types.literal(ast.Number.type_hint)
 
-        if cls is ast.String:
-            value = to_unicode(value)
-
-            # If a 'raw' string is detected, then only unescape the quote character
-            if node.text.startswith('?'):
-                quote_char = node.text[-1]
-                value = value.replace("\\" + quote_char, quote_char)
-            else:
-                value = ast.String.unescape(value)
-
-        return cls(value), types.literal(cls.type_hint)
-
-    def walk__time_range(self, node):
+    def time_range(self, node):
         """Callback function to walk the AST."""
-        val = self.walk(node.val)
-        unit = self.walk(node.unit)
+        val, unit = self.visit_children(node)
+
         for name, interval in units.items():
             if name.startswith(unit.rstrip('s') or 's'):
                 return ast.TimeRange(datetime.timedelta(seconds=val * interval)), types.literal(types.NUMBER)
 
-        raise self._error(node, "Unknown time unit")
-
-    def walk__check_parentheses(self, node):
-        """Check that parentheses are matching."""
-        # check for the deepest one first, so it can raise an exception
-        expr = self.walk(node.expr)
-
-        if node.ast.get('closing', ')') is None:
-            raise self._error(node, "Mismatched parentheses ()")
-        return expr
+        raise self._error(node["name"], "Unknown time unit")
 
     # fields
-    def walk__attribute(self, node):
-        """Validate attributes."""
-        if node.attr in RESERVED:
-            raise self._error(node, "Illegal use of reserved value")
-        return node.attr
-
-    def walk__array_index(self, node):
-        """Get the index for the field in the array."""
-        if node.ast.get('value', None) is not None:
-            return node.value
-
-        if node.ast.get('closing', ']') is None:
-            raise self._error(node, "Mismatched brackets []")
-
-        if 'missing' in node.ast:
-            raise self._error(node, "Required index to array.")
-        raise self._error(node, "Invalid index to array.")
-
-    def _get_field_hint(self, node, field, allow_enum=False):
+    def _get_field_hint(self, node, field):
         type_hint = types.BASE_ALL
         allow_missing = self._schema.allow_missing
 
@@ -400,9 +403,9 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             return field, types.dynamic(type_hint)
 
         # check if it's a variable and
-        elif node.base not in self._var_types:
+        elif field.base not in self._var_types:
             event_field = field
-            event_type = self.event_type
+            event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
 
             type_hint = self._schema.get_event_type_hint(event_type, event_field.full_path)
 
@@ -428,55 +431,116 @@ class EqlWalker(tatsu.walkers.NodeWalker):
 
         return field, types.dynamic(type_hint)
 
-    def walk__field(self, node, get_variable=False, **kwargs):
-        """Callback function to walk the AST."""
-        if get_variable:
-            if node.base in RESERVED or node.sub_fields:
-                raise self._type_error(node, "Expected {expected_type} not {field} to function", types.VARIABLE)
-            elif node.base in self._var_types:
-                raise self._error(node, "Reuse of variable {base}")
+    def _add_variable(self, name, type_hint=types.BASE_ALL):
+        self._var_types[name] = type_hint
+        return ast.Field(name), types.VARIABLE
 
-            # This can be overridden by the parent function that is parsing it
-            self._var_types[node.base] = types.BASE_ALL
-            return ast.Field(node.base), types.VARIABLE
+    def method_chain(self, node):
+        """Expand a chain of methods into function calls."""
+        rv = None
+        for prev_node, function_node in zip(node.children[:-1], node.children[1:]):
+            rv = self.function_call(function_node, prev_node, rv)
 
-        if node.base in RESERVED:
-            if len(node.sub_fields) != 0:
-                raise self._error(node, "Illegal use of reserved value")
+        return rv
 
-            value = RESERVED[node.base]
+    def value(self, node):
+        """Check if a value is signed."""
+        value, value_hint = self.visit(node.children[1])
+        if not types.check_types(types.NUMBER, value_hint):
+            raise self._type_error(node, "Sign applied to non-numeric value", types.NUMBER, value_hint)
+
+        if node.children[0] == "-":
+            if isinstance(value, ast.Number):
+                value.value = -value.value
+            else:
+                value = ast.MathOperation(ast.Number(0), "-", value)
+
+        return value, value_hint
+
+    def name(self, node):
+        """Check for illegal use of keyword."""
+        text = node["NAME"].value
+        if text in keywords:
+            raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
+
+        return text
+
+    def number(self, node):
+        """Parse a number with a sign."""
+        token = node.children[-1]
+        if token.type == "UNSIGNED_INTEGER":
+            value = int(token)
+        else:
+            value = float(token)
+
+            if int(value) == value:
+                value = int(value)
+
+        if node["SIGN"] == "-":
+            return -value
+        return value
+
+    def string(self, node):
+        value = node.children[0]
+
+        # If a 'raw' string is detected, then only unescape the quote character
+        if value.startswith('?'):
+            quote_char = value[1]
+            return value[2:-1].replace("\\" + quote_char, quote_char)
+        else:
+            return ast.String.unescape(value[1:-1])
+
+    def base_field(self, node):
+        """Get a base field."""
+        name = node["name"]
+        text = name["NAME"]
+
+        if text in RESERVED:
+            value = RESERVED[text]
             return value, types.literal(value.type_hint)
 
-        path = self.walk(node.sub_fields)
+        # validate against the remaining keywords
+        name = self.visit(name)
 
-        if not path and node.base in self.preprocessor.constants:
-            constant = self.preprocessor.constants[node.base]
+        if name in self.preprocessor.constants:
+            constant = self.preprocessor.constants[name]
             return constant.value, types.literal(constant.value.type_hint)
 
         # Check if it's part of the current preprocessor that we are building
         # and if it is, then return it unexpanded but with a type hint
-        if not path and node.base in self.new_preprocessor.constants:
-            constant = self.new_preprocessor.constants[node.base]
-            return ast.Field(node.base), types.literal(constant.value.type_hint)
+        if name in self.new_preprocessor.constants:
+            constant = self.new_preprocessor.constants[name]
+            return ast.Field(name), types.literal(constant.value.type_hint)
 
-        field = ast.Field(node.base, path)
-        return self._get_field_hint(node, field, allow_enum=self._allow_enum)
+        field = ast.Field(name)
+        return self._get_field_hint(node, field)
 
-    # comparisons
-    def walk__equals(self, node):
+    def field(self, node):
         """Callback function to walk the AST."""
-        # May be double or single equals
-        return '=='
+        full_path = [s.strip() for s in re.split(r"[.\[\]]+", node.children[0])]
+        full_path = [int(s) if s.isdigit() else s for s in full_path if s]
 
-    def walk__comparator(self, node):
-        """Walk comparators like <= < != == > >=."""
-        return self.walk(node.comp)
+        if any(p in keywords for p in full_path):
+            raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
 
-    def walk__comparison(self, node):
+        base, path = full_path[0], full_path[1:]
+
+        # if get_variable:
+        #     if base_name in RESERVED or node.sub_fields:
+        #         raise self._type_error(node, "Expected {expected_type} not {field} to function", types.VARIABLE)
+        #     elif base_name in self._var_types:
+        #         raise self._error(node, "Reuse of variable {base}")
+
+        #     # This can be overridden by the parent function that is parsing it
+        #     return self._add_variable(node.base)
+        field = ast.Field(base, path)
+        return self._get_field_hint(node, field)
+
+    def comparison(self, node):
         """Callback function to walk the AST."""
-        left, left_type = self.walk(node.left)
-        right, right_type = self.walk(node.right)
-        op = self.walk(node.op)
+        (left, left_type), comp_op, (right, right_type) = self.visit_children(node)
+
+        op = "==" if comp_op.type == 'EQUALS' else comp_op.value
 
         accepted_types = types.union(types.PRIMITIVES, types.NULL)
         error_message = "Unable to compare {expected_type} to {actual_type}"
@@ -485,7 +549,7 @@ class EqlWalker(tatsu.walkers.NodeWalker):
                 not types.check_types(accepted_types, left_type) or \
                 not types.check_types(accepted_types, right_type):
             # check if the types can actually be compared, and don't allow comparison of nested types
-            raise self._type_error(node.op, error_message, types.clear(left_type), types.clear(right_type))
+            raise self._type_error(node, error_message, types.clear(left_type), types.clear(right_type))
 
         if op in (ast.Comparison.LT, ast.Comparison.LE, ast.Comparison.GE, ast.Comparison.GE):
             # check that <, <=, >, >= are only supported for strings or integers
@@ -495,12 +559,12 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             # string to string or number to number
             if not ((types.check_full_hint(types.STRING, lt) and types.check_full_hint(types.STRING, rt)) or
                     (types.check_full_hint(types.NUMBER, lt) and types.check_full_hint(types.NUMBER, rt))):
-                raise self._type_error(node.op, error_message, types.clear(left_type), types.clear(right_type))
+                raise self._type_error(node, error_message, types.clear(left_type), types.clear(right_type))
 
         comp_node = ast.Comparison(left, op, right)
         hint = types.get_specifier(types.union(left_type, right_type)), types.get_type(types.BOOLEAN)
 
-        # there is no special comparator for wildcards, just look for * in the string
+        # there is no special comparison operator for wildcards, just look for * in the string
         if isinstance(right, ast.String) and '*' in right.value:
             func_call = ast.FunctionCall('wildcard', [left, right])
 
@@ -509,40 +573,91 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             elif op == ast.Comparison.NE:
                 return ~ func_call, hint
 
-        return comp_node, hint
+        return comp_node.optimize(), hint
 
-    def walk__and_terms(self, node):
+    def mathop(self, node):
         """Callback function to walk the AST."""
-        terms, hints = self.walk(node.terms, split=True)
+        output, output_type = self.visit(node.children[0])
+
+        def update_type(error_node, new_op, new_type):
+            if not types.check_types(types.NUMBER, new_type):
+                raise self._type_error(error_node, "Unable to {func} {actual_type}",
+                                       types.NUMBER, new_type, func=ast.MathOperation.func_lookup[new_op])
+
+            output_spec = types.get_specifier(output_type)
+
+            if types.check_types(types.NULL, types.union(output_type, new_type)):
+                return output_spec, types.union_types(types.BASE_NULL, types.BASE_NUMBER)
+            else:
+                return output_spec, types.BASE_NUMBER
+
+        # update the type hint to strip non numeric information
+        output_type = update_type(node.children[0], node.children[1], output_type)
+
+        for op_token, current_node in zip(node.children[1::2], node.children[2::2]):
+            op = op_token.value
+            right, current_hint = self.visit(current_node)
+            output_type = update_type(current_node, op, current_hint)
+
+            # determine if this could have a null in it from a divide by 0
+            if op in "%/" and (not isinstance(right, ast.Literal) or right.value == 0):
+                current_hint = types.union(current_hint, types.NULL)
+
+            output = ast.MathOperation(output, op, right).optimize()
+            output_type = update_type(current_node, op, current_hint)
+
+            if isinstance(output, ast.Literal):
+                output_type = types.get_specifier(output), output.type_hint
+
+        return output, output_type
+
+    sum_expr = mathop
+    mul_expr = mathop
+
+    def bool_expr(self, node, cls):
+        """Method for both and, or expressions."""
+        terms, hints = self.unzip_hints(self.visit_children(node))
+
         if not self._implied_booleans:
-            for tatsu_node, hint in zip(node.terms, hints):
+            for lark_node, hint in zip(node.child_trees, hints):
                 if not types.check_types(types.BOOLEAN, hint):
-                    raise self._type_error(tatsu_node, "Expected {expected_type}, not {actual_type}",
+                    raise self._type_error(lark_node, "Expected {expected_type}, not {actual_type}",
                                            types.BOOLEAN, hint)
 
-        term = ast.And(terms)
+        term = cls(terms).optimize()
         return term, types.union(*hints)
 
-    def walk__or_terms(self, node):
+    def and_expr(self, node):
         """Callback function to walk the AST."""
-        terms, hints = self.walk(node.terms, split=True)
+        return self.bool_expr(node, ast.And)
+
+    def or_expr(self, node):
+        """Callback function to walk the AST."""
+        return self.bool_expr(node, ast.Or)
+
+    def not_expr(self, node):
+        """Callback function to walk the AST."""
+        term, hint = self.visit(node.children[-1])
+
         if not self._implied_booleans:
-            for tatsu_node, hint in zip(node.terms, hints):
-                if not types.check_types(types.BOOLEAN, hint):
-                    raise self._type_error(tatsu_node, "Expected {expected_type}, not {actual_type}",
-                                           types.BOOLEAN, hint)
-        term = ast.Or(terms)
-        return term, types.union(*hints)
+            if not types.check_types(types.BOOLEAN, hint):
+                raise self._type_error(node.child_trees[-1], "Expected {expected_type}, not {actual_type}",
+                                       types.BOOLEAN, hint)
 
-    def walk__not_term(self, node):
-        """Callback function to walk the AST."""
-        term, hint = self.walk(node.t)
-        return ~ term, types.union(hint)
+        if len(node.get_list("NOT_OP")) % 2 == 1:
+            term = ~ term
+            hint = types.get_specifier(hint), types.BASE_BOOLEAN
 
-    def walk__in_set(self, node):
+        return term, hint
+
+    def not_in_set(self, node):
+        """Method for converting `x not in (...)`."""
+        rv, rv_hint = self.in_set(node)
+        return ~(rv.optimize()), rv_hint
+
+    def in_set(self, node):
         """Callback function to walk the AST."""
-        expr, outer_hint = self.walk(node.expr)
-        container, sub_hints = self.walk(node.container, keep_hint=True, split=True)
+        (expr, outer_hint), (container, sub_hints) = self.visit_children(node)
         outer_spec = types.get_specifier(outer_hint)
         outer_type = types.get_type(outer_hint)
         container_specifiers = [types.get_specifier(h) for h in sub_hints]
@@ -550,12 +665,12 @@ class EqlWalker(tatsu.walkers.NodeWalker):
 
         # Check that everything inside the container has the same type as outside
         error_message = "Unable to compare {expected_type} to {actual_type}"
-        for container_node, node_type in zip(node.container, container_types):
+        for container_node, node_type in zip(node["expressions"].children, container_types):
             if not types.check_types(outer_type, node_type):
                 raise self._type_error(container_node, error_message, outer_type, node_type)
 
         # This will always evaluate to true/false, so it should be a boolean
-        term = ast.InSet(expr, container)
+        term = ast.InSet(expr, container).optimize()
         return term, (types.union_specifiers(outer_spec, *container_specifiers), types.BASE_BOOLEAN)
 
     def _get_type_hint(self, node, ast_node):
@@ -582,7 +697,7 @@ class EqlWalker(tatsu.walkers.NodeWalker):
                 type_hint = types.union(type_hint, types.NULL)
 
         elif isinstance(ast_node, ast.FunctionCall):
-            signature = self._function_lookup.get(node.name)
+            signature = self._function_lookup.get(ast_node.name)
             if signature:
                 type_hint = signature.return_value
 
@@ -591,30 +706,54 @@ class EqlWalker(tatsu.walkers.NodeWalker):
 
         return type_hint
 
-    def walk__function_call(self, node):
+    def function_call(self, node, prev_node=None, prev_arg=None):
         """Callback function to walk the AST."""
-        if node.name in self.preprocessor.macros:
-            args = []
+        function_name = self.visit(node["name"])
+        argument_nodes = []
+        args = []
+        hints = []
 
-            if node.args:
-                args, hints = self.walk(node.args, split=True)
+        # if the base is chained from a previous function call, use that node
+        if prev_arg:
+            base_arg, base_hint = prev_arg
+            args.append(base_arg)
+            hints.append(base_hint)
 
-            macro = self.preprocessor.macros[node.name]
+        if prev_node:
+            argument_nodes.append(prev_node)
+
+        if "expressions" in node:
+            argument_nodes.extend(node["expressions"].children)
+
+        if function_name in self.preprocessor.macros:
+            if prev_node and not prev_arg:
+                arg, hint = self.visit(prev_node)
+                args.append(arg)
+                hints.append(hint)
+
+            if node["expressions"]:
+                args[len(args):], hints[len(hints):] = self.visit(node["expressions"])
+
+            macro = self.preprocessor.macros[function_name]
             expanded = macro.expand(args)
             type_hint = self._get_type_hint(node, expanded)
             return expanded, type_hint
 
-        elif node.name in self.new_preprocessor.macros:
-            args = []
+        elif function_name in self.new_preprocessor.macros:
+            if prev_node and not prev_arg:
+                arg, hint = self.visit(prev_node)
+                args.append(arg)
+                hints.append(hint)
 
-            if node.args:
-                args, hints = self.walk(node.args, split=True)
-            macro = self.new_preprocessor.macros[node.name]
+            if node["expressions"]:
+                args[len(args):], hints[len(hints):] = self.visit(node["expressions"])
+
+            macro = self.new_preprocessor.macros[function_name]
             expanded = macro.expand(args)
             type_hint = self._get_type_hint(node, expanded)
             return expanded, type_hint
 
-        signature = self._function_lookup.get(node.name)
+        signature = self._function_lookup.get(function_name)
 
         if signature:
             # Check for any variables in the signature, and handle their type hints differently
@@ -627,33 +766,29 @@ class EqlWalker(tatsu.walkers.NodeWalker):
 
             # Get all of the arguments first, because they may depend on others
             # and we need to pull out all of the variables
-            for idx, arg_node in enumerate(node.args or []):
+
+            for idx, arg_node in enumerate(argument_nodes):
                 if idx in variables:
-                    exc = self._type_error(arg_node, "Invalid argument to {name}. Expected {expected_type}",
-                                           types.VARIABLE, name=node.name)
-
-                    if arg_node.parseinfo.rule == 'field':
-                        try:
-                            arguments.append(self.walk(arg_node, get_variable=True))
-                        except EqlTypeMismatchError:
-                            pass
-                        else:
-                            continue
-
-                    # Ignore the original exception and raise our own, which has the function name in it
-                    raise exc
-
+                    if arg_node.data == "base_field":
+                        variable_name = self.visit(arg_node["name"])
+                        self._add_variable(variable_name)
+                        arguments.append((ast.Field(variable_name), types.VARIABLE))
+                    else:
+                        raise self._type_error(arg_node, "Invalid argument to {name}. Expected {expected_type}",
+                                               types.VARIABLE, name=function_name)
+                elif idx == 0 and prev_arg:
+                    arguments.append(prev_arg)
                 else:
-                    arguments.append(self.walk(arg_node))
+                    arguments.append(self.visit(arg_node))
 
             # Then validate this against the signature
-            args, hints = transpose(arguments)
+            args, hints = self.unzip_hints(arguments)
 
             # In theory, we could do another round of validation for generics, but we'll just assume
             # that loop variables can take any shape they need to, as long as the other arguments match
 
             # Validate that the arguments match the function signature by type and length
-            args, hints = self.validate_signature(node, signature, args, hints)
+            args, hints = self.validate_signature(node, signature, argument_nodes, args, hints)
 
             # Restore old variables, since ours are out of scope now
             self._var_types = old_variables
@@ -664,61 +799,77 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             if hints and types.is_dynamic(types.union(*hints)):
                 output_hint = types.dynamic(output_hint)
 
-            return ast.FunctionCall(node.name, args), output_hint
+            return ast.FunctionCall(function_name, args, as_method=prev_node is not None), output_hint
 
         elif self._check_functions:
-            raise self._error(node, "Unknown function {name}", width=len(node.name))
+            raise self._error(node["name"], "Unknown function {NAME}")
         else:
             args = []
 
-            if node.args:
-                args, _ = self.walk(node.args, split=True)
+            if node["expressions"]:
+                args, _ = self.visit(node["expressions"])
 
-            return ast.FunctionCall(node.name, args), types.dynamic(types.EXPRESSION)
+            func_node = ast.FunctionCall(function_name, args, as_method=prev_node is not None)
+            return func_node, types.dynamic(types.EXPRESSION)
 
     # queries
-    def walk__event_query(self, node):
+    def event_query(self, node):
         """Callback function to walk the AST."""
-        if node.ast.get('event_type') is None:
+        if node["name"] is None:
             event_type = EVENT_TYPE_ANY
             if not self.implied_any:
                 raise self._error(node, "Missing event type and 'where' condition")
         else:
-            event_type = node.event_type
+            event_type = self.visit(node["name"])
 
             if self._schema and not self._schema.validate_event_type(event_type):
-                raise self._error(node, "Invalid event type: {event_type}", cls=EqlSchemaError, width=len(event_type))
+                raise self._error(node["name"], "Invalid event type: {NAME}", cls=EqlSchemaError, width=len(event_type))
 
-        condition = self.walk(node.cond, event_type=event_type, query_condition=True)
-        return ast.EventQuery(event_type, condition)
+        with self.scoped(event_type=event_type, query_condition=True):
+            expr, hint = self.visit(node.children[-1])
+            if not self._implied_booleans and not types.check_types(types.BOOLEAN, hint):
+                raise self._type_error(node.children[-1], "Expected {expected_type} not {actual_type}",
+                                       types.BOOLEAN, hint)
 
-    def walk__pipe(self, node):
+        return ast.EventQuery(event_type, expr)
+
+    def pipe(self, node):
         """Callback function to walk the AST."""
         if not self._pipes_enabled:
             raise self._error(node, "Pipes not supported")
 
-        pipe_cls = ast.PipeCommand.lookup.get(node.name)
-        if pipe_cls is None or node.name not in self._allowed_pipes:
-            raise self._error(node, "Unknown pipe {name}", width=len(node.name))
+        pipe_name = self.visit(node["name"])
+        pipe_cls = ast.PipeCommand.lookup.get(pipe_name)
+        if pipe_cls is None or pipe_name not in self._allowed_pipes:
+            raise self._error(node["name"], "Unknown pipe {NAME}")
 
         args = []
         hints = []
+        arg_nodes = []
 
-        if node.args:
-            args, hints = self.walk(node.args, split=True)
+        if node["expressions"]:
+            arg_nodes = node["expressions"].children
+            args, hints = self.visit(node["expressions"])
+        elif len(node.children) > 1:
+            arg_nodes = node.children[1:]
+            args, hints = self.unzip_hints(self.visit(c) for c in node.children[1:])
 
-        args, hints = self.validate_signature(node, pipe_cls, args, hints)
+        args, hints = self.validate_signature(node, pipe_cls, arg_nodes, args, hints)
         self._pipe_schemas = pipe_cls.output_schemas(args, hints, self._pipe_schemas)
         return pipe_cls(args)
 
-    def walk__piped_query(self, node):
+    def base_query(self, node):
+        """Visit a sequence, join or event query."""
+        return self.visit(node.children[0])
+
+    def piped_query(self, node):
         """Callback function to walk the AST."""
-        if node.query is None:
+        if "base_query" in node:
+            first = self.visit(node["base_query"])
+        elif self.implied_base:
             first = ast.EventQuery(EVENT_TYPE_ANY, ast.Boolean(True))
-            if not self.implied_base:
-                raise self._error(node, "Missing base query")
         else:
-            first = self.walk(node.query)
+            raise self._error(node, "Missing base query")
 
         self._in_pipes = True
         if isinstance(first, ast.EventQuery):
@@ -736,63 +887,82 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             else:
                 self._pipe_schemas.append(Schema({EVENT_TYPE_GENERIC: {}}))
 
-        return ast.PipedQuery(first, self.walk(node.pipes))
+        return ast.PipedQuery(first, self.visit_children(node["pipes"]))
 
-    def walk__subquery_type(self, node):
-        """Get the subquery type."""
+    def expressions(self, node):
+        """Convert a list of expressions."""
+        expressions = self.visit_children(node)
+        # Split out return types and the hints
+        return self.unzip_hints(expressions)
+
+    def named_subquery(self, node):
+        """Callback function to walk the AST."""
+        name = self.visit(node["name"])
+
         if not self._subqueries_enabled:
             raise self._error(node, "Subqueries not supported")
         elif self._in_pipes:
             raise self._error(node, "Not supported within pipe")
+        elif name not in ast.NamedSubquery.supported_types:
+            raise self._error(node["name"], "Unknown subquery type '{NAME} of'")
 
-        if node.name not in ast.NamedSubquery.supported_types:
-            raise self._error(node, "Unknown subquery type '{name} of'")
+        query = self.visit(node["subquery"]["event_query"])
+        return ast.NamedSubquery(name, query), types.dynamic(types.BOOLEAN)
 
-        return node.name
-
-    def walk__named_query(self, node):
+    def named_params(self, node, get_param=None, position=None, close=None):
         """Callback function to walk the AST."""
-        return ast.NamedSubquery(self.walk(node.stype), self.walk(node.query)), types.dynamic(types.BOOLEAN)
+        if node is None:
+            return ast.NamedParams({})
 
-    def walk__named_params(self, node, get_param=None, position=None, close=None):
-        """Callback function to walk the AST."""
         params = OrderedDict()
-        if get_param is None and len(node.params) > 0:
-            raise self._error(node, "Unexpected parameters")
+        if get_param is None and len(node.children) > 0:
+            raise self._error(node.children[0], "Unexpected parameters")
 
-        for param in node.params:
+        for param in node.children:
             key, value = get_param(param, position=position, close=close)
             if key in params:
-                raise self._error(param, "Repeated parameter {k}")
+                raise self._error(param, "Repeated parameter {name}")
             params[key] = value
         return ast.NamedParams(params)
 
-    def walk__subquery_by(self, node, num_values=None, position=None, close=None, get_param=None):
+    def subquery_by(self, node, num_values=None, position=None, close=None, get_param=None):
         """Callback function to walk the AST."""
         if not self._subqueries_enabled:
             raise self._error(node, "Subqueries not supported")
 
-        if num_values is not None and num_values != len(node.join_values):
-            if len(node.join_values) == 0:
-                error_node = node.query
+        actual_num = len(node["join_values"]["expressions"].children) if node["join_values"] else 0
+        if num_values is not None and num_values != actual_num:
+            if actual_num == 0:
+                error_node = node
                 end = True
             else:
                 end = False
-                error_node = node.join_values[max(num_values, len(node.join_values)) - 1]
+                error_node = node["join_values"]["expressions"].children[max(num_values, actual_num) - 1]
             message = "Expected {num} value"
             if num_values != 1:
                 message += "s"
             raise self._error(error_node, message, num=num_values, end=end)
 
-        params = self.walk(node.params, get_param=get_param, position=position, close=close)
-        query = self.walk(node.query)
-        if node.join_values:
-            join_values, join_hints = self.walk(node.join_values, event_type=query.event_type, split=True)
+        if node["named_params"]:
+            params = self.named_params(node["named_params"],
+                                       get_param=get_param, position=position, close=close)
+        else:
+            params = ast.NamedParams()
+
+        query = self.visit(node["subquery"]["event_query"])
+
+        if node["join_values"]:
+            with self.scoped(event_type=query.event_type):
+                join_values, join_hints = self.visit(node["join_values"])
         else:
             join_values, join_hints = [], []
         return ast.SubqueryBy(query, params, join_values), join_hints
 
-    def walk__join(self, node):
+    def join_values(self, node):
+        """Return all of the expressions."""
+        return self.visit(node["expressions"])
+
+    def join(self, node):
         """Callback function to walk the AST."""
         queries, close = self._get_subqueries_and_close(node)
         return ast.Join(queries, close)
@@ -804,14 +974,15 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             raise self._error(node, "Subqueries not supported")
 
         # Figure out how many fields are joined by in the first query, and match across all
-        first, first_hints = self.walk(node.queries[0], get_param=get_param, position=0)
+        subquery_nodes = node.get_list("subquery_by")
+        first, first_hints = self.subquery_by(subquery_nodes[0], get_param=get_param, position=0)
         num_values = len(first.join_values)
         queries = [(first, first_hints)]
 
-        for pos, query in enumerate(node.queries[1:], 1):
-            queries.append(self.walk(query, num_values=num_values, get_param=get_param, position=pos))
+        for pos, query in enumerate(subquery_nodes[1:], 1):
+            queries.append(self.subquery_by(query, num_values=num_values, get_param=get_param, position=pos))
 
-        shared = node.ast.get('shared_by')
+        shared = node['join_values']
         close = None
 
         # Validate that each field has matching types
@@ -819,7 +990,7 @@ class EqlWalker(tatsu.walkers.NodeWalker):
         strict_hints = [default_hint] * num_values
 
         if shared:
-            strict_hints += [default_hint] * len(shared)
+            strict_hints += [default_hint] * len(shared["expressions"].children)
 
         def check_by_field(by_pos, by_node, by_hint):
             # Check that the possible values for our field that match what we currently understand about this type
@@ -834,13 +1005,20 @@ class EqlWalker(tatsu.walkers.NodeWalker):
         for qpos, (query, query_by_hints) in enumerate(queries):
             unshared_fields = []
             curr_by_hints = query_by_hints
-            curr_join_nodes = node.queries[qpos].join_values
+            query_node = subquery_nodes[qpos]
+
+            if "join_values" in query_node:
+                curr_join_nodes = query_node["join_values"]["expressions"].children
+            else:
+                curr_join_nodes = []
 
             if shared:
-                curr_shared_by, curr_shared_hints = self.walk(shared, event_type=query.query.event_type, split=True)
+                with self.scoped(event_type=query.query.event_type):
+                    curr_shared_by, curr_shared_hints = self.visit(shared)
+
                 curr_by_hints = curr_shared_hints + curr_by_hints
                 query.join_values = curr_shared_by + query.join_values
-                curr_join_nodes = shared + curr_join_nodes
+                curr_join_nodes = shared['expressions'].children + curr_join_nodes
 
             # Now that they've all been built out, start to intersect the types
             for fpos, (n, h) in enumerate(zip(curr_join_nodes, curr_by_hints)):
@@ -849,34 +1027,45 @@ class EqlWalker(tatsu.walkers.NodeWalker):
             # Add all of the fields to the beginning of this subquery's BY fields and preserve the order
             query.join_values = unshared_fields + query.join_values
 
-        if node.ast.get("until"):
-            close, close_hints = self.walk(node.until, num_values=num_values, get_param=get_param, close=True)
-            close_nodes = [node.until]
+        until_node = node["until_subquery_by"]
+
+        if until_node:
+            close, close_hints = self.subquery_by(until_node["subquery_by"],
+                                                  num_values=num_values, get_param=get_param, close=True)
+            close_nodes = [until_node["subquery_by"]]
 
             if shared:
-                shared_by, shared_hints = self.walk(node.shared_by, event_type=close.query.event_type, split=True)
+                with self.scoped(event_type=close.query.event_type):
+                    shared_by, shared_hints = self.visit(shared)
+
                 close_hints = close_hints + shared_hints
                 close.join_values = shared_by + close.join_values
-                close_nodes = shared + close_nodes
+                close_nodes = shared['expressions'].children + close_nodes
 
             # Check the types of the by field
             for fpos, (n, h) in enumerate(zip(close_nodes, close_hints)):
                 check_by_field(fpos, n, h)
 
         # Unzip the queries from the (query, hint) tuples
-        queries, _ = zip(*queries)
+        queries, _ = self.unzip_hints(queries)
         return list(queries), close
 
     def get_sequence_parameter(self, node, **kwargs):
         """Validate that sequence parameters are working."""
-        key, (value, value_hint) = self.walk([node.k, node.v])
-        value = ast.TimeRange.convert(value)
+        key = self.visit(node["name"])
+
+        if len(node.children) > 1:
+            value, _ = self.visit(node.children[-1])
+        else:
+            value = ast.Boolean(True)
 
         if key != 'maxspan':
             raise self._error(node, "Unknown sequence parameter {}".format(key))
 
-        if not ast.TimeRange.convert(value) or value.delta < datetime.timedelta(0):
-            error_node = node.v if isinstance(node.v, tatsu.objectmodel.Node) else node
+        value = ast.TimeRange.convert(value)
+
+        if not value or value.delta < datetime.timedelta(0):
+            error_node = node["time_range"] or node["atom"] or node
             raise self._error(error_node, "Invalid value for {}".format(key))
 
         return key, value
@@ -888,9 +1077,10 @@ class EqlWalker(tatsu.walkers.NodeWalker):
 
         # set the default type to a literal 'true'
         value, type_hint = ast.Boolean(True), types.literal(types.BOOLEAN)
-        key = self.walk(param_node.k)
-        if param_node.ast.get('v'):
-            value, type_hint = self.walk(param_node.v)
+        key = self.visit(param_node["name"])
+
+        if len(param_node.children) > 1:
+            value, type_hint = self.visit(param_node.children[-1])
 
         if key == 'fork':
             if not types.check_types(types.literal((types.NUMBER, types.BOOLEAN)), type_hint):
@@ -902,58 +1092,49 @@ class EqlWalker(tatsu.walkers.NodeWalker):
                 raise self._error(param_node, "Invalid value for {k}")
 
         else:
-            raise self._error(param_node, "Unknown parameter {k}")
+            raise self._error(param_node['name'], "Unknown parameter {NAME}")
 
         return key, ast.Boolean(bool(value.value))
 
-    def walk__sequence(self, node):
+    def sequence(self, node):
         """Callback function to walk the AST."""
         if not self._subqueries_enabled:
             raise self._error(node, "Subqueries not supported")
 
         params = None
 
-        if node.ast.get('params'):
-            params = self.walk(node.params, get_param=self.get_sequence_parameter)
+        if node['named_params']:
+            params = self.named_params(node['named_params'], get_param=self.get_sequence_parameter)
 
         queries, close = self._get_subqueries_and_close(node, get_param=self.get_sequence_term_parameter)
         return ast.Sequence(queries, params, close)
 
+    def definitions(self, node):
+        """Parse all definitions."""
+        return self.visit_children(node)
+
     # definitions
-    def walk__macro(self, node):
+    def macro(self, node):
         """Callback function to walk the AST."""
-        definition = ast.Macro(node.name, node.params, self.walk(node.body))
+        definition = ast.Macro(self.visit(node.children[0]),
+                               self.visit(node.children[1:-1]),
+                               self.visit(node.children[-1])[0])
         self.new_preprocessor.add_definition(definition)
         return definition
 
-    def walk__constant(self, node):
+    def constant(self, node):
         """Callback function to walk the AST."""
-        value, _ = self.walk(node.value)
-        definition = ast.Constant(node.name, value)
+        name = self.visit(node["name"])
+        value, _ = self.visit(node["literal"])
+        definition = ast.Constant(name, value)
         self.new_preprocessor.add_definition(definition)
         return definition
 
 
-def _build_parser():
-    """Build a parser one-time. These appear to be thread-safe so this only needs to happen once."""
-    global GRAMMAR, compiled_parser
-
-    if compiled_parser is not None:
-        return compiled_parser
-
-    with compiler_lock:
-        if compiled_parser is None:
-            GRAMMAR = get_etc_file('eql.ebnf')
-            compiled_parser = tatsu.compile(GRAMMAR, parseinfo=True, semantics=tatsu.semantics.ModelBuilderSemantics())
-
-    return compiled_parser
-
-
-def _get_parser():
-    """Try to get a thread-safe parser, and compile if necessary."""
-    if not hasattr(local, "parser"):
-        local.parser = _build_parser()
-    return local.parser
+lark_parser = Lark(get_etc_file('eql.g'), debug=False,
+                   propagate_positions=True, tree_class=KvTree, parser='lalr',
+                   start=['piped_query', 'definition', 'definitions',
+                          'query_with_definitions', 'expr', 'signed_single_atom'])
 
 
 def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=False, pipes=True, subqueries=True):
@@ -970,53 +1151,43 @@ def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=
     :param PreProcessor preprocessor: Optional preprocessor to expand definitions and constants
     :rtype: EqlNode
     """
-    parser = _get_parser()
-
     if not text.strip():
         raise EqlParseError("No text specified", 0, 0, text)
 
     # Convert everything to unicode
     text = to_unicode(text)
+    if not text.endswith("\n"):
+        text += "\n"
 
     with ParserConfig(implied_any=implied_any, implied_base=implied_base, allow_subqueries=subqueries,
                       preprocessor=preprocessor, allow_pipes=pipes) as cfg:
 
-        walker = EqlWalker()
         load_extensions(force=False)
         exc = None
+        walker = LarkToEQL(text)
 
         try:
-            model = parser.parse(text, rule_name=start, start=start, parseinfo=True)
-            eql_node = walker.walk(model)
-            if not isinstance(eql_node, ast.EqlNode) and isinstance(eql_node, tuple):
-                eql_node, type_hint = eql_node
-            return eql_node
-        except EqlError as e:
-            # If full traceback mode is enabled, then re-raise the exception
+            tree = lark_parser.parse(text, start=start)
+        except LarkError as e:
+            # Remove the original exception from the traceback
+            exc = EqlSyntaxError("Invalid syntax", e.line - 1, e.column - 1, '\n'.join(walker.lines[e.line - 2:e.line]))
             if cfg.read_stack("full_traceback", debugger_attached):
-                raise
-            exc = e
-        except tatsu.exceptions.FailedParse as e:
-            # Remove the tatsu exception from the traceback
-            exc = e
+                raise exc
 
-    if isinstance(exc, EqlError):
-        # at this point, the full traceback isn't wanted, so raise it from here
-        raise exc
+        if exc is None:
+            try:
+                eql_node = walker.visit(tree)
+                if not isinstance(eql_node, ast.EqlNode) and isinstance(eql_node, tuple):
+                    eql_node, type_hint = eql_node
+                return eql_node
+            except EqlError as e:
+                # If full traceback mode is enabled, then re-raise the exception
+                if cfg.read_stack("full_traceback", debugger_attached):
+                    raise
+                exc = e
 
-    if isinstance(exc, tatsu.exceptions.FailedParse):
-        info = exc.buf.line_info(exc.pos)
-        message = 'Invalid syntax'
-        line = info.line
-        col = info.col
-
-        source = info.text.rstrip()
-        if not source:
-            source = text.rstrip().splitlines()[-1].rstrip()
-            col = max(len(source) - 1, 0)
-
-        # Raise an EQL error instead
-        raise EqlSyntaxError(message, line, col, source)
+    # Python 3 - avoid double exceptions if full_traceback is disabled
+    raise exc
 
 
 def parse_base_query(text, implied_any=False, implied_base=False, preprocessor=None, subqueries=True):
@@ -1064,8 +1235,7 @@ def parse_query(text, implied_any=False, implied_base=False, preprocessor=None, 
     :param PreProcessor preprocessor: Optional preprocessor to expand definitions and constants
     :rtype: PipedQuery
     """
-    rule = "cli_query" if cli else "single_query"
-    return _parse(text,  rule, implied_any=implied_any, implied_base=implied_base, preprocessor=preprocessor,
+    return _parse(text,  "piped_query", implied_any=implied_any, implied_base=implied_base, preprocessor=preprocessor,
                   subqueries=subqueries, pipes=pipes)
 
 
@@ -1080,18 +1250,17 @@ def parse_expression(text, implied_any=False, preprocessor=None, subqueries=True
     :param PreProcessor preprocessor: Optional preprocessor to expand definitions and constants
     :rtype: Expression
     """
-    return _parse(text, start='single_expression',
-                  implied_any=implied_any, preprocessor=preprocessor, subqueries=subqueries)
+    return _parse(text, start='expr', implied_any=implied_any, preprocessor=preprocessor, subqueries=subqueries)
 
 
 def parse_atom(text, cls=None):  # type: (str, type) -> ast.Field|ast.Literal
     """Parse and get an atom."""
-    rule = "single_atom"
-    atom = _parse(text, start="single_atom")
+    rule = "signed_single_atom"
+    atom = _parse(text, start=rule)
     if cls is not None and not isinstance(atom, cls):
-        walker = EqlWalker()
-        tatsu_ast = _get_parser().parse(text, rule_name=rule, start=rule, parseinfo=True)
-        raise walker._error(tatsu_ast, "Expected {expected} not {actual}",
+        walker = LarkToEQL(text)
+        lark_tree = lark_parser.parse(text, start=rule)
+        raise walker._error(lark_tree, "Expected {expected} not {actual}",
                             expected=cls.__name__.lower(), actual=type(atom).__name__.lower())
     return atom
 
@@ -1143,7 +1312,7 @@ def parse_definition(text, preprocessor=None, implied_any=False, subqueries=True
     :param bool subqueries: Toggle support for subqueries (sequence, join, named of, etc.)
     :rtype: Definition
     """
-    return _parse(text, start='single_definition', preprocessor=preprocessor,
+    return _parse(text, start='definition', preprocessor=preprocessor,
                   implied_any=implied_any, subqueries=subqueries)
 
 
@@ -1182,3 +1351,42 @@ def get_preprocessor(text, implied_any=False, subqueries=None, preprocessor=None
 
     new_preprocessor.add_definitions(definitions)
     return new_preprocessor
+
+
+class TermExtractor(Interpreter, object):
+    """Extract query terms from a sequence, join or flat query."""
+
+    def __init__(self, text):
+        self.text = text
+
+    def event_query(self, tree):
+        return self.text[tree.meta.start_pos:tree.meta.end_pos]
+
+    def piped_query(self, tree):
+        """Extract all terms."""
+        if tree["base_query"]:
+            if tree["base_query"]["event_query"]:
+                return [self.visit(tree["base_query"]["event_query"])]
+            return self.visit(tree["base_query"].children[0])
+        return []
+
+    def sequence(self, tree):
+        """Extract the terms in the sequence."""
+        return [self.visit(term["subquery"]["event_query"]) for term in tree.get_list("subquery_by")]
+
+    # these have similar enough ASTs that this is fine for extracting terms
+    join = sequence
+
+
+def extract_query_terms(text, **kwargs):
+    """Parse out the query terms from an event query, join or sequence.
+
+    :param str text: EQL source text to parse
+    :rtype: list[str]
+    """
+    # validate that it parses first so that EQL exceptions are raised
+    parse_query(text, **kwargs)
+
+    tree = lark_parser.parse(text, start="piped_query")
+    extractor = TermExtractor(text)
+    return list(extractor.visit(tree))

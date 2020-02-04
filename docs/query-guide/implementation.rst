@@ -21,7 +21,7 @@ The state changes are described for  the per-user ``sequence`` and enumeration e
 
 .. code-block:: eql
 
-    sequence with by user_name
+    sequence by user_name
       [process where process_name == "whoami"]
       [process where process_name == "hostname"]
       [process where process_name == "ifconfig"]
