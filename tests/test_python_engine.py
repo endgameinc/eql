@@ -6,6 +6,7 @@ from collections import defaultdict
 from eql import *  # noqa: F403
 from eql.ast import *  # noqa: F403
 from eql.parser import ignore_missing_functions
+from eql.preprocessor import PreProcessor
 from eql.schema import EVENT_TYPE_GENERIC
 from eql.tests.base import TestEngine
 

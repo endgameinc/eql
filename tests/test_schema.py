@@ -102,7 +102,7 @@ class TestSchemaValidation(unittest.TestCase):
         with Schema(self.schema), allow_enum_fields:
             actual = parse_query("process where process_name.bash")
             expected = parse_query("process where process_name == 'bash'")
-            self.assertEquals(actual, expected)
+            self.assertEqual(actual, expected)
 
     def test_schema_enum_disabled(self):
         """Test that enum errors are raised when not explicitly enabled."""

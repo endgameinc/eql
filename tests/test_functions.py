@@ -49,17 +49,17 @@ class TestFunctions(unittest.TestCase):
             String("192.168.1.0/24"),
         ]
         position, _, _ = CidrMatch.validate(arguments, hints)
-        self.assertEquals(position, 2)
+        self.assertEqual(position, 2)
 
         # test that missing / causes failure
         arguments[2].value = "55.55.55.0"
         position, _, _ = CidrMatch.validate(arguments, hints)
-        self.assertEquals(position, 2)
+        self.assertEqual(position, 2)
 
         # test for invalid ip
         arguments[2].value = "55.55.256.0/24"
         position, _, _ = CidrMatch.validate(arguments, hints)
-        self.assertEquals(position, 2)
+        self.assertEqual(position, 2)
 
         arguments[2].value = "55.55.55.0/24"
         position, _, _ = CidrMatch.validate(arguments, hints)
@@ -81,14 +81,14 @@ class TestFunctions(unittest.TestCase):
         ]
 
         position, new_arguments, type_hints = CidrMatch.validate(arguments, hints)
-        self.assertEquals(position, None)
+        self.assertEqual(position, None)
 
         # check that the original wasn't modified
         self.assertIsNot(arguments[2], new_arguments[2])
 
         # and that the values were set to the base of the subnet
-        self.assertEquals(new_arguments[2].value, "172.169.18.18/31")
-        self.assertEquals(new_arguments[3].value, "192.168.1.0/24")
+        self.assertEqual(new_arguments[2].value, "172.169.18.18/31")
+        self.assertEqual(new_arguments[3].value, "192.168.1.0/24")
 
         # test that /0 is working
         arguments[2] = String("1.2.3.4/0")
@@ -97,7 +97,7 @@ class TestFunctions(unittest.TestCase):
         self.assertIsNot(arguments[2], new_arguments[2])
 
         # and /32
-        self.assertEquals(new_arguments[2].value, "0.0.0.0/0")
+        self.assertEqual(new_arguments[2].value, "0.0.0.0/0")
         arguments[2] = String("12.34.45.56/32")
         position, new_arguments, type_hints = CidrMatch.validate(arguments, hints)
 
@@ -139,7 +139,7 @@ class TestFunctions(unittest.TestCase):
             for num in range(500):
                 should_match = start <= num <= end
                 did_match = regex.match(str(num)) is not None
-                self.assertEquals(should_match, did_match)
+                self.assertEqual(should_match, did_match)
 
     def test_cidr_regex(self):
         """Test that octet regex are correctly matching the range."""
@@ -177,4 +177,4 @@ class TestFunctions(unittest.TestCase):
                 rand_ip = "{:d}.{:d}.{:d}.{:d}".format(*rand_addr)
 
                 rv = regex.match(rand_ip) is not None
-                self.assertEquals(rv, in_subnet)
+                self.assertEqual(rv, in_subnet)

@@ -17,8 +17,10 @@ from . import types
 from .errors import EqlParseError, EqlSyntaxError, EqlSemanticError, EqlSchemaError, EqlTypeMismatchError, EqlError
 from .etc import get_etc_file
 from .functions import get_function, list_functions
+from .preprocessor import Macro, Constant, PreProcessor, Filter
 from .schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC, Schema
 from .utils import to_unicode, load_extensions, ParserConfig, is_string
+from .walkers import RecursiveWalker
 
 __all__ = (
     "get_preprocessor",
@@ -116,7 +118,7 @@ class LarkToEQL(Interpreter):
         self.implied_any = ParserConfig.read_stack("implied_any", False)
 
         # Create our own thread-safe copy of a preprocessor that we can use
-        self.preprocessor = ParserConfig.read_stack("preprocessor", ast.PreProcessor()).copy()
+        self.preprocessor = ParserConfig.read_stack("preprocessor", PreProcessor()).copy()
 
         # Keep track of newly created definitions
         self.new_preprocessor = self.preprocessor.copy()
@@ -145,6 +147,7 @@ class LarkToEQL(Interpreter):
         self._var_types = dict()
         self._check_functions = ParserConfig.read_stack("check_functions", True)
         self._stacks = defaultdict(list)
+        self.copy = RecursiveWalker().copy_node
 
     @property
     def lines(self):
@@ -815,12 +818,20 @@ class LarkToEQL(Interpreter):
     # queries
     def event_query(self, node):
         """Callback function to walk the AST."""
+        base_cond = ast.Boolean(True)
+
         if node["name"] is None:
             event_type = EVENT_TYPE_ANY
             if not self.implied_any:
                 raise self._error(node, "Missing event type and 'where' condition")
         else:
             event_type = self.visit(node["name"])
+
+            if event_type in self.preprocessor.filters:
+                event_filter = self.preprocessor.filters[event_type]
+                event_query = event_filter.query
+                event_type = event_query.event_type
+                base_cond = self.copy(event_query.query)
 
             if self._schema and not self._schema.validate_event_type(event_type):
                 raise self._error(node["name"], "Invalid event type: {NAME}", cls=EqlSchemaError, width=len(event_type))
@@ -831,7 +842,7 @@ class LarkToEQL(Interpreter):
                 raise self._type_error(node.children[-1], "Expected {expected_type} not {actual_type}",
                                        types.BOOLEAN, hint)
 
-        return ast.EventQuery(event_type, expr)
+        return ast.EventQuery(event_type, base_cond & expr)
 
     def pipe(self, node):
         """Callback function to walk the AST."""
@@ -1114,11 +1125,19 @@ class LarkToEQL(Interpreter):
         return self.visit_children(node)
 
     # definitions
+    def filter(self, node):
+        """Callback function to walk the AST."""
+        name = self.visit(node["name"])
+        query, _ = self.visit(node["event_query"])
+        definition = Filter(name, query)
+        self.new_preprocessor.add_definition(definition)
+        return definition
+
     def macro(self, node):
         """Callback function to walk the AST."""
-        definition = ast.Macro(self.visit(node.children[0]),
-                               self.visit(node.children[1:-1]),
-                               self.visit(node.children[-1])[0])
+        definition = Macro(self.visit(node.children[0]),
+                           self.visit(node.children[1:-1]),
+                           self.visit(node.children[-1])[0])
         self.new_preprocessor.add_definition(definition)
         return definition
 
@@ -1126,7 +1145,7 @@ class LarkToEQL(Interpreter):
         """Callback function to walk the AST."""
         name = self.visit(node["name"])
         value, _ = self.visit(node["literal"])
-        definition = ast.Constant(name, value)
+        definition = Constant(name, value)
         self.new_preprocessor.add_definition(definition)
         return definition
 
@@ -1299,7 +1318,7 @@ def parse_analytics(analytics, preprocessor=None, **kwargs):
     :rtype: list[EqlAnalytic]
     """
     if preprocessor is None:
-        preprocessor = ast.PreProcessor()
+        preprocessor = PreProcessor()
     return [parse_analytic(r, preprocessor=preprocessor, **kwargs) for r in analytics]
 
 
@@ -1345,7 +1364,7 @@ def get_preprocessor(text, implied_any=False, subqueries=None, preprocessor=None
 
     # inherit all the definitions from the old one, and add to them
     if preprocessor is None:
-        new_preprocessor = ast.PreProcessor()
+        new_preprocessor = PreProcessor()
     else:
         new_preprocessor = preprocessor.copy()
 

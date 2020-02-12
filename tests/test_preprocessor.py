@@ -5,6 +5,7 @@ from collections import OrderedDict
 
 from eql.ast import *  # noqa: F403
 from eql.parser import *  # noqa: F403
+from eql.preprocessor import *  # noqa: F403
 from eql.transpilers import TextEngine
 from eql import EqlTypeMismatchError
 
@@ -163,10 +164,10 @@ class TestPreProcessor(unittest.TestCase):
                 self.assertEqual(actual.render(), expected.render(), error_msg)
 
             query = parse_expression("DESCENDANT_OF_PROC()")
-            self.assertRaisesRegexp(ValueError, "Macro .+ expected \d+ arguments .*", engine.expand, query)
+            self.assertRaisesRegexp(ValueError, r"Macro .+ expected \d+ arguments .*", engine.expand, query)
 
             query = parse_expression("DESCENDANT_OF_PROC(1,2,3)")
-            self.assertRaisesRegexp(ValueError, "Macro .+ expected \d+ arguments .*", engine.expand, query)
+            self.assertRaisesRegexp(ValueError, r"Macro .+ expected \d+ arguments .*", engine.expand, query)
 
     def test_custom_macro(self):
         """Test python custom macro expansion."""
@@ -227,3 +228,14 @@ class TestPreProcessor(unittest.TestCase):
                 before = parse_expression(before)
             after = parse_expression(after)
             self.assertEqual(pp2.expand(before), after)
+
+    def test_filter(self):
+        """Test that filters correctly expand queries."""
+        pp = get_preprocessor("""
+        filter a = b where c
+        filter x = y where true
+        """)
+
+        with pp:
+            self.assertEqual(parse_query("a where d"), parse_query("b where c and d"))
+            self.assertEqual(parse_query("x where cond"), parse_query("y where cond"))

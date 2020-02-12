@@ -1,5 +1,6 @@
 """Core EQL functionality for query translation."""
-from .ast import PreProcessor, Field
+from .ast import Field
+from .preprocessor import PreProcessor
 from .parser import parse_definitions, ignore_missing_functions
 from .utils import is_string, ParserConfig
 from .walkers import ConfigurableWalker

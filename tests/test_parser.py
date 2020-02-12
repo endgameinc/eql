@@ -12,7 +12,8 @@ from eql.parser import (
     extract_query_terms
 )
 from eql.walkers import DepthFirstWalker
-from eql.pipes import *   # noqa: F403
+from eql.pipes import *  # noqa: F403
+from eql.preprocessor import *  # noqa: F403
 
 
 class TestParser(unittest.TestCase):
@@ -54,10 +55,10 @@ class TestParser(unittest.TestCase):
 
     def test_parse_field(self):
         """Test that fields are parsed correctly."""
-        self.assertEquals(parse_field("process_name  "), Field("process_name"))
-        self.assertEquals(parse_field("TRUE  "), Field("TRUE"))
-        self.assertEquals(parse_field("  data[0]"), Field("data", [0]))
-        self.assertEquals(parse_field("data[0].nested.name"), Field("data", [0, "nested", "name"]))
+        self.assertEqual(parse_field("process_name  "), Field("process_name"))
+        self.assertEqual(parse_field("TRUE  "), Field("TRUE"))
+        self.assertEqual(parse_field("  data[0]"), Field("data", [0]))
+        self.assertEqual(parse_field("data[0].nested.name"), Field("data", [0, "nested", "name"]))
 
         self.assertRaises(EqlParseError, parse_field, "  ")
         self.assertRaises(EqlParseError, parse_field, "100.5")
@@ -67,12 +68,12 @@ class TestParser(unittest.TestCase):
 
     def test_parse_literal(self):
         """Test that fields are parsed correctly."""
-        self.assertEquals(parse_literal("true"), Boolean(True))
-        self.assertEquals(parse_literal("null"), Null())
-        self.assertEquals(parse_literal("  100.5  "), Number(100.5))
-        self.assertEquals(parse_literal("true"), Boolean(True))
-        self.assertEquals(parse_literal("'C:\\\\windows\\\\system32\\\\cmd.exe'"),
-                          String("C:\\windows\\system32\\cmd.exe"))
+        self.assertEqual(parse_literal("true"), Boolean(True))
+        self.assertEqual(parse_literal("null"), Null())
+        self.assertEqual(parse_literal("  100.5  "), Number(100.5))
+        self.assertEqual(parse_literal("true"), Boolean(True))
+        self.assertEqual(parse_literal("'C:\\\\windows\\\\system32\\\\cmd.exe'"),
+                         String("C:\\windows\\system32\\cmd.exe"))
 
         self.assertRaises(EqlParseError, parse_field, "and")
         self.assertRaises(EqlParseError, parse_literal, "process_name")
@@ -372,7 +373,7 @@ class TestParser(unittest.TestCase):
         """Test correct parsing and rendering of methods."""
         parse1 = parse_expression("(a and b):concat():length()")
         parse2 = parse_expression("a and b:concat():length()")
-        self.assertNotEquals(parse1, parse2)
+        self.assertNotEqual(parse1, parse2)
 
         class Unmethodize(DepthFirstWalker):
             """Strip out the method metadata, so its rendered directly as a node."""
@@ -384,9 +385,9 @@ class TestParser(unittest.TestCase):
         without_method = Unmethodize().walk(parse1)
         expected = parse_expression("length(concat(a and b))")
 
-        self.assertEquals(parse1, parse_expression("(a and b):concat():length()"))
+        self.assertEqual(parse1, parse_expression("(a and b):concat():length()"))
         self.assertIsNot(parse1, without_method)
-        self.assertEquals(without_method, expected)
+        self.assertEqual(without_method, expected)
 
     def test_term_extraction(self):
         """Test that EQL terms are correctly extracted."""

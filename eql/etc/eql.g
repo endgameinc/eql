@@ -1,8 +1,9 @@
 definitions: definition*
-?definition: macro | constant
+?definition: macro | constant | filter
 
-macro:    "macro" name "(" [name ("," name)*] ")" expr
-constant: "const" name EQUALS literal
+macro:    "macro"  name "(" [name ("," name)*] ")" expr
+constant: "const"  name EQUALS literal
+filter:   "filter" name EQUALS event_query
 
 query_with_definitions: definitions piped_query
 piped_query: base_query [pipes]

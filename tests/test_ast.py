@@ -6,6 +6,7 @@ from eql.pipes import *  # noqa: F403
 from eql.parser import (
     parse_expression
 )
+from eql.preprocessor import *  # noqa: F403
 from eql.walkers import Walker, RecursiveWalker
 
 
