@@ -152,6 +152,7 @@ class TestParseOptimizations(unittest.TestCase):
             '1 +- length(a) == 1 - length(a)',
             '100:concat():length() == 3',
             '995 == (100 * 10):subtract("hello":length())',
+            'cidrMatch("192.168.13.5", "192.168.0.0/16")',
         ]
 
         expected_false = [
@@ -163,6 +164,7 @@ class TestParseOptimizations(unittest.TestCase):
             '"ABC*DEF" == " ABC    DEF    "',
             '"abc" > "def"',
             '"abc" != "abc"',
+            'cidrMatch("1.2.3.4", "192.168.0.0/16")',
             # check that these aren't left to right
             '1 * 2 + 3 * 4 + 10 / 2 == 15',
         ]

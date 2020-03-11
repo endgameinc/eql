@@ -315,7 +315,7 @@ class CidrMatch(FunctionSignature):
         return callback
 
     @classmethod
-    def run(cls, ip_address, cidr_matches):
+    def run(cls, ip_address, *cidr_matches):
         """Compare an IP address against a list of cidr blocks."""
         if is_string(ip_address) and cls.ip_compiled.match(ip_address):
             ip_integer, _ = cls.to_mask(ip_address + "/32")
