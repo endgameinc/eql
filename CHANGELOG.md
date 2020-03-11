@@ -3,6 +3,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 ## Version 0.8.2
+_Released 2020-03-11_
+
+### Fixed
+* `CidrMatch.run` signature for `cidrMatch` optimization
+
+
+## Version 0.8.2
 _Released 2020-01-13_
 
 ### Fixed
