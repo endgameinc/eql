@@ -77,9 +77,9 @@ class BaseNode(object):
         for key in self.__slots__:
             yield key, getattr(self, key, None)
 
-    def optimize(self):
+    def optimize(self, recursive=False):
         """Optimize an AST."""
-        return self
+        return Optimizer(recursive=recursive).walk(self)
 
     def __eq__(self, other):
         """Check if two ASTs are equivalent."""
@@ -416,20 +416,6 @@ class FunctionCall(Expression):
         """Get the matching function signature."""
         return get_function(self.name)
 
-    def optimize(self):
-        """Optimize function calls that can be determined at compile time."""
-        func = get_function(self.name)
-        arguments = [arg.optimize() for arg in self.arguments]
-
-        if func and all(isinstance(arg, Literal) for arg in arguments):
-            try:
-                rv = func.run(*[arg.value for arg in arguments])
-                return Literal.from_python(rv)
-            except NotImplementedError:
-                pass
-
-        return FunctionCall(self.name, arguments, self.as_method)
-
     def _render(self):
         """Determine the precedence by checking if it's called as a method."""
         if self.as_method:
@@ -510,24 +496,6 @@ class MathOperation(Expression):
         else:
             return self.max_precedence
 
-    def optimize(self):
-        """Evaluate literals when possible."""
-        left = self.left.optimize()
-        right = self.right.optimize()
-
-        if isinstance(left, Number) and isinstance(right, Number):
-            # don't divide by zero when optimizing, leave that to the target implementation
-            if not (right.value == 0 and self.operator in ("/", "%")):
-                return Number(self.func(left.value, right.value))
-
-        if isinstance(right, MathOperation) and right.left == Number(0):
-            # a +- b parses as a + (0 - b) should become a + -b
-            if self.operator in ("-", "+") and right.operator in ("-", "+"):
-                operator = "-" if (self.operator == "-") ^ (right.operator == "-") else "+"
-                return MathOperation(left, operator, right.right)
-
-        return MathOperation(left, self.operator, right)
-
     @property
     def template(self):
         """Make the template dynamic."""
@@ -568,28 +536,6 @@ class Comparison(Expression):
             return Comparison(self.left, Comparison.EQ, self.right).optimize()
         return super(Comparison, self).__invert__()
 
-    def optimize(self):
-        """Optimize comparisons against literal values."""
-        if isinstance(self.left, Literal) and isinstance(self.right, Literal):
-            lhs = self.left.value
-            rhs = self.right.value
-
-            # Check that the types match first
-            if not isinstance(self.right, type(self.left)):
-                return Boolean(self.comparator == Comparison.NE)
-
-            if isinstance(self.left, String):
-                lhs = lhs.lower()
-                rhs = rhs.lower()
-
-            return Boolean(self.function(lhs, rhs))
-
-        # assumes calling the same function twice with the same args returns the same result
-        elif self.left == self.right:
-            return Boolean(self.comparator in (Comparison.EQ, Comparison.LE, Comparison.GE))
-
-        return self
-
     def __or__(self, other):
         """Check for one field being compared to multiple values, and switch to a set."""
         if self.comparator == Comparison.EQ and isinstance(self.right, Literal):
@@ -629,7 +575,7 @@ class InSet(Expression):
         """Check if a set contains only dynamic values."""
         return all(not isinstance(v, Literal) for v in self.container)
 
-    def _get_literals(self):
+    def get_literals(self):
         """Get the values in the set."""
         values = OrderedDict()
 
@@ -647,8 +593,8 @@ class InSet(Expression):
         """Perform an intersection between two sets for boolean AND."""
         if isinstance(other, InSet) and self.expression == other.expression:
             if self.is_literal() and other.is_literal():
-                container1 = self._get_literals()
-                container2 = other._get_literals()
+                container1 = self.get_literals()
+                container2 = other.get_literals()
 
                 reduced = [v for k, v in container1.items() if k in container2]
                 return InSet(self.expression, reduced).optimize()
@@ -657,8 +603,8 @@ class InSet(Expression):
             if isinstance(other.term, InSet) and self.expression == other.term.expression:
                 # Check if one set is being subtracted from another
                 if self.is_literal() and other.term.is_literal():
-                    container1 = self._get_literals()
-                    container2 = other.term._get_literals()
+                    container1 = self.get_literals()
+                    container2 = other.term.get_literals()
 
                     reduced = [v for k, v in container1.items() if k not in container2]
                     return InSet(self.expression, reduced).optimize()
@@ -677,8 +623,8 @@ class InSet(Expression):
         """Perform a union between two sets for boolean OR."""
         if isinstance(other, InSet) and self.expression == other.expression:
             if self.is_literal() and other.is_literal():
-                container = self._get_literals()
-                for k, v in other._get_literals().items():
+                container = self.get_literals()
+                for k, v in other.get_literals().items():
                     container.setdefault(k, v)
 
                 union = [v for v in container.values()]
@@ -686,7 +632,7 @@ class InSet(Expression):
 
         elif isinstance(other, Comparison) and self.expression == other.left:
             if self.is_literal() and isinstance(other.right, Literal):
-                return super(InSet, self).__or__(InSet(other.left, [other.right]))
+                return self.__or__(InSet(other.left, [other.right]))
 
         return super(InSet, self).__or__(other)
 
@@ -704,33 +650,6 @@ class InSet(Expression):
                 dynamic.container.append(item)
 
         return literals.optimize() | dynamic.optimize()
-
-    def optimize(self):
-        """Optimize the AST."""
-        expression = self.expression
-
-        # move all the literals to the front, preserve their ordering
-        literals = [v for k, v in self._get_literals().items()]
-        dynamic = [v for v in self.container if not isinstance(v, Literal)]
-        container = literals + dynamic
-
-        # check to see if a literal value is in the list of literal values
-        if isinstance(self.expression, Literal):
-            value = self.expression.value
-            if is_string(value):
-                value = value.lower()
-            if value in self._get_literals():
-                return Boolean(True)
-            container = dynamic
-
-        if len(container) == 0:
-            return Boolean(False)
-        elif len(container) == 1:
-            return Comparison(expression, Comparison.EQ, container[0]).optimize()
-        elif expression in container:
-            return Boolean(True)
-
-        return InSet(expression, container)
 
     @property
     def synonym(self):
@@ -802,11 +721,6 @@ class Not(Expression):
         else:
             return ~ self.term.optimize()
 
-    def optimize(self):
-        """Optimize NOT terms, by flattening them."""
-        optimized_term = self.term.optimize()
-        return ~ optimized_term
-
     def __invert__(self):
         """Convert ``not not X`` to X."""
         return self.term.optimize()
@@ -829,21 +743,6 @@ class And(BaseCompound):
     precedence = Not.precedence + 1
     operator = 'and'
 
-    def optimize(self):
-        """Optimize AND terms, by flattening them."""
-        terms = []
-        current = self.terms[0]
-        for term in self.terms[1:]:
-            current = current & term
-            if isinstance(current, And):
-                terms.extend(current.terms[:-1])
-                current = current.terms[-1]
-
-        if terms:
-            terms.append(current)
-            return And(terms)
-        return current
-
     def __and__(self, other):
         """Flatten multiple ``and`` terms."""
         terms = self.terms
@@ -859,21 +758,6 @@ class Or(BaseCompound):
 
     precedence = And.precedence + 1
     operator = 'or'
-
-    def optimize(self):
-        """Optimize OR terms, by flattening them."""
-        terms = []
-        current = self.terms[0]
-        for term in self.terms[1:]:
-            current = current | term
-            if isinstance(current, Or):
-                terms.extend(current.terms[:-1])
-                current = current.terms[-1]
-
-        if terms:
-            terms.append(current)
-            return Or(terms)
-        return current
 
     def __or__(self, other):
         """Flatten multiple ``or`` terms."""
@@ -1146,7 +1030,7 @@ class CustomMacro(BaseMacro):
     def expand(self, arguments):
         """Make the callback do the dirty work for expanding the AST."""
         node = self.callback(arguments)
-        return node.optimize()
+        return node.optimize(recursive=True)
 
     @classmethod
     def from_name(cls, name):
@@ -1191,12 +1075,14 @@ class Macro(BaseMacro, EqlNode):
 
         def _walk_field(node):
             if node.base in lookup and not node.path:
-                return lookup[node.base].optimize()
+                return lookup[node.base]
             return node
 
         walker = RecursiveWalker()
+
         walker.register_func(Field, _walk_field)
-        return walker.walk(self.expression).optimize()
+        expanded = walker.walk(self.expression)
+        return expanded.optimize(recursive=True)
 
     def _render(self):
         expr = self.expression.render()
@@ -1275,3 +1161,4 @@ class PreProcessor(ParserConfig):
 # circular dependency
 from .walkers import Walker, RecursiveWalker  # noqa: E402
 from .functions import get_function  # noqa: E402
+from .optimizer import Optimizer  # noqa: E402

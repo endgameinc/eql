@@ -140,15 +140,6 @@ class Walker(object):
         self._method_cache[prefix][node_cls] = method
         return method
 
-    def _walk_list(self, nodes, *args, **kwargs):
-        return [self.walk(n, *args, **kwargs) for n in nodes]
-
-    def _walk_tuple(self, nodes, *args, **kwargs):
-        return tuple(self.walk(n, *args, **kwargs) for n in nodes)
-
-    def _walk_dict(self, nodes, *args, **kwargs):
-        return dict({self.walk(k, *args, **kwargs): self.walk(v, *args, **kwargs) for k, v in nodes.items()})
-
     @property
     def active_node(self):
         """Get the active context."""
@@ -177,8 +168,24 @@ class Walker(object):
             if callable(exit_method):
                 exit_method(node)
 
+    def autowalk(self, node, *args, **kwargs):
+        """Automatically walk built-in containers."""
+        with self.set_context(node):
+            if isinstance(node, list):
+                return [self.walk(n, *args, **kwargs) for n in node]
+
+            if isinstance(node, tuple):
+                return tuple(self.walk(n, *args, **kwargs) for n in node)
+
+            if isinstance(node, dict):
+                return dict({self.walk(k, *args, **kwargs): self.walk(v, *args, **kwargs) for k, v in node.items()})
+
     def walk(self, node, *args, **kwargs):
         """Walk the syntax tree top-down."""
+        rv = self.autowalk(node, *args, **kwargs)
+        if rv is not None:
+            return rv
+
         method = self.get_node_method(node, "_walk_")
         if callable(method):
             with self.set_context(node):
@@ -190,8 +197,8 @@ class RecursiveWalker(Walker):
 
     def _walk_base_node(self, node, *args, **kwargs):  # type: (BaseNode) -> BaseNode
         cls = type(node)
-        slots = [self.walk(v, *args, **kwargs) for k, v in node.iter_slots()]
-        return cls(*slots).optimize()
+        slots = self.walk([v for k, v in node.iter_slots()])
+        return cls(*slots)
 
     def copy_node(self, node):
         """Create a copy of a node."""
@@ -203,7 +210,12 @@ class DepthFirstWalker(Walker):
 
     def walk(self, node, *args, **kwargs):
         """Walk the syntax tree top-down."""
+        rv = self.autowalk(node, *args, **kwargs)
+        if rv is not None:
+            return rv
+
         method = self.get_node_method(node, "_walk_")
+
         if callable(method):
             with self.set_context(node):
                 if isinstance(node, BaseNode):

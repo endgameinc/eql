@@ -88,7 +88,7 @@ class TestPreProcessor(unittest.TestCase):
             parse_query("process where true | filter CONSTANT()")
 
             # unique requires a dynamic type, but there are no fields in CONSTANT
-            with self.assertRaisesRegexp(EqlTypeMismatchError, "Expected dynamic boolean/number/string"):
+            with self.assertRaisesRegex(EqlTypeMismatchError, "Expected dynamic boolean/number/string"):
                 parse_query("process where true | unique CONSTANT()")
 
     def test_macro_expansion(self):
@@ -163,10 +163,10 @@ class TestPreProcessor(unittest.TestCase):
                 self.assertEqual(actual.render(), expected.render(), error_msg)
 
             query = parse_expression("DESCENDANT_OF_PROC()")
-            self.assertRaisesRegexp(ValueError, "Macro .+ expected \d+ arguments .*", engine.expand, query)
+            self.assertRaisesRegex(ValueError, r"Macro .+ expected \d+ arguments .*", engine.expand, query)
 
             query = parse_expression("DESCENDANT_OF_PROC(1,2,3)")
-            self.assertRaisesRegexp(ValueError, "Macro .+ expected \d+ arguments .*", engine.expand, query)
+            self.assertRaisesRegex(ValueError, r"Macro .+ expected \d+ arguments .*", engine.expand, query)
 
     def test_custom_macro(self):
         """Test python custom macro expansion."""
@@ -190,7 +190,7 @@ class TestPreProcessor(unittest.TestCase):
         with ignore_missing_functions:
             example = parse_query('process where LENGTH("abc", "def")')
 
-        self.assertRaisesRegexp(ValueError, "too many values to unpack", engine.expand, example)
+        self.assertRaisesRegex(ValueError, "too many values to unpack", engine.expand, example)
 
     def test_load_definitions_from_file(self):
         """Test loading definitions from a file."""

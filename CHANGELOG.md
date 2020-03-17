@@ -2,7 +2,17 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
-## Version 0.8.2
+## Version 0.8.4
+_Released 2020-03-18_
+
+### Added
+* `skip_optimizations` toggle to disable optimizations when parsing
+
+### Changed
+* Moved optimization methods to `Optimizer` class.
+
+
+## Version 0.8.3
 _Released 2020-03-11_
 
 ### Fixed
@@ -15,11 +25,13 @@ _Released 2020-01-13_
 ### Fixed
 * Restored missing text from semantic error messages
 
+
 ## Version 0.8.1
 _Released 2020-01-09_
 
 ### Fixed
 * Correctly load definitions/schema with `eql.build.get_engine`
+
 
 ## Version 0.8
 _Released 2019-11-01_
@@ -38,6 +50,7 @@ _Released 2019-11-01_
 ### Fixed
 * Examples for sequences in the Implementation Details page
 * Compatibility for `eql shell` with Python 2.7
+
 
 ## Version 0.7
 _Released 2019-07-24_
@@ -76,11 +89,13 @@ _Released 2019-07-24_
 ### Removed
 * Default EQL schema. Now accepts all input and event types by default
 
+
 ## Version 0.6.3
 _Released 2019-04-17_
 
 ### Added
 * @itsnotapt Made `pid` and `ppid` fields configurable
+
 
 ## Version 0.6.2
 _Released 2018-12-13_
@@ -88,11 +103,13 @@ _Released 2018-12-13_
 ### Fixed
 * Broken implementation of streaming .jsonl files
 
+
 ## Version 0.6.1
 _Released 2019-12-05_
 
 ### Added
 * Support for gzipped files
+
 
 ## Version 0.6
 _Initial Release 2018-11_30_
