@@ -17,6 +17,7 @@ from . import types
 from .errors import EqlParseError, EqlSyntaxError, EqlSemanticError, EqlSchemaError, EqlTypeMismatchError, EqlError
 from .etc import get_etc_file
 from .functions import get_function, list_functions
+from .optimizer import Optimizer
 from .schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC, Schema
 from .utils import to_unicode, load_extensions, ParserConfig, is_string
 
@@ -32,6 +33,7 @@ __all__ = (
     "parse_analytics",
     "ignore_missing_fields",
     "ignore_missing_functions",
+    "skip_optimizations",
     "strict_field_schema",
     "allow_enum_fields",
     "extract_query_terms",
@@ -61,6 +63,7 @@ RESERVED = {n.render(): n for n in [ast.Boolean(True), ast.Boolean(False), ast.N
 NON_SPACE_WS = re.compile(r"[^\S ]+")
 
 
+skip_optimizations = ParserConfig(optimized=False)
 ignore_missing_functions = ParserConfig(check_functions=False)
 ignore_missing_fields = ParserConfig(ignore_missing_fields=False)
 strict_field_schema = ParserConfig(strict_fields=True, implied_booleans=False)
@@ -297,7 +300,6 @@ class LarkToEQL(Interpreter):
 
         if isinstance(rv, tuple) and rv and isinstance(rv[0], ast.EqlNode):
             output_node, output_hint = rv
-            output_node = output_node.optimize()
 
             # If it was optimized to a literal, the type may be constrained
             if isinstance(output_node, ast.Literal):
@@ -573,7 +575,7 @@ class LarkToEQL(Interpreter):
             elif op == ast.Comparison.NE:
                 return ~ func_call, hint
 
-        return comp_node.optimize(), hint
+        return comp_node, hint
 
     def mathop(self, node):
         """Callback function to walk the AST."""
@@ -603,7 +605,7 @@ class LarkToEQL(Interpreter):
             if op in "%/" and (not isinstance(right, ast.Literal) or right.value == 0):
                 current_hint = types.union(current_hint, types.NULL)
 
-            output = ast.MathOperation(output, op, right).optimize()
+            output = ast.MathOperation(output, op, right)
             output_type = update_type(current_node, op, current_hint)
 
             if isinstance(output, ast.Literal):
@@ -624,7 +626,7 @@ class LarkToEQL(Interpreter):
                     raise self._type_error(lark_node, "Expected {expected_type}, not {actual_type}",
                                            types.BOOLEAN, hint)
 
-        term = cls(terms).optimize()
+        term = cls(terms)
         return term, types.union(*hints)
 
     def and_expr(self, node):
@@ -653,7 +655,7 @@ class LarkToEQL(Interpreter):
     def not_in_set(self, node):
         """Method for converting `x not in (...)`."""
         rv, rv_hint = self.in_set(node)
-        return ~(rv.optimize()), rv_hint
+        return ~rv, rv_hint
 
     def in_set(self, node):
         """Callback function to walk the AST."""
@@ -670,7 +672,7 @@ class LarkToEQL(Interpreter):
                 raise self._type_error(container_node, error_message, outer_type, node_type)
 
         # This will always evaluate to true/false, so it should be a boolean
-        term = ast.InSet(expr, container).optimize()
+        term = ast.InSet(expr, container)
         return term, (types.union_specifiers(outer_spec, *container_specifiers), types.BASE_BOOLEAN)
 
     def _get_type_hint(self, node, ast_node):
@@ -1179,6 +1181,10 @@ def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=
                 eql_node = walker.visit(tree)
                 if not isinstance(eql_node, ast.EqlNode) and isinstance(eql_node, tuple):
                     eql_node, type_hint = eql_node
+
+                if cfg.read_stack("optimized", True):
+                    optimizer = Optimizer(recursive=True)
+                    eql_node = optimizer.walk(eql_node)
                 return eql_node
             except EqlError as e:
                 # If full traceback mode is enabled, then re-raise the exception

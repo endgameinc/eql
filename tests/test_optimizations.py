@@ -2,7 +2,7 @@
 import unittest
 
 from eql.ast import *  # noqa: F403
-from eql.parser import parse_expression
+from eql.parser import parse_expression, skip_optimizations
 
 
 class TestParseOptimizations(unittest.TestCase):
@@ -178,3 +178,9 @@ class TestParseOptimizations(unittest.TestCase):
             ast = parse_expression(expression)
             self.assertIsInstance(ast, Boolean, 'Failed to optimize {}'.format(expression))
             self.assertFalse(ast.value, 'Parser did not evaluate {} as false'.format(expression))
+
+    def test_unoptimized(self):
+        """Test that optimization can be turned off."""
+        with skip_optimizations:
+            self.assertEqual(parse_expression("1 + 2"), MathOperation(Number(1), "+", Number(2)))
+            self.assertEqual(parse_expression("1 + 2"), MathOperation(Number(1), "+", Number(2)))
