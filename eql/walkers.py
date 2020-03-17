@@ -197,7 +197,7 @@ class RecursiveWalker(Walker):
 
     def _walk_base_node(self, node, *args, **kwargs):  # type: (BaseNode) -> BaseNode
         cls = type(node)
-        slots = self.walk([v for k, v in node.iter_slots()])
+        slots = self.walk([v for k, v in node.iter_slots()], *args, **kwargs)
         return cls(*slots)
 
     def copy_node(self, node):

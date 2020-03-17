@@ -2,6 +2,12 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
+## Version 0.8.5
+_Released 2020-03-18_
+
+### Fixed
+* `Walker` auto-recursion on BaseNode
+
 ## Version 0.8.4
 _Released 2020-03-18_
 
