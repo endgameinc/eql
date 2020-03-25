@@ -118,7 +118,7 @@ math, string manipulation or more sophisticated expressions to be expressed.
 
 .. function:: length(s)
 
-    Returns the length of a string. Non-string values return 0.
+    Returns the length of a string or array.
 
 .. function:: match(source, pattern [, ...])
 
