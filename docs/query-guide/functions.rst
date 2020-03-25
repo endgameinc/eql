@@ -165,7 +165,7 @@ math, string manipulation or more sophisticated expressions to be expressed.
 
     Returns true if ``b`` is a substring of ``a``
 
-.. function:: substring(source [, start, end])
+.. function:: substring(source, start [, end])
 
     Extracts a substring between from another string between ``start`` and ``end``.
     Like other EQL functions, ``start`` and ``end`` are zero-indexed positions in the string.
