@@ -4,7 +4,8 @@ import os
 import unittest
 
 import eql.utils
-from eql.parser import parse_query, parse_expression, parse_analytic, EqlParseError
+from eql.errors import EqlParseError
+from eql.parser import parse_query, parse_expression, parse_analytic
 from eql.utils import is_stateful, match_kv, get_output_types
 
 

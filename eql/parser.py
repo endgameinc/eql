@@ -14,7 +14,7 @@ from lark.exceptions import LarkError
 from . import ast
 from . import pipes
 from . import types
-from .errors import EqlParseError, EqlSyntaxError, EqlSemanticError, EqlSchemaError, EqlTypeMismatchError, EqlError
+from .errors import EqlSyntaxError, EqlSemanticError, EqlSchemaError, EqlTypeMismatchError, EqlError
 from .etc import get_etc_file
 from .functions import get_function, list_functions
 from .optimizer import Optimizer
@@ -192,7 +192,7 @@ class LarkToEQL(Interpreter):
         return len(self._pipe_schemas) > 1
 
     def _error(self, node, message, end=False, cls=EqlSemanticError, width=None, **kwargs):
-        # type: (KvTree, str) -> Exception
+        # type: (KvTree, str, bool, type, int, object) -> Exception
         """Generate."""
         params = {}
         for child in node.children:
@@ -820,7 +820,7 @@ class LarkToEQL(Interpreter):
         if node["name"] is None:
             event_type = EVENT_TYPE_ANY
             if not self.implied_any:
-                raise self._error(node, "Missing event type and 'where' condition")
+                raise self._error(node, "Missing event type and 'where' condition", cls=EqlSyntaxError)
         else:
             event_type = self.visit(node["name"])
 
@@ -1154,7 +1154,7 @@ def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=
     :rtype: EqlNode
     """
     if not text.strip():
-        raise EqlParseError("No text specified", 0, 0, text)
+        raise EqlSyntaxError("No text specified", 0, 0, text)
 
     # Convert everything to unicode
     text = to_unicode(text)
