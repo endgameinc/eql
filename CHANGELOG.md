@@ -1,6 +1,12 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Version 0.8.6
+_Released 2020-04-06_
+
+### Changed
+* Made missing `where` raise a `EqlSyntaxError` instead of a `EqlSemanticError`
+
 
 ## Version 0.8.5
 _Released 2020-03-18_
