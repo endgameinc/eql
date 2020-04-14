@@ -372,7 +372,8 @@ class LarkToEQL(Interpreter):
                 event_index, event_field = field.query_multiple_events()
                 num_events = len(self._pipe_schemas)
                 if event_index >= num_events:
-                    raise self._error(node_info.sub_fields[0], "Invalid index. Event array is size {num}", num=num_events)
+                    raise self._error(node_info.sub_fields[0], "Invalid index. Event array is size {num}",
+                                      num=num_events)
 
                 event_schema = self._pipe_schemas[event_index]
 

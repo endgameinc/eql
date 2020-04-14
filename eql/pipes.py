@@ -1,7 +1,7 @@
 """EQL Pipes."""
 from .ast import PipeCommand
 from .schema import Schema, EVENT_TYPE_GENERIC
-from .types import TypeHint, NodeInfo
+from .types import TypeHint, NodeInfo  # noqa: F401
 
 __all__ = (
     "list_pipes",

@@ -21,7 +21,6 @@ from .pipes import list_pipes, CountPipe
 from .schema import Schema, EVENT_TYPE_ANY, EVENT_TYPE_GENERIC
 from .table import Table
 from .utils import stream_file_events, load_dump, to_unicode, is_array
-from .types import TypeHint
 
 try:
     import prompt_toolkit

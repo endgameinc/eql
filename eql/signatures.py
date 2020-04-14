@@ -1,5 +1,5 @@
 """Mixin for adding signature validation."""
-from .types import NodeInfo
+from .types import NodeInfo  # noqa: F401
 
 
 class SignatureMixin(object):

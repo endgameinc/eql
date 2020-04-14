@@ -111,7 +111,7 @@ class Walker(object):
         self.in_pipes = False
 
         incoming_schema = [Schema({event_type: {}}) for event_type in self.output_event_types]
-        output_schemas = node.output_schemas([NodeInfo(arg, TypeHint.Unknown) for arg in node.arguments], incoming_schema)
+        output_schemas = node.output_schemas([NodeInfo(a, TypeHint.Unknown) for a in node.arguments], incoming_schema)
         self.output_event_types = [next(iter(s.schema.keys())) for s in output_schemas]
 
     def _walk_default(self, node, *args, **kwargs):

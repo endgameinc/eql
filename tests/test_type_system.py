@@ -12,7 +12,6 @@ class TestTypeSystem(unittest.TestCase):
 
     def test_specifier_checks(self):
         """Test that specifiers are properly compared."""
-
         dynamic = TypeFoldCheck(TypeHint.Unknown, False)
         literal = TypeFoldCheck(TypeHint.Unknown, True)
         either = TypeHint.Unknown
