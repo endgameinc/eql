@@ -4,8 +4,14 @@ import unittest
 from eql.events import Event
 from eql.errors import EqlSchemaError, EqlTypeMismatchError
 from eql.parser import parse_query, strict_field_schema, allow_enum_fields
-from eql.schema import Schema, MIXED_TYPES as MIXED
-from eql.types import BASE_STRING as STR, BASE_NUMBER as NUM, BASE_BOOLEAN as BOOL
+from eql.schema import Schema
+from eql.types import TypeHint
+
+
+STR = TypeHint.String.value
+NUM = TypeHint.Numeric.value
+BOOL = TypeHint.Boolean.value
+MIXED = TypeHint.Unknown.value
 
 
 class TestSchemaValidation(unittest.TestCase):

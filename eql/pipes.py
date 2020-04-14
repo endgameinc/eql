@@ -1,8 +1,7 @@
 """EQL Pipes."""
 from .ast import PipeCommand
-from .schema import Schema, EVENT_TYPE_GENERIC, MIXED_TYPES
-from .types import dynamic, NUMBER, literal, PRIMITIVES, EXPRESSION, get_type, BASE_STRING
-from .utils import is_string
+from .schema import Schema, EVENT_TYPE_GENERIC
+from .types import TypeHint, NodeInfo
 
 __all__ = (
     "list_pipes",
@@ -26,7 +25,7 @@ class ByPipe(PipeCommand):
     """Pipe that takes a value (field, function, etc.) as a key."""
 
     argument_types = []
-    additional_types = dynamic(PRIMITIVES)
+    additional_types = tuple(prim.require_dynamic() for prim in TypeHint.primitives())
     minimum_args = 1
 
 
@@ -37,19 +36,15 @@ class CountPipe(ByPipe):
     minimum_args = 0
 
     @classmethod
-    def output_schemas(cls, arguments, type_hints, event_schemas):
-        # type: (list, list, list[Schema]) -> list[Schema]
-        """Generate the output schema and determine the ``key`` field dyanmically."""
-        if type_hints is None:
-            type_hints = [MIXED_TYPES for _ in arguments]
-        base_hints = [get_type(t) for t in type_hints]
-        base_hints = [MIXED_TYPES if not is_string(t) else t for t in base_hints]
+    def output_schemas(cls, arguments, event_schemas):
+        # type: (list[NodeInfo], list[Schema]) -> list[Schema]
+        """Generate the output schema and determine the ``key`` field dynamically."""
         if len(arguments) == 0:
-            key_hint = BASE_STRING
+            key_hint = TypeHint.String.value
         elif len(arguments) == 1:
-            key_hint = base_hints[0]
+            key_hint = arguments[0].type_info.value
         else:
-            key_hint = base_hints
+            key_hint = [arg.type_info.value for arg in arguments]
 
         return [Schema({
             EVENT_TYPE_GENERIC: {
@@ -66,17 +61,17 @@ class CountPipe(ByPipe):
 class HeadPipe(PipeCommand):
     """Node representing the head pipe, analogous to the unix head command."""
 
-    argument_types = [literal(NUMBER)]
+    argument_types = [TypeHint.Numeric.require_literal()]
     minimum_args = 0
     DEFAULT = 50
 
     @classmethod
-    def validate(cls, arguments, type_hints=None):
+    def validate(cls, arguments):
         """After performing type checks, validate that the count is greater than zero."""
-        index, arguments, type_hints = super(HeadPipe, cls).validate(arguments, type_hints)
-        if index is None and cls(arguments).count <= 0:
+        index = super(HeadPipe, cls).validate(arguments)
+        if index is None and cls([arg.node for arg in arguments]).count <= 0:
             index = 0
-        return index, arguments, type_hints
+        return index
 
     @property
     def count(self):  # type: () -> int
@@ -90,15 +85,15 @@ class HeadPipe(PipeCommand):
 class TailPipe(PipeCommand):
     """Node representing the tail pipe, analogous to the unix tail command."""
 
-    argument_types = [literal(NUMBER)]
+    argument_types = [TypeHint.Numeric.require_literal()]
     minimum_args = 0
     DEFAULT = 50
 
     @classmethod
-    def validate(cls, arguments, type_hints=None):
+    def validate(cls, arguments):
         """After performing type checks, validate that the count is greater than zero."""
-        index = super(TailPipe, cls).validate(arguments, type_hints)
-        if index is None and cls(arguments).count <= 0:
+        index = super(TailPipe, cls).validate(arguments)
+        if index is None and cls([arg.node for arg in arguments]).count <= 0:
             index = 0
         return index
 
@@ -127,11 +122,12 @@ class UniqueCountPipe(ByPipe):
     minimum_args = 1
 
     @classmethod
-    def output_schemas(cls, arguments, type_hints, event_schemas):
-        # type: (list, list, list[Schema]) -> list[Schema]
+    def output_schemas(cls, arguments, event_schemas):
+        # type: (list, list[Schema]) -> list[Schema]
         """Generate the output schema and determine the ``key`` field dyanmically."""
         event_schemas = list(event_schemas)
         first_event_type, = event_schemas[0].schema.keys()
+
         if any(v for v in event_schemas[0].schema.values()):
             event_schemas[0] = event_schemas[0].merge(Schema({
                 first_event_type: {
@@ -148,7 +144,7 @@ class UniqueCountPipe(ByPipe):
 class FilterPipe(PipeCommand):
     """Takes data coming into an existing pipe and filters it further."""
 
-    argument_types = [EXPRESSION]
+    argument_types = [TypeHint.primitives()]
 
     @property
     def expression(self):

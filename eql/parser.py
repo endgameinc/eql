@@ -13,7 +13,7 @@ from lark.exceptions import LarkError
 
 from . import ast
 from . import pipes
-from . import types
+from .types import TypeHint, NodeInfo, TypeFoldCheck
 from .errors import EqlSyntaxError, EqlSemanticError, EqlSchemaError, EqlTypeMismatchError, EqlError
 from .etc import get_etc_file
 from .functions import get_function, list_functions
@@ -157,17 +157,6 @@ class LarkToEQL(Interpreter):
 
         return self._lines
 
-    @staticmethod
-    def unzip_hints(rv):
-        """Separate a list of (node, hints) into separate arrays."""
-        rv = list(rv)
-
-        if not rv:
-            return [], []
-
-        nodes, hints = zip(*rv)
-        return list(nodes), list(hints)
-
     @contextlib.contextmanager
     def scoped(self, **kv):
         """Set scoped values."""
@@ -195,6 +184,10 @@ class LarkToEQL(Interpreter):
         # type: (KvTree, str, bool, type, int, object) -> Exception
         """Generate."""
         params = {}
+
+        if isinstance(node, NodeInfo):
+            node = node.source
+
         for child in node.children:
             if isinstance(child, Token):
                 params[child.type] = child.value
@@ -232,46 +225,39 @@ class LarkToEQL(Interpreter):
 
         return cls(message, line_number, column, source, width=width, trailer=trailer)
 
-    def _type_error(self, node, message, expected_type, actual_type=None, **kwargs):
+    def _type_error(self, node_info, expected_type, message=None, error_node=None, **kwargs):
         """Return an exception for type mismatches."""
         kwargs.setdefault('cls', EqlTypeMismatchError)
-        expected_spec = types.get_specifier(expected_type)
+        expected_types = expected_type if isinstance(expected_type, tuple) else (expected_type, )
+        expected_names = set()
+        expected_prefix = ""
+        actual_prefix = ""
 
-        def get_friendly_name(t, show_spec=False):
-            type_str = ""
-            spec = types.get_specifier(t)
+        error_node = error_node or node_info.source
+        message = message or "Expected {expected_type} not {actual_type}"
 
-            if show_spec and spec != types.NO_SPECIFIER:
-                type_str += spec + " "
+        for ty in expected_types:
+            if isinstance(ty, NodeInfo):
+                expected_names.add(ty.type_info.value)
+            elif isinstance(ty, TypeHint):
+                expected_names.add(ty.value)
+            elif isinstance(ty, TypeFoldCheck):
+                expected_names.add(ty.type_info.value)
 
-            t = types.union_types(types.get_type(t))
-            if not types.is_union(t):
-                t = (t, )
-
-            # now get a friendly name for all of the types
-            type_strings = []
-            for union_type in t:
-                if isinstance(union_type, types.Nested):
-                    type_strings.append("object")
-                elif isinstance(union_type, types.Array):
-                    if len(union_type) != 1:
-                        type_strings.append("array")
+                if not node_info.validate_literal(ty):
+                    if ty.require_literal:
+                        expected_prefix, actual_prefix = ("literal ", "dynamic ")
                     else:
-                        type_strings.append("array[{}]".format(get_friendly_name(union_type[0], show_spec=False)))
-                elif len(t) == 1 or union_type != "null":
-                    type_strings.append(to_unicode(union_type))
+                        expected_prefix, actual_prefix = ("dynamic ", "literal ")
+            else:
+                raise TypeError("Unable to raise EqlTypeMismatchError from {}".format(ty))
 
-            return (type_str + "/".join(sorted(set(type_strings)))).strip()
+        if node_info.validate_type(expected_type):
+            expected_names = set([node_info.type_info.value])
 
-        expected_type = get_friendly_name(expected_type, show_spec=True)
-
-        if actual_type is not None:
-            actual_spec = types.get_specifier(actual_type)
-            spec_match = types.check_specifiers(expected_spec, actual_spec)
-            expected_type = get_friendly_name(expected_type, show_spec=not spec_match)
-            actual_type = get_friendly_name(actual_type, show_spec=not spec_match)
-
-        return self._error(node, message, actual_type=actual_type, expected_type=expected_type, **kwargs)
+        return self._error(error_node, message,
+                           actual_type=actual_prefix + node_info.type_info.value,
+                           expected_type=expected_prefix + "/".join(expected_names), **kwargs)
 
     def _walk_default(self, node, *args, **kwargs):
         """Callback function to walk the AST."""
@@ -296,28 +282,19 @@ class LarkToEQL(Interpreter):
         if isinstance(tree, list):
             return [self.visit(t) for t in tree]
 
-        rv = Interpreter.visit(self, tree)
+        return Interpreter.visit(self, tree)
 
-        if isinstance(rv, tuple) and rv and isinstance(rv[0], ast.EqlNode):
-            output_node, output_hint = rv
-
-            # If it was optimized to a literal, the type may be constrained
-            if isinstance(output_node, ast.Literal):
-                output_hint = types.get_specifier(output_hint), types.get_type(output_node.type_hint)
-
-            return output_node, output_hint
-        return rv
-
-    def validate_signature(self, node, signature, argument_nodes, arguments, hints):
+    def validate_signature(self, node, signature, arguments):
+        # type: (KvTree, type|FunctionSignature, list[NodeInfo]) -> None
         """Validate a signature against input arguments and type hints."""
         error_node = node
         node_type = 'pipe' if issubclass(signature, ast.PipeCommand) else 'function'
         name = signature.name
-        bad_index, new_arguments, new_hints = signature.validate(arguments, hints)
+        bad_index = signature.validate(arguments)
 
         if bad_index is None:
             # no error exists, so no need to build a message
-            return new_arguments, new_hints
+            return
 
         min_args = signature.minimum_args if signature.minimum_args is not None else len(signature.argument_types)
         max_args = None
@@ -338,26 +315,25 @@ class LarkToEQL(Interpreter):
                 argument_desc = 'only 1 argument'
             else:
                 argument_desc = 'up to {} arguments'.format(max_args)
+
             message = "Expected {} to {} {}".format(argument_desc, node_type, name)
-            error_node = argument_nodes[max_args]
+            error_node = arguments[max_args].source
             raise self._error(error_node, message)
 
         elif bad_index is not None:
-            if isinstance(argument_nodes[bad_index], (KvTree, Token)):
-                error_node = argument_nodes[bad_index]
+            if isinstance(arguments[bad_index].source, (KvTree, Token)):
+                error_node = arguments[bad_index].source
 
-            actual_type = hints[bad_index]
+            bad_argument = arguments[bad_index]
             expected_type = signature.additional_types
 
             if bad_index < len(signature.argument_types):
                 expected_type = signature.argument_types[bad_index]
 
-            if expected_type is not None and not types.check_full_hint(expected_type, actual_type):
-                raise self._type_error(error_node, "Expected {expected_type} not {actual_type} to {name}",
-                                       expected_type, actual_type, name=name)
+            if expected_type is not None and not bad_argument.validate(expected_type):
+                raise self._type_error(bad_argument, expected_type,
+                                       "Expected {expected_type} not {actual_type} to {name}", name=name)
             raise self._error(error_node, "Invalid argument to {name}", name=name)
-
-        return new_arguments, new_hints
 
     def start(self, node):
         """Entry point for the grammar."""
@@ -366,10 +342,8 @@ class LarkToEQL(Interpreter):
     # literals
     def literal(self, node):
         """Callback function to walk the AST."""
-        value, = self.visit_children(node)
-        if is_string(value):
-            return ast.String(value), types.literal(ast.String)
-        return ast.Number(value), types.literal(ast.Number.type_hint)
+        value = ast.Literal.from_python(self.visit_children(node)[0])
+        return NodeInfo(value, value.type_hint, source=node)
 
     def time_range(self, node):
         """Callback function to walk the AST."""
@@ -377,65 +351,76 @@ class LarkToEQL(Interpreter):
 
         for name, interval in units.items():
             if name.startswith(unit.rstrip('s') or 's'):
-                return ast.TimeRange(datetime.timedelta(seconds=val * interval)), types.literal(types.NUMBER)
+                span = ast.TimeRange(datetime.timedelta(seconds=val * interval))
+                return NodeInfo(span, TypeHint.Numeric, source=node)
 
         raise self._error(node["name"], "Unknown time unit")
 
     # fields
-    def _get_field_hint(self, node, field):
-        type_hint = types.BASE_ALL
+    def _update_field_info(self, node_info):
+        type_hint = None
         allow_missing = self._schema.allow_missing
+        field = node_info.node
+        schema = None
+        schema_hint = None
 
         if self._in_pipes:
             event_schema = self._pipe_schemas[0]
             event_field = field
+
             if self.multiple_events:
                 event_index, event_field = field.query_multiple_events()
                 num_events = len(self._pipe_schemas)
                 if event_index >= num_events:
-                    raise self._error(node.sub_fields[0], "Invalid index. Event array is size {num}", num=num_events)
+                    raise self._error(node_info.sub_fields[0], "Invalid index. Event array is size {num}", num=num_events)
+
                 event_schema = self._pipe_schemas[event_index]
 
             # Now that we have the schema
             event_type, = event_schema.schema.keys()
-            type_hint = event_schema.get_event_type_hint(event_type, event_field.full_path)
+            schema_hint = event_schema.get_event_type_hint(event_type, event_field.full_path)
             allow_missing = self._schema.allow_missing
 
         elif not self._schema:
-            return field, types.dynamic(type_hint)
+            return NodeInfo(node_info, TypeHint.Unknown, source=node_info)
 
         # check if it's a variable and
         elif field.base not in self._var_types:
             event_field = field
             event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
 
-            type_hint = self._schema.get_event_type_hint(event_type, event_field.full_path)
+            schema_hint = self._schema.get_event_type_hint(event_type, event_field.full_path)
 
             # Determine if the field should be converted as an enum
             # from subtype.create -> subtype == "create"
-            if type_hint is None and self._allow_enum and event_field.path and is_string(event_field.path[-1]):
+            if schema_hint is None and self._allow_enum and event_field.path and is_string(event_field.path[-1]):
                 base_field = ast.Field(event_field.base, event_field.path[:-1])
                 enum_value = ast.String(event_field.path[-1])
                 base_hint = self._schema.get_event_type_hint(event_type, base_field.full_path)
 
-                if types.check_types(types.STRING, base_hint):
-                    return ast.Comparison(base_field, ast.Comparison.EQ, enum_value), types.dynamic(types.BOOLEAN)
+                if base_hint is not None and base_hint[0] == TypeHint.String:
+                    comparison = ast.Comparison(base_field, ast.Comparison.EQ, enum_value)
+                    return NodeInfo(comparison, TypeHint.String, nullable=not self._strict_fields, source=node_info)
+
+        else:
+            type_hint = self._var_types[field.base]
+
+        if schema_hint is not None:
+            type_hint, schema = schema_hint
 
         if type_hint is None and not allow_missing:
             message = "Field not recognized"
             if event_type not in (EVENT_TYPE_ANY, EVENT_TYPE_GENERIC):
                 message += " for {event_type} event"
-            raise self._error(node, message, cls=EqlSchemaError, event_type=event_type)
+            raise self._error(node_info, message, cls=EqlSchemaError, event_type=event_type)
 
         # the field could be missing, so allow for null checks unless it's explicitly disabled
-        if not self._strict_fields:
-            type_hint = types.union(type_hint, types.NULL)
+        type_hint = type_hint or TypeHint.Unknown
+        return NodeInfo(field, type_hint, nullable=not self._strict_fields, schema=schema, source=node_info)
 
-        return field, types.dynamic(type_hint)
-
-    def _add_variable(self, name, type_hint=types.BASE_ALL):
+    def _add_variable(self, name, type_hint=TypeHint.Unknown):
         self._var_types[name] = type_hint
-        return ast.Field(name), types.VARIABLE
+        return NodeInfo(ast.Field(name), TypeHint.Variable)
 
     def method_chain(self, node):
         """Expand a chain of methods into function calls."""
@@ -447,17 +432,18 @@ class LarkToEQL(Interpreter):
 
     def value(self, node):
         """Check if a value is signed."""
-        value, value_hint = self.visit(node.children[1])
-        if not types.check_types(types.NUMBER, value_hint):
-            raise self._type_error(node, "Sign applied to non-numeric value", types.NUMBER, value_hint)
+        value = self.visit(node.children[1])  # type: NodeInfo
+        if not value.validate_type(TypeHint.Numeric):
+            raise self._type_error(node, TypeHint.Numeric, "Sign applied to non-numeric value")
 
         if node.children[0] == "-":
             if isinstance(value, ast.Number):
-                value.value = -value.value
+                value.node.value = -value.node.value
             else:
-                value = ast.MathOperation(ast.Number(0), "-", value)
+                value.node = ast.MathOperation(ast.Number(0), "-", value.node)
 
-        return value, value_hint
+        value.source = node
+        return value
 
     def name(self, node):
         """Check for illegal use of keyword."""
@@ -499,23 +485,22 @@ class LarkToEQL(Interpreter):
 
         if text in RESERVED:
             value = RESERVED[text]
-            return value, types.literal(value.type_hint)
+            return NodeInfo(value, value.type_hint, source=node)
 
         # validate against the remaining keywords
         name = self.visit(name)
 
         if name in self.preprocessor.constants:
             constant = self.preprocessor.constants[name]
-            return constant.value, types.literal(constant.value.type_hint)
+            return NodeInfo(constant.value, constant.value.type_hint, source=node)
 
         # Check if it's part of the current preprocessor that we are building
         # and if it is, then return it unexpanded but with a type hint
         if name in self.new_preprocessor.constants:
             constant = self.new_preprocessor.constants[name]
-            return ast.Field(name), types.literal(constant.value.type_hint)
+            return NodeInfo(ast.Field(name), constant.value.type_hint, source=node)
 
-        field = ast.Field(name)
-        return self._get_field_hint(node, field)
+        return self._update_field_info(NodeInfo(ast.Field(name), source=node))
 
     def field(self, node):
         """Callback function to walk the AST."""
@@ -536,98 +521,80 @@ class LarkToEQL(Interpreter):
         #     # This can be overridden by the parent function that is parsing it
         #     return self._add_variable(node.base)
         field = ast.Field(base, path)
-        return self._get_field_hint(node, field)
+        return self._update_field_info(NodeInfo(field, source=node))
 
     def comparison(self, node):
         """Callback function to walk the AST."""
-        (left, left_type), comp_op, (right, right_type) = self.visit_children(node)
+        left, comp_op, right = self.visit_children(node)  # type: (NodeInfo, str, NodeInfo)
 
         op = "==" if comp_op.type == 'EQUALS' else comp_op.value
 
-        accepted_types = types.union(types.PRIMITIVES, types.NULL)
-        error_message = "Unable to compare {expected_type} to {actual_type}"
+        accepted_types = TypeHint.primitives()
+        error_message = "Invalid comparison of {expected_type} to {actual_type}"
 
-        if not types.check_types(left_type, right_type) or \
-                not types.check_types(accepted_types, left_type) or \
-                not types.check_types(accepted_types, right_type):
+        if not left.validate_type(accepted_types) or \
+                not right.validate_type(accepted_types) or \
+                not right.validate_type(left):
             # check if the types can actually be compared, and don't allow comparison of nested types
-            raise self._type_error(node, error_message, types.clear(left_type), types.clear(right_type))
+            raise self._type_error(right, left, error_message, error_node=node)
 
         if op in (ast.Comparison.LT, ast.Comparison.LE, ast.Comparison.GE, ast.Comparison.GE):
-            # check that <, <=, >, >= are only supported for strings or integers
-            lt = types.get_type(left_type)
-            rt = types.get_type(right_type)
+            # check that <, <=, >, >= are only supported for strings or numbers
+            if not (left.validate_type(TypeHint.Numeric) and right.validate_type(TypeHint.Numeric) or
+                    left.validate_type(TypeHint.String) and right.validate_type(TypeHint.String)):
 
-            # string to string or number to number
-            if not ((types.check_full_hint(types.STRING, lt) and types.check_full_hint(types.STRING, rt)) or
-                    (types.check_full_hint(types.NUMBER, lt) and types.check_full_hint(types.NUMBER, rt))):
-                raise self._type_error(node, error_message, types.clear(left_type), types.clear(right_type))
+                raise self._type_error(right, left, error_message, error_node=node)
 
-        comp_node = ast.Comparison(left, op, right)
-        hint = types.get_specifier(types.union(left_type, right_type)), types.get_type(types.BOOLEAN)
+        eql_node = ast.Comparison(left.node, op, right.node)
 
         # there is no special comparison operator for wildcards, just look for * in the string
-        if isinstance(right, ast.String) and '*' in right.value:
-            func_call = ast.FunctionCall('wildcard', [left, right])
+        if isinstance(right.node, ast.String) and '*' in right.node.value:
+            func_call = ast.FunctionCall('wildcard', [left.node, right.node])
 
             if op == ast.Comparison.EQ:
-                return func_call, hint
+                eql_node = func_call
             elif op == ast.Comparison.NE:
-                return ~ func_call, hint
+                eql_node = ~func_call
 
-        return comp_node, hint
+        return NodeInfo(eql_node, TypeHint.Boolean, nullable=False, source=node)
 
     def mathop(self, node):
         """Callback function to walk the AST."""
-        output, output_type = self.visit(node.children[0])
+        result = self.visit(node.children[0])
+        message = "Unable to {func} {actual_type}"
 
-        def update_type(error_node, new_op, new_type):
-            if not types.check_types(types.NUMBER, new_type):
-                raise self._type_error(error_node, "Unable to {func} {actual_type}",
-                                       types.NUMBER, new_type, func=ast.MathOperation.func_lookup[new_op])
+        def update_type(left, new_op, right):
+            # type: (NodeInfo, str, NodeInfo) -> NodeInfo
+            if not right.validate_type(TypeHint.Numeric):
+                raise self._type_error(right, TypeHint.Numeric, message, func=ast.MathOperation.func_lookup[new_op])
 
-            output_spec = types.get_specifier(output_type)
-
-            if types.check_types(types.NULL, types.union(output_type, new_type)):
-                return output_spec, types.union_types(types.BASE_NULL, types.BASE_NUMBER)
-            else:
-                return output_spec, types.BASE_NUMBER
+            return NodeInfo(ast.MathOperation(left.node, new_op, right.node), TypeHint.Numeric,
+                            nullable=left.nullable or right.nullable)
 
         # update the type hint to strip non numeric information
-        output_type = update_type(node.children[0], node.children[1], output_type)
 
         for op_token, current_node in zip(node.children[1::2], node.children[2::2]):
             op = op_token.value
-            right, current_hint = self.visit(current_node)
-            output_type = update_type(current_node, op, current_hint)
+            next_node = self.visit(current_node)
+            result = update_type(result, op, next_node)
 
-            # determine if this could have a null in it from a divide by 0
-            if op in "%/" and (not isinstance(right, ast.Literal) or right.value == 0):
-                current_hint = types.union(current_hint, types.NULL)
-
-            output = ast.MathOperation(output, op, right)
-            output_type = update_type(current_node, op, current_hint)
-
-            if isinstance(output, ast.Literal):
-                output_type = types.get_specifier(output), output.type_hint
-
-        return output, output_type
+        result.source = node
+        return result
 
     sum_expr = mathop
     mul_expr = mathop
 
     def bool_expr(self, node, cls):
         """Method for both and, or expressions."""
-        terms, hints = self.unzip_hints(self.visit_children(node))
+        terms = self.visit_children(node)  # type: list[NodeInfo]
 
         if not self._implied_booleans:
-            for lark_node, hint in zip(node.child_trees, hints):
-                if not types.check_types(types.BOOLEAN, hint):
-                    raise self._type_error(lark_node, "Expected {expected_type}, not {actual_type}",
-                                           types.BOOLEAN, hint)
+            for term in terms:
+                if not term.validate_type(TypeHint.Boolean):
+                    raise self._type_error(term, TypeHint.Boolean)
 
-        term = cls(terms)
-        return term, types.union(*hints)
+        return NodeInfo(cls([term.node for term in terms]), TypeHint.Boolean,
+                        nullable=any(t.nullable for t in terms), source=node)
 
     def and_expr(self, node):
         """Callback function to walk the AST."""
@@ -639,169 +606,135 @@ class LarkToEQL(Interpreter):
 
     def not_expr(self, node):
         """Callback function to walk the AST."""
-        term, hint = self.visit(node.children[-1])
+        term = self.visit(node.children[-1])
 
         if not self._implied_booleans:
-            if not types.check_types(types.BOOLEAN, hint):
-                raise self._type_error(node.child_trees[-1], "Expected {expected_type}, not {actual_type}",
-                                       types.BOOLEAN, hint)
+            if not term.validate_type(TypeHint.Boolean):
+                raise self._type_error(term, TypeHint.Boolean)
 
+        # if there are an odd number of NOTs then we negate
         if len(node.get_list("NOT_OP")) % 2 == 1:
-            term = ~ term
-            hint = types.get_specifier(hint), types.BASE_BOOLEAN
+            term.node = ~term.node
 
-        return term, hint
+        return term
 
     def not_in_set(self, node):
         """Method for converting `x not in (...)`."""
-        rv, rv_hint = self.in_set(node)
-        return ~rv, rv_hint
+        info = self.in_set(node)
+        info.node = ~info.node
+        return info
 
     def in_set(self, node):
         """Callback function to walk the AST."""
-        (expr, outer_hint), (container, sub_hints) = self.visit_children(node)
-        outer_spec = types.get_specifier(outer_hint)
-        outer_type = types.get_type(outer_hint)
-        container_specifiers = [types.get_specifier(h) for h in sub_hints]
-        container_types = [types.get_type(h) for h in sub_hints]
+        outer, container = self.visit_children(node)  # type: (NodeInfo, list[NodeInfo])
+
+        if not outer.validate_type(TypeHint.primitives()):
+            # can't compare non-primitives to sets
+            raise self._type_error(outer, TypeHint.primitives())
 
         # Check that everything inside the container has the same type as outside
         error_message = "Unable to compare {expected_type} to {actual_type}"
-        for container_node, node_type in zip(node["expressions"].children, container_types):
-            if not types.check_types(outer_type, node_type):
-                raise self._type_error(container_node, error_message, outer_type, node_type)
+        for inner in container:
+            if not inner.validate_type(outer):
+                raise self._type_error(inner, outer, error_message)
 
         # This will always evaluate to true/false, so it should be a boolean
-        term = ast.InSet(expr, container)
-        return term, (types.union_specifiers(outer_spec, *container_specifiers), types.BASE_BOOLEAN)
+        term = ast.InSet(outer.node, [c.node for c in container])
+        return NodeInfo(term, TypeHint.Boolean, nullable=False, source=node)
 
     def _get_type_hint(self, node, ast_node):
         """Get the recommended type hint for a node when it isn't already known.
 
         This will likely only get called when expanding macros, until type hints are attached to AST nodes.
         """
-        type_hint = types.EXPRESSION
+        type_hint = TypeHint.Unknown
 
         if isinstance(ast_node, ast.Literal):
             type_hint = ast_node.type_hint
         elif isinstance(ast_node, (ast.Comparison, ast.InSet)):
-            type_hint = types.BOOLEAN
+            type_hint = TypeHint.Boolean
         elif isinstance(ast_node, ast.Field):
-            type_hint = types.EXPRESSION
+            type_hint = TypeHint.Unknown
 
             if ast_node.base not in self._var_types:
-                ast_node, type_hint = self._get_field_hint(node, ast_node)
-
-            # Make it dynamic because it's a field
-            type_hint = types.dynamic(type_hint)
-
-            if not self._strict_fields:
-                type_hint = types.union(type_hint, types.NULL)
+                ast_node, type_hint = self._update_field_info(node, ast_node)
 
         elif isinstance(ast_node, ast.FunctionCall):
             signature = self._function_lookup.get(ast_node.name)
             if signature:
                 type_hint = signature.return_value
 
-        if any(isinstance(n, ast.Field) for n in ast_node):
-            type_hint = types.dynamic(type_hint)
-
         return type_hint
 
     def function_call(self, node, prev_node=None, prev_arg=None):
         """Callback function to walk the AST."""
         function_name = self.visit(node["name"])
-        argument_nodes = []
         args = []
-        hints = []
+        nodes = []
 
-        # if the base is chained from a previous function call, use that node
-        if prev_arg:
-            base_arg, base_hint = prev_arg
-            args.append(base_arg)
-            hints.append(base_hint)
+        non_method_arguments = node["expressions"].children if node["expressions"] else []
 
         if prev_node:
-            argument_nodes.append(prev_node)
+            nodes.append(prev_node)
 
-        if "expressions" in node:
-            argument_nodes.extend(node["expressions"].children)
+        if prev_arg:
+            args.append(prev_arg)
+
+        if node["expressions"]:
+            nodes.extend(non_method_arguments)
 
         if function_name in self.preprocessor.macros:
-            if prev_node and not prev_arg:
-                arg, hint = self.visit(prev_node)
-                args.append(arg)
-                hints.append(hint)
-
-            if node["expressions"]:
-                args[len(args):], hints[len(hints):] = self.visit(node["expressions"])
-
+            args.extend(self.visit(non_method_arguments))
             macro = self.preprocessor.macros[function_name]
-            expanded = macro.expand(args)
+            expanded = macro.expand([arg.node for arg in args])
             type_hint = self._get_type_hint(node, expanded)
-            return expanded, type_hint
+            return NodeInfo(expanded, type_hint, source=node)
 
         elif function_name in self.new_preprocessor.macros:
-            if prev_node and not prev_arg:
-                arg, hint = self.visit(prev_node)
-                args.append(arg)
-                hints.append(hint)
-
-            if node["expressions"]:
-                args[len(args):], hints[len(hints):] = self.visit(node["expressions"])
-
+            args.extend(self.visit(non_method_arguments))
             macro = self.new_preprocessor.macros[function_name]
-            expanded = macro.expand(args)
+            expanded = macro.expand([arg.node for arg in args])
             type_hint = self._get_type_hint(node, expanded)
-            return expanded, type_hint
+            return NodeInfo(expanded, type_hint, source=node)
 
         signature = self._function_lookup.get(function_name)
 
         if signature:
             # Check for any variables in the signature, and handle their type hints differently
-            variables = set(idx for idx, hint in enumerate(signature.argument_types) if hint == types.VARIABLE)
-
-            arguments = []
+            variables = set(idx for idx, hint in enumerate(signature.argument_types) if hint == TypeHint.Variable)
 
             # Back up the current variable type hints for when this function goes out of scope
             old_variables = self._var_types.copy()
 
             # Get all of the arguments first, because they may depend on others
             # and we need to pull out all of the variables
-
-            for idx, arg_node in enumerate(argument_nodes):
+            for idx, arg_source in enumerate(nodes):
                 if idx in variables:
-                    if arg_node.data == "base_field":
-                        variable_name = self.visit(arg_node["name"])
+                    if arg_source.data == "base_field":
+                        variable_name = self.visit(arg_source["name"])
                         self._add_variable(variable_name)
-                        arguments.append((ast.Field(variable_name), types.VARIABLE))
+                        args.append(NodeInfo(ast.Field(variable_name), TypeHint.Variable, source=arg_source))
                     else:
-                        raise self._type_error(arg_node, "Invalid argument to {name}. Expected {expected_type}",
-                                               types.VARIABLE, name=function_name)
-                elif idx == 0 and prev_arg:
-                    arguments.append(prev_arg)
+                        raise self._type_error(NodeInfo(None, source=arg_source), TypeHint.Variable,
+                                               "Invalid argument to {name}. Expected {expected_type}",
+                                               name=function_name)
+                elif idx == 0 and prev_node:
+                    if prev_arg is None:
+                        args.append(self.visit(prev_node))
                 else:
-                    arguments.append(self.visit(arg_node))
-
-            # Then validate this against the signature
-            args, hints = self.unzip_hints(arguments)
+                    args.append(self.visit(arg_source))
 
             # In theory, we could do another round of validation for generics, but we'll just assume
             # that loop variables can take any shape they need to, as long as the other arguments match
 
             # Validate that the arguments match the function signature by type and length
-            args, hints = self.validate_signature(node, signature, argument_nodes, args, hints)
+            self.validate_signature(node, signature, args)
 
             # Restore old variables, since ours are out of scope now
             self._var_types = old_variables
 
-            # Get return value and specifier, and mark as dynamic if any of the inputs are
-            output_hint = signature.return_value
-
-            if hints and types.is_dynamic(types.union(*hints)):
-                output_hint = types.dynamic(output_hint)
-
-            return ast.FunctionCall(function_name, args, as_method=prev_node is not None), output_hint
+            expr = ast.FunctionCall(function_name, [a.node for a in args], as_method=prev_node is not None)
+            return NodeInfo(expr, signature.return_value, nullable=False, source=node)
 
         elif self._check_functions:
             raise self._error(node["name"], "Unknown function {NAME}")
@@ -809,10 +742,10 @@ class LarkToEQL(Interpreter):
             args = []
 
             if node["expressions"]:
-                args, _ = self.visit(node["expressions"])
+                args = self.visit(node["expressions"])
 
-            func_node = ast.FunctionCall(function_name, args, as_method=prev_node is not None)
-            return func_node, types.dynamic(types.EXPRESSION)
+            func_node = ast.FunctionCall(function_name, [a.node for a in args], as_method=prev_node is not None)
+            return NodeInfo(func_node, source=node)
 
     # queries
     def event_query(self, node):
@@ -828,12 +761,11 @@ class LarkToEQL(Interpreter):
                 raise self._error(node["name"], "Invalid event type: {NAME}", cls=EqlSchemaError, width=len(event_type))
 
         with self.scoped(event_type=event_type, query_condition=True):
-            expr, hint = self.visit(node.children[-1])
-            if not self._implied_booleans and not types.check_types(types.BOOLEAN, hint):
-                raise self._type_error(node.children[-1], "Expected {expected_type} not {actual_type}",
-                                       types.BOOLEAN, hint)
+            node_info = self.visit(node.children[-1])  # type: NodeInfo
+            if not self._implied_booleans and not node_info.validate_type(TypeHint.Boolean):
+                raise self._type_error(node_info, TypeHint.Boolean, "Expected {expected_type} not {actual_type}")
 
-        return ast.EventQuery(event_type, expr)
+        return ast.EventQuery(event_type, node_info.node)
 
     def pipe(self, node):
         """Callback function to walk the AST."""
@@ -846,19 +778,15 @@ class LarkToEQL(Interpreter):
             raise self._error(node["name"], "Unknown pipe {NAME}")
 
         args = []
-        hints = []
-        arg_nodes = []
 
         if node["expressions"]:
-            arg_nodes = node["expressions"].children
-            args, hints = self.visit(node["expressions"])
+            args = self.visit(node["expressions"])
         elif len(node.children) > 1:
-            arg_nodes = node.children[1:]
-            args, hints = self.unzip_hints(self.visit(c) for c in node.children[1:])
+            args = self.visit(node.children[1:])
 
-        args, hints = self.validate_signature(node, pipe_cls, arg_nodes, args, hints)
-        self._pipe_schemas = pipe_cls.output_schemas(args, hints, self._pipe_schemas)
-        return pipe_cls(args)
+        self.validate_signature(node, pipe_cls, args)
+        self._pipe_schemas = pipe_cls.output_schemas(args, self._pipe_schemas)
+        return pipe_cls([arg.node for arg in args])
 
     def base_query(self, node):
         """Visit a sequence, join or event query."""
@@ -893,9 +821,7 @@ class LarkToEQL(Interpreter):
 
     def expressions(self, node):
         """Convert a list of expressions."""
-        expressions = self.visit_children(node)
-        # Split out return types and the hints
-        return self.unzip_hints(expressions)
+        return self.visit_children(node)
 
     def named_subquery(self, node):
         """Callback function to walk the AST."""
@@ -909,7 +835,7 @@ class LarkToEQL(Interpreter):
             raise self._error(node["name"], "Unknown subquery type '{NAME} of'")
 
         query = self.visit(node["subquery"]["event_query"])
-        return ast.NamedSubquery(name, query), types.dynamic(types.BOOLEAN)
+        return NodeInfo(ast.NamedSubquery(name, query), TypeHint.Boolean, source=node)
 
     def named_params(self, node, get_param=None, position=None, close=None):
         """Callback function to walk the AST."""
@@ -933,6 +859,7 @@ class LarkToEQL(Interpreter):
             raise self._error(node, "Subqueries not supported")
 
         actual_num = len(node["join_values"]["expressions"].children) if node["join_values"] else 0
+
         if num_values is not None and num_values != actual_num:
             if actual_num == 0:
                 error_node = node
@@ -940,14 +867,14 @@ class LarkToEQL(Interpreter):
             else:
                 end = False
                 error_node = node["join_values"]["expressions"].children[max(num_values, actual_num) - 1]
+
             message = "Expected {num} value"
             if num_values != 1:
                 message += "s"
             raise self._error(error_node, message, num=num_values, end=end)
 
         if node["named_params"]:
-            params = self.named_params(node["named_params"],
-                                       get_param=get_param, position=position, close=close)
+            params = self.named_params(node["named_params"], get_param=get_param, position=position, close=close)
         else:
             params = ast.NamedParams()
 
@@ -955,10 +882,11 @@ class LarkToEQL(Interpreter):
 
         if node["join_values"]:
             with self.scoped(event_type=query.event_type):
-                join_values, join_hints = self.visit(node["join_values"])
+                join_values = self.visit(node["join_values"])
         else:
-            join_values, join_hints = [], []
-        return ast.SubqueryBy(query, params, join_values), join_hints
+            join_values = []
+
+        return NodeInfo(ast.SubqueryBy(query, params, [v.node for v in join_values]), source=node), join_values
 
     def join_values(self, node):
         """Return all of the expressions."""
@@ -977,87 +905,61 @@ class LarkToEQL(Interpreter):
 
         # Figure out how many fields are joined by in the first query, and match across all
         subquery_nodes = node.get_list("subquery_by")
-        first, first_hints = self.subquery_by(subquery_nodes[0], get_param=get_param, position=0)
-        num_values = len(first.join_values)
-        queries = [(first, first_hints)]
-
-        for pos, query in enumerate(subquery_nodes[1:], 1):
-            queries.append(self.subquery_by(query, num_values=num_values, get_param=get_param, position=pos))
+        first, first_info = self.subquery_by(subquery_nodes[0], get_param=get_param, position=0)
+        num_values = len(first_info)
+        subqueries = [(first, first_info)]
 
         shared = node['join_values']
+        until_node = node["until_subquery_by"]
         close = None
 
+        if until_node:
+            subquery_nodes.append(until_node["subquery_by"])
+
+        for pos, subquery in enumerate(subquery_nodes[1:], 1):
+            subqueries.append(self.subquery_by(subquery, num_values=num_values, get_param=get_param, position=pos))
+
         # Validate that each field has matching types
-        default_hint = types.get_type(types.union(types.PRIMITIVES, types.NULL))
+        default_hint = TypeHint.primitives()
         strict_hints = [default_hint] * num_values
 
         if shared:
             strict_hints += [default_hint] * len(shared["expressions"].children)
 
-        def check_by_field(by_pos, by_node, by_hint):
+        def check_by_field(by_pos, by_node):  # type: (int, NodeInfo) -> None
             # Check that the possible values for our field that match what we currently understand about this type
-            intersected = types.intersect_types(strict_hints[by_pos], by_hint)
-            if not intersected or not types.is_dynamic(by_hint):
-                raise self._type_error(by_node, "Unable to join {expected_type} to {actual_type}",
-                                       strict_hints[by_pos], by_hint)
+            if not by_node.validate(strict_hints[by_pos]) or not by_node.validate_literal(False):
+                raise self._type_error(by_node, strict_hints[by_pos], "Unable to join {expected_type} to {actual_type}")
 
             # Restrict the acceptable fields from what we've seen
-            strict_hints[by_pos] = intersected
+            if by_node.type_info != TypeHint.Unknown:
+                strict_hints[by_pos] = by_node.type_info
 
-        for qpos, (query, query_by_hints) in enumerate(queries):
-            unshared_fields = []
-            curr_by_hints = query_by_hints
-            query_node = subquery_nodes[qpos]
-
-            if "join_values" in query_node:
-                curr_join_nodes = query_node["join_values"]["expressions"].children
-            else:
-                curr_join_nodes = []
-
+        for qpos, (subquery, by_nodes) in enumerate(subqueries):
             if shared:
-                with self.scoped(event_type=query.query.event_type):
-                    curr_shared_by, curr_shared_hints = self.visit(shared)
-
-                curr_by_hints = curr_shared_hints + curr_by_hints
-                query.join_values = curr_shared_by + query.join_values
-                curr_join_nodes = shared['expressions'].children + curr_join_nodes
+                with self.scoped(event_type=subquery.node.query.event_type):
+                    by_nodes = self.visit(shared) + by_nodes
 
             # Now that they've all been built out, start to intersect the types
-            for fpos, (n, h) in enumerate(zip(curr_join_nodes, curr_by_hints)):
-                check_by_field(fpos, n, h)
+            for fpos, node in enumerate(by_nodes):
+                check_by_field(fpos, node)
 
             # Add all of the fields to the beginning of this subquery's BY fields and preserve the order
-            query.join_values = unshared_fields + query.join_values
-
-        until_node = node["until_subquery_by"]
+            subquery.node.join_values = [b.node for b in by_nodes]
 
         if until_node:
-            close, close_hints = self.subquery_by(until_node["subquery_by"],
-                                                  num_values=num_values, get_param=get_param, close=True)
-            close_nodes = [until_node["subquery_by"]]
+            close, _ = subqueries.pop()
+            close = close.node
 
-            if shared:
-                with self.scoped(event_type=close.query.event_type):
-                    shared_by, shared_hints = self.visit(shared)
-
-                close_hints = close_hints + shared_hints
-                close.join_values = shared_by + close.join_values
-                close_nodes = shared['expressions'].children + close_nodes
-
-            # Check the types of the by field
-            for fpos, (n, h) in enumerate(zip(close_nodes, close_hints)):
-                check_by_field(fpos, n, h)
-
-        # Unzip the queries from the (query, hint) tuples
-        queries, _ = self.unzip_hints(queries)
-        return list(queries), close
+        return list(q.node for q, _ in subqueries), close
 
     def get_sequence_parameter(self, node, **kwargs):
         """Validate that sequence parameters are working."""
         key = self.visit(node["name"])
 
         if len(node.children) > 1:
-            value, _ = self.visit(node.children[-1])
+            value = self.visit(node.children[-1])
+            value = value.node
         else:
             value = ast.Boolean(True)
 
@@ -1078,25 +980,23 @@ class LarkToEQL(Interpreter):
             raise self._error(param_node, "Unexpected parameters")
 
         # set the default type to a literal 'true'
-        value, type_hint = ast.Boolean(True), types.literal(types.BOOLEAN)
+        value = NodeInfo(ast.Boolean(True), TypeHint.Boolean)
         key = self.visit(param_node["name"])
 
         if len(param_node.children) > 1:
-            value, type_hint = self.visit(param_node.children[-1])
+            value = self.visit(param_node.children[-1])
 
         if key == 'fork':
-            if not types.check_types(types.literal((types.NUMBER, types.BOOLEAN)), type_hint):
-                raise self._type_error(param_node,
-                                       "Expected type {expected_type} value for {k}",
-                                       types.literal(types.BOOLEAN))
+            if not value.validate((TypeHint.Boolean.require_literal(), TypeHint.Numeric.require_literal())):
+                raise self._type_error(param_node, TypeHint.Boolean, "Expected type {expected_type} value for {k}")
 
-            if value.value not in (True, False, 0, 1):
+            if value.node.value not in (True, False, 0, 1):
                 raise self._error(param_node, "Invalid value for {k}")
 
         else:
             raise self._error(param_node['name'], "Unknown parameter {NAME}")
 
-        return key, ast.Boolean(bool(value.value))
+        return key, ast.Boolean(bool(value.node.value))
 
     def sequence(self, node):
         """Callback function to walk the AST."""
@@ -1118,17 +1018,18 @@ class LarkToEQL(Interpreter):
     # definitions
     def macro(self, node):
         """Callback function to walk the AST."""
-        definition = ast.Macro(self.visit(node.children[0]),
-                               self.visit(node.children[1:-1]),
-                               self.visit(node.children[-1])[0])
+        name = self.visit(node.children[0])
+        params = self.visit(node.children[1:-1])
+        body = self.visit(node.children[-1])
+        definition = ast.Macro(name, params, body.node)
         self.new_preprocessor.add_definition(definition)
         return definition
 
     def constant(self, node):
         """Callback function to walk the AST."""
         name = self.visit(node["name"])
-        value, _ = self.visit(node["literal"])
-        definition = ast.Constant(name, value)
+        value = self.visit(node["literal"])
+        definition = ast.Constant(name, value.node)
         self.new_preprocessor.add_definition(definition)
         return definition
 
@@ -1179,8 +1080,8 @@ def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=
         if exc is None:
             try:
                 eql_node = walker.visit(tree)
-                if not isinstance(eql_node, ast.EqlNode) and isinstance(eql_node, tuple):
-                    eql_node, type_hint = eql_node
+                if isinstance(eql_node, NodeInfo):
+                    eql_node = eql_node.node
 
                 if cfg.read_stack("optimized", True):
                     optimizer = Optimizer(recursive=True)

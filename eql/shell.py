@@ -20,8 +20,8 @@ from .parser import parse_query, keywords, allow_enum_fields
 from .pipes import list_pipes, CountPipe
 from .schema import Schema, EVENT_TYPE_ANY, EVENT_TYPE_GENERIC
 from .table import Table
-from .types import Array, Nested, is_union
 from .utils import stream_file_events, load_dump, to_unicode, is_array
+from .types import TypeHint
 
 try:
     import prompt_toolkit
@@ -505,62 +505,68 @@ class EqlShell(cmd.Cmd, object):
         # Unconditionally show the number of results returned
         print_formatted_text("{:d} result{} found".format(count, "" if count == 1 else "s"))
 
+    @classmethod
+    def _get_schema_matches(cls, text, path, schema):
+        flat_schema = Schema({"flattened": {}})
+
+        for v in schema.schema.values():
+            flat_schema = flat_schema.merge(Schema({"flattened": v}))
+
+        # add event types
+        matches = set()
+        matches.update(schema.schema)
+
+        # for now, just drop events[0] for completing the schema
+        if len(path) > 2 and path[0] == "events" and isinstance(path[1], int):
+            path = path[2:]
+
+        # determine what could be completed
+        if len(path) > 1:
+            type_hint = flat_schema.get_event_type_hint(EVENT_TYPE_ANY, path[:-1])
+
+            if type_hint is None:
+                return []
+
+            type_hint, schema_hint = type_hint
+
+        else:
+            # we don't know what the event type is so it could technically be any of the top level fields
+            # but the schema has already been flattened going into this
+            schema_hint, = flat_schema.schema.values()
+
+        prefix = text if text.endswith(".") or text.endswith("]") else ""
+
+        if isinstance(schema_hint, dict):
+            for key, v in schema_hint.items():
+                if key == path[-1]:
+                    if isinstance(v, dict):
+                        matches.add(key + ".")
+                    elif isinstance(v, list):
+                        matches.add(key + "[")
+                else:
+                    matches.add(key)
+
+        return {prefix + match for match in matches}
+
     def complete_search(self, text, line, begidx, endidx, fields_only=False, contains=False):  # noqa: C901
         """Complete EQL keywords or known schema fields."""
         matches = set()
         nested_match = self.nested_field_re.search(line)
 
+        # tracking event type is hard, so instead flatten all schema event types
         schema = Schema.current()  # type: Schema
 
         # check for completion of nested fields
         if nested_match:
-            parts = self.field_split.split(nested_match.group(0))
-            path = [int(f) if f.isdigit() else f for f in parts]
-
-            # for now, just drop events[0] for completing the schema
-            if len(path) > 2 and path[0] == "events" and isinstance(path[1], int):
-                path = path[2:]
-
-            # determine what could be completed
-            if len(path) > 1:
-                type_hint = schema.get_event_type_hint(EVENT_TYPE_ANY, path[:-1])
-            else:
-                # we don't know what the event type is so it could technically be any of the top level fields
-                type_hints = defaultdict(list)
-
-                for event_type, event_schema in schema.schema.items():
-                    for k in event_schema:
-                        type_hints[k].append(schema.get_event_type_hint(event_type, [k]))
-
-                # union them all together
-                type_hint = Nested([(k, tuple(v)) for k, v in type_hints.items()])
-
-            prefix = text if text.endswith(".") else ""
-            if isinstance(type_hint, Nested):
-                for key, v in type_hint:
-                    if key == path[-1]:
-                        if isinstance(v, Nested):
-                            matches.add(prefix + key + ".")
-                        elif isinstance(v, Array):
-                            matches.add(prefix + key + "[")
-                    else:
-                        matches.add(prefix + key)
-
-            elif is_union(type_hint):
-                for option in type_hint:
-                    if isinstance(option, Nested):
-                        for key, v in option:
-                            if key == path[-1]:
-                                if isinstance(v, Nested):
-                                    matches.add(prefix + key + ".")
-                                elif isinstance(v, Array):
-                                    matches.add(prefix + key + "[")
-                            else:
-                                matches.add(prefix + key)
+            field_path = self.field_split.split(nested_match.group(0))
+            field_path = [int(f) if f.isdigit() else f for f in field_path]
+            matches.update(self._get_schema_matches(text, field_path, schema))
 
         else:
+            matches.update(self._get_schema_matches(text, [text], schema))
+
             if not fields_only:
-                matches.update(self.get_keywords())
+                matches.update(k for k in self.get_keywords() if k.startswith(text))
 
                 # if you're in a pipe, allow completion for only pipes
                 completed = line if not text else line[:-len(text)]
@@ -568,15 +574,13 @@ class EqlShell(cmd.Cmd, object):
                     return list(sorted(pipe for pipe in list_pipes() if pipe.startswith(text)))
 
                 # require keywords to have exact (not substring) matches
-                matches = {m for m in matches if m.startswith(m)}
+                matches = {m for m in matches if m.startswith(text)}
 
                 if schema.allow_any:
                     matches.add(EVENT_TYPE_ANY)
 
                 if schema.allow_generic:
                     matches.add(EVENT_TYPE_GENERIC)
-
-                matches.update(schema.schema)
 
             for event_schema in schema.schema.values():
                 for k, v in event_schema.items():

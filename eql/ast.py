@@ -7,8 +7,9 @@ from collections import OrderedDict
 from operator import lt, le, eq, ne, ge, gt, mul, truediv, mod, add, sub
 from string import Template
 
+from .errors import EqlError
 from .signatures import SignatureMixin
-from .types import STRING, BOOLEAN, NUMBER, NULL, PRIMITIVES
+from .types import TypeHint, NodeInfo  # noqa: F401
 from .utils import to_unicode, is_string, is_number, ParserConfig
 
 __all__ = (
@@ -76,6 +77,20 @@ class BaseNode(object):
         """Enumerate over all of the slots and their values."""
         for key in self.__slots__:
             yield key, getattr(self, key, None)
+
+    def children(self):  # type: () -> list[BaseNode]
+        """Collect over all child nodes."""
+        children = []
+
+        def recurse(descendant):
+            if isinstance(descendant, BaseNode):
+                children.append(descendant)
+            elif hasattr(descendant, "__iter__"):
+                for c in descendant:
+                    recurse(c)
+
+        recurse(c for c in self.iter_slots())
+        return children
 
     def optimize(self, recursive=False):
         """Optimize an AST."""
@@ -157,6 +172,18 @@ class Expression(EqlNode):
 
     precedence = 0
 
+    def foldable(self):
+        """Determine if an expression can be folded."""
+        return all(c.foldable() for c in self.children())
+
+    def fold(self):
+        """Fold an expression."""
+        optimized = self.optimize(recursive=True)
+        if isinstance(optimized, Literal):
+            return optimized.value
+
+        raise EqlError("Unable to fold expression: {}".format(self))
+
     def __and__(self, other):
         """Boolean AND between two AST nodes."""
         if isinstance(other, Literal):
@@ -188,7 +215,7 @@ class Literal(Expression):
 
     __slots__ = 'value',
     precedence = Expression.precedence + 1
-    type_hint = PRIMITIVES
+    type_hint = None  # type: TypeHint
 
     def __init__(self, value):
         """Create an EQL value from a python value."""
@@ -208,7 +235,7 @@ class Literal(Expression):
         elif is_string(python_value):
             return String
         else:
-            raise TypeError("Unable to convert python value to a literal.")
+            raise TypeError("Unable to convert {} to a literal.".format(python_value))
 
     @classmethod
     def from_python(cls, python_value):
@@ -242,7 +269,7 @@ class Literal(Expression):
 class Boolean(Literal):
     """Boolean literal."""
 
-    type_hint = BOOLEAN
+    type_hint = TypeHint.Boolean
 
     def _render(self):
         return 'true' if self.value else 'false'
@@ -251,7 +278,7 @@ class Boolean(Literal):
 class Null(Literal):
     """Null literal."""
 
-    type_hint = NULL
+    type_hint = TypeHint.Null
 
     def __init__(self, value=None):
         """Null literal value."""
@@ -264,7 +291,7 @@ class Null(Literal):
 class Number(Literal):
     """Numeric literal."""
 
-    type_hint = NUMBER
+    type_hint = TypeHint.Numeric
 
     def _render(self):
         return to_unicode(self.value)
@@ -285,7 +312,7 @@ class String(Literal):
     }
     reverse_patterns = {v: k for k, v in escape_patterns.items()}
     escape_re = r'[{}]'.format('|'.join(escape_patterns.values()))
-    type_hint = STRING
+    type_hint = TypeHint.String
 
     @classmethod
     def escape(cls, s):
@@ -915,8 +942,8 @@ class PipeCommand(EqlNode, SignatureMixin):
         return decorator
 
     @classmethod
-    def output_schemas(cls, arguments, type_hints, event_schemas):
-        # type: (list, list, list[Schema]) -> list[Schema]
+    def output_schemas(cls, arguments, event_schemas):
+        # type: (list[NodeInfo], list[Schema]) -> list[Schema]
         """Output a list of schemas for each event in the pipe."""
         return event_schemas
 

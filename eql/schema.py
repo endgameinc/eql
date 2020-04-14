@@ -1,9 +1,6 @@
 """Eventing data schemas."""
 import re
-from .types import (
-    Nested, Array, BASE_PRIMITIVES, check_types,
-    BASE_ALL, BASE_STRING, BASE_BOOLEAN, BASE_NULL, BASE_NUMBER
-)
+from .types import TypeHint
 from .errors import EqlError
 from .utils import is_string, is_number, ParserConfig
 
@@ -12,8 +9,12 @@ _global = None
 EVENT_TYPE_ANY = 'any'
 EVENT_TYPE_GENERIC = 'generic'
 
-MIXED_TYPES = "mixed"
-IDENT_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+MIXED_TYPES = TypeHint.Unknown.value
+IDENT_RE = re.compile(r"^[_a-zA-Z][a-zA-Z0-9_]*$")
+
+
+is_primitive = set(b.value for b in TypeHint.primitives()).__contains__
+primitive_lookup = {b.value: b for b in TypeHint.primitives()}
 
 
 class Schema(ParserConfig):
@@ -29,7 +30,7 @@ class Schema(ParserConfig):
             "flat": "string",
             "somearray": [],
             "somearray": ["string", "number", "boolean"],
-            "field1": {"nested_field": "mixed", "doublenested": [{"sub1": "string", "sub2": "field"}]},
+            "field1": {"nested_field": "unknown", "doublenested": [{"sub1": "string", "sub2": "field"}]},
             "flexiblefield": {}
         }
     """
@@ -51,9 +52,7 @@ class Schema(ParserConfig):
     def _validate_field_schema(self, field_schema):
         """Validate that a field schema is correct."""
         if is_string(field_schema) and len(field_schema) > 0:
-            if field_schema == MIXED_TYPES:
-                return True
-            return check_types(BASE_PRIMITIVES, field_schema)
+            return is_primitive(field_schema) or field_schema == MIXED_TYPES
         elif isinstance(field_schema, (list, tuple)):
             return not field_schema or all(self._validate_field_schema(s) for s in field_schema)
         elif isinstance(field_schema, dict):
@@ -84,13 +83,13 @@ class Schema(ParserConfig):
     def _convert_to_type(cls, schema):
         """Convert a schema to the type system."""
         if schema == {} or schema == MIXED_TYPES:
-            return BASE_ALL
+            return TypeHint.Unknown, None
         elif isinstance(schema, dict):
-            return Nested([(k, cls._convert_to_type(s)) for k, s in sorted(schema.items())])
+            return TypeHint.Object, schema
         elif isinstance(schema, (list, tuple)):
-            return Array([cls._convert_to_type(s) for s in schema])
+            return TypeHint.Array, list(schema)
         else:
-            return schema
+            return primitive_lookup[schema], None
 
     def _get_path_hint(self, event_schema, path):
         """Validate a field against a schema."""
@@ -105,7 +104,7 @@ class Schema(ParserConfig):
                 # if it's nested, then we have to enumerate over the union of nested schemas
                 for subschema in event_schema:
                     hint = self._get_path_hint(subschema, subpath)
-                    if hint:
+                    if hint is not None:
                         return hint
                 return
             else:
@@ -127,28 +126,28 @@ class Schema(ParserConfig):
     def get_event_type_hint(self, event_type, path):
         """Validate that a field matches an event_type."""
         if not self.schema:
-            return BASE_ALL
+            return TypeHint.Unknown, None
         elif event_type == EVENT_TYPE_ANY:
             # search all of the known events, and find one that has this schema
             if self.allow_any:
                 if not self.schema:
-                    return BASE_ALL
+                    return TypeHint.Unknown, None
                 for event_type in self.schema:
                     field_type = self.get_event_type_hint(event_type, path)
                     if field_type is not None:
                         return field_type
                 if self.allow_missing:
-                    return BASE_ALL
+                    return TypeHint.Unknown, None
         elif event_type in self.schema:
             # Convert the values to the expected string values or None
             type_hint = self._get_path_hint(self.schema[event_type], path)
             if type_hint is not None:
                 return type_hint
             elif self.allow_missing:
-                return BASE_ALL
+                return TypeHint.Unknown, None
         elif event_type == EVENT_TYPE_GENERIC:
             if self.allow_generic:
-                return BASE_ALL
+                return TypeHint.Unknown, None
 
     def validate_event_type(self, event_type):
         """Validate that an event type is allowed by the schema."""
@@ -256,7 +255,7 @@ class Schema(ParserConfig):
             return schema
 
         if data is None:
-            return BASE_NULL
+            return TypeHint.Null.value
         elif isinstance(data, list):
             schema_base = set()
             nested_schema = None
@@ -277,11 +276,11 @@ class Schema(ParserConfig):
             else:
                 return nested_schema
         elif is_string(data):
-            return BASE_STRING
+            return TypeHint.String.value
         elif isinstance(data, bool):
-            return BASE_BOOLEAN
+            return TypeHint.Boolean.value
         elif is_number(data):
-            return BASE_NUMBER
+            return TypeHint.Numeric.value
 
     @classmethod
     def learn(cls, events):
