@@ -36,33 +36,29 @@ class TestFunctions(unittest.TestCase):
 
     def test_cidr_match_validation(self):
         """Check that invalid CIDR addresses are detected."""
-        hints = [
-            types.dynamic(types.STRING),
-            types.literal(types.STRING),
-            types.literal(types.STRING),
-            types.literal(types.STRING),
-        ]
         arguments = [
             Field("ip"),
             String("10.0.0.0/8"),
             String("b"),
             String("192.168.1.0/24"),
         ]
-        position, _, _ = CidrMatch.validate(arguments, hints)
+        info = [types.NodeInfo(arg, types.TypeHint.String) for arg in arguments]
+
+        position = CidrMatch.validate(info)
         self.assertEqual(position, 2)
 
         # test that missing / causes failure
-        arguments[2].value = "55.55.55.0"
-        position, _, _ = CidrMatch.validate(arguments, hints)
+        info[2].node.value = "55.55.55.0"
+        position = CidrMatch.validate(info)
         self.assertEqual(position, 2)
 
         # test for invalid ip
-        arguments[2].value = "55.55.256.0/24"
-        position, _, _ = CidrMatch.validate(arguments, hints)
+        info[2].node.value = "55.55.256.0/24"
+        position = CidrMatch.validate(info)
         self.assertEqual(position, 2)
 
-        arguments[2].value = "55.55.55.0/24"
-        position, _, _ = CidrMatch.validate(arguments, hints)
+        info[2].node.value = "55.55.55.0/24"
+        position = CidrMatch.validate(info)
         self.assertIsNone(position)
 
     def test_cidr_match_rewrite(self):
@@ -73,17 +69,16 @@ class TestFunctions(unittest.TestCase):
             String("172.169.18.19/31"),
             String("192.168.1.25/24"),
         ]
-        hints = [
-            types.dynamic(types.STRING),
-            types.literal(types.STRING),
-            types.literal(types.STRING),
-            types.literal(types.STRING),
-        ]
+        info = [types.NodeInfo(arg, types.TypeHint.String) for arg in arguments]
 
-        position, new_arguments, type_hints = CidrMatch.validate(arguments, hints)
+        position = CidrMatch.validate(info)
         self.assertEqual(position, None)
 
-        # check that the original wasn't modified
+        new_arguments = [arg.node for arg in info]
+
+        # check that the original were only modified to round the values
+        self.assertIsNot(arguments[0], new_arguments[1])
+        self.assertIsNot(arguments[1], new_arguments[1])
         self.assertIsNot(arguments[2], new_arguments[2])
 
         # and that the values were set to the base of the subnet
@@ -91,15 +86,16 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual(new_arguments[3].value, "192.168.1.0/24")
 
         # test that /0 is working
-        arguments[2] = String("1.2.3.4/0")
-        position, new_arguments, type_hints = CidrMatch.validate(arguments, hints)
-
+        info[2].node = String("1.2.3.4/0")
+        position = CidrMatch.validate(info)
+        new_arguments = [arg.node for arg in info]
+        self.assertIsNone(position)
         self.assertIsNot(arguments[2], new_arguments[2])
 
         # and /32
         self.assertEqual(new_arguments[2].value, "0.0.0.0/0")
-        arguments[2] = String("12.34.45.56/32")
-        position, new_arguments, type_hints = CidrMatch.validate(arguments, hints)
+        info[2].node = String("12.34.45.56/32")
+        position = CidrMatch.validate(info)
 
         self.assertIsNone(position)
 

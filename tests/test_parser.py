@@ -247,7 +247,7 @@ class TestParser(unittest.TestCase):
 
             except (EqlSyntaxError, EqlSemanticError):
                 ex_type, ex, tb = sys.exc_info()
-                traceback.print_exc(ex)
+                traceback.print_exc()
                 traceback.print_tb(tb)
                 self.fail("Unable to parse query #{}: {}".format(i, text))
 
