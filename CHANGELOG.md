@@ -1,6 +1,16 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Version 0.8.7
+_Released 2020-##-##_
+
+### Changed
+* (Internal) Changed the type system to use TypeHint/TypeFoldCheck/NodeInfo instead of tuples
+
+
+## Version 0.8.6
+_Released 2020-04-06_
+
 ## Version 0.8.6
 _Released 2020-04-06_
 
