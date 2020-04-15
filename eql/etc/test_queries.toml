@@ -375,7 +375,6 @@ sequence
 '''
 expected_event_ids  = [1, 2, 2, 3]
 
-
 [[queries]]
 query = '''
 sequence
@@ -1295,4 +1294,26 @@ process where length(between(process_name, 'g', 'e')) > 0
 expected_event_ids = []
 query = '''
 process where length(between(process_name, 'g', 'z')) > 0
+'''
+
+[[queries]]
+expected_event_ids  = [11, 50]
+description = "test window pipe"
+query = '''
+process where subtype == "create" |
+window 5m |
+unique parent_process_name, process_name |
+unique_count parent_process_name |
+filter count == 5
+'''
+
+[[queries]]
+expected_event_ids  = [55]
+description = "test window pipe with descendant"
+query = '''
+file where event_subtype_full == "file_create_event"
+	and descendant of [process where process_name == "cmd.exe"] |
+	window 5m |
+	unique_count process_name |
+	filter count == 5
 '''

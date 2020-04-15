@@ -494,3 +494,42 @@ class TestPythonEngine(TestEngine):
         output = self.get_output(queries=[parse_query(query)], config=config, events=events)
         event_ids = [event.data['unique_pid'] for event in output]
         self.validate_results(event_ids, ['host1-1003'], "Relationships failed due to pid collision")
+
+    def test_pipes_reset_state(self):
+        """Test that the pipes are clearing their state after receiving PIPE_EOF"""
+        events = self.get_events()
+
+        queries = [
+            'process where true | unique opcode',
+            'process where true | unique_count opcode',
+            'process where true | count',
+            'process where true | count opcode',
+            'process where true | head 1',
+            'process where true | tail',
+            'process where true | sort opcode',
+            'process where true | window 10s',
+            'process where true | window 5m | head 1',
+        ]
+
+        for query in queries:
+            engine = PythonEngine()
+
+            results = []  # type: list[Event]
+            engine.add_output_hook(results.append)
+            engine.add_queries([parse_query(query)])
+
+            engine.stream_events(events)
+            engine.finalize()
+            expected_len = len(results)
+
+            results.clear()
+
+            engine.stream_events(events)
+            engine.finalize()
+            actual_len = len(results)
+
+            self.assertEquals(
+                expected_len,
+                actual_len,
+                f"Expected results to be same when streaming events multiple times {query}"
+            )

@@ -463,20 +463,32 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         if len(node.arguments) == 0:
             # Counting only the total
             summary = {'key': 'totals', 'count': 0}
-            hosts = set()
+
+            # mutable scoped variable
+            hosts = [set()]
 
             def count_total_callback(events):
                 if events is PIPE_EOF:
-                    if len(hosts):
-                        summary['total_hosts'] = len(hosts)
-                        summary['hosts'] = list(sorted(hosts))
+                    # immutable version of summary
+                    event = summary.copy()
 
-                    next_pipe([Event(EVENT_TYPE_GENERIC, 0, summary)])
+                    if len(hosts[0]):
+                        event['total_hosts'] = len(hosts[0])
+                        event['hosts'] = list(sorted(hosts[0]))
+
+                    next_pipe([Event(EVENT_TYPE_GENERIC, 0, event)])
                     next_pipe(PIPE_EOF)
+
+                    # reset state
+                    summary['count'] = 0
+                    if len(hosts[0]):
+                        del summary['hosts']
+                        del summary['total_hosts']
+                    hosts[0] = set()
                 else:
                     summary['count'] += 1
                     if host_key in events[0].data:
-                        hosts.add(events[0].data[host_key])
+                        hosts[0].add(events[0].data[host_key])
 
             return count_total_callback
 
@@ -506,6 +518,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                         details['percent'] = float(details['count']) / total
                         next_pipe([Event(EVENT_TYPE_GENERIC, 0, details)])
                     next_pipe(PIPE_EOF)
+
+                    # reset state
+                    count_table.clear()
                 else:
                     key = get_key(events)
                     insensitive_key = remove_case(key)
@@ -529,18 +544,20 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         return filter_callback
 
     def _convert_head_pipe(self, node, next_pipe):  # type: (HeadPipe, callable) -> callable
-        totals = [0]  # has to be mutable because of python scoping
+        output_buffer = []
         max_count = node.count
 
         def head_callback(events):
-            if totals[0] < max_count:
-                if events is PIPE_EOF:
-                    next_pipe(PIPE_EOF)
-                else:
-                    totals[0] += 1
-                    next_pipe(events)
-                    if totals[0] == max_count:
-                        next_pipe(PIPE_EOF)
+            if events is PIPE_EOF:
+                for output in output_buffer:
+                    next_pipe(output)
+                next_pipe(PIPE_EOF)
+
+                # reset state
+                output_buffer.clear()
+            else:
+                if len(output_buffer) < max_count:
+                    output_buffer.append(events)
 
         return head_callback
 
@@ -552,6 +569,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 for output in output_buffer:
                     next_pipe(output)
                 next_pipe(PIPE_EOF)
+
+                # reset state
+                output_buffer.clear()
             else:
                 output_buffer.append(events)
 
@@ -572,6 +592,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 for output in output_buffer:
                     next_pipe(output)
                 next_pipe(PIPE_EOF)
+
+                # reset state
+                output_buffer.clear()
             else:
                 output_buffer.append(events)
 
@@ -584,6 +607,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         def unique_callback(events):
             if events is PIPE_EOF:
                 next_pipe(PIPE_EOF)
+
+                # reset state
+                seen.clear()
             else:
                 key = get_unique_key(events)
                 if key not in seen:
@@ -591,6 +617,32 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                     next_pipe(events)
 
         return unique_callback
+
+    def _convert_window_pipe(self, node, next_pipe):  # type: (WindowPipe) -> callable
+        """Aggregate events over a sliding window using a buffer."""
+        window_buf = deque()  # tuple of (timestamp, events)
+        timespan = self.convert(node.timespan)
+
+        def time_window_callback(events):  # type: (list[Event]) -> None
+            if events is PIPE_EOF:
+                next_pipe(PIPE_EOF)
+
+                # reset state
+                window_buf.clear()
+            else:
+                minimum_start = events[0].time - timespan
+
+                # Remove any events that no longer sit within the time window
+                while len(window_buf) > 0 and window_buf[0][0] < minimum_start:
+                    window_buf.popleft()
+
+                window_buf.append((events[0].time, events))
+
+                for result in window_buf:
+                    next_pipe(result[1])
+                next_pipe(PIPE_EOF)
+
+        return time_window_callback
 
     def _convert_unique_count_pipe(self, node, next_pipe):  # type: (CountPipe) -> callable
         """Aggregate counts coming into the pipe."""
@@ -613,6 +665,8 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                     next_pipe(result)
                 next_pipe(PIPE_EOF)
 
+                # reset state
+                results.clear()
             else:
                 # Create a copy of these, because they can be modified
                 events = [events[0].copy()] + events[1:]
@@ -648,12 +702,19 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             def count_total_aggregates(events):  # type: (list[Event]) -> None
                 if events is PIPE_EOF:
                     hosts = result.pop('hosts')  # type: set
-                    if len(hosts) > 0:
-                        result['hosts'] = list(sorted(hosts))
-                        result['total_hosts'] = len(hosts)
 
-                    next_pipe([Event(EVENT_TYPE_GENERIC, 0, result)])
+                    # immutable version of result
+                    event = result.copy()
+                    if len(hosts) > 0:
+                        event['hosts'] = list(sorted(hosts))
+                        event['total_hosts'] = len(hosts)
+
+                    next_pipe([Event(EVENT_TYPE_GENERIC, 0, event)])
                     next_pipe(PIPE_EOF)
+
+                    # reset state
+                    result['count'] = 0
+                    result['hosts'] = set()
                 else:
                     piece = events[0].data
                     result['count'] += piece['count']
@@ -684,6 +745,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                         result['percent'] = float(result['count']) / total
                         next_pipe([Event(EVENT_TYPE_GENERIC, 0, result)])
                     next_pipe(PIPE_EOF)
+
+                    # reset state
+                    results.clear()
                 else:
                     piece = events[0].data
                     key = events[0].data['key']
