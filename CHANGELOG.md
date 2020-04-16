@@ -11,9 +11,6 @@ _Released 2020-##-##_
 ## Version 0.8.6
 _Released 2020-04-06_
 
-## Version 0.8.6
-_Released 2020-04-06_
-
 ### Changed
 * Made missing `where` raise a `EqlSyntaxError` instead of a `EqlSemanticError`
 
