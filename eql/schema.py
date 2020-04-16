@@ -30,7 +30,7 @@ class Schema(ParserConfig):
             "flat": "string",
             "somearray": [],
             "somearray": ["string", "number", "boolean"],
-            "field1": {"nested_field": "unknown", "doublenested": [{"sub1": "string", "sub2": "field"}]},
+            "field1": {"nested_field": "mixed", "doublenested": [{"sub1": "string", "sub2": "field"}]},
             "flexiblefield": {}
         }
     """
