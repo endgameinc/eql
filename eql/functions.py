@@ -5,9 +5,7 @@ import struct
 
 from .signatures import SignatureMixin
 from .errors import EqlError
-from .types import (
-    STRING, NUMBER, BOOLEAN, VARIABLE, ARRAY, literal, PRIMITIVES, EXPRESSION, PRIMITIVE_ARRAY, is_literal, is_dynamic
-)
+from .types import TypeHint
 from .utils import is_string, to_unicode, is_number
 
 
@@ -34,7 +32,7 @@ class FunctionSignature(SignatureMixin):
     """Helper class for declaring function signatures."""
 
     name = str()
-    return_value = BOOLEAN
+    return_value = TypeHint.Boolean
 
     @classmethod
     def get_callback(cls, *arguments):
@@ -75,8 +73,8 @@ class DynamicFunctionSignature(FunctionSignature):
 class MathFunctionSignature(FunctionSignature):
     """Base signature for math functions."""
 
-    argument_types = [NUMBER, NUMBER]
-    return_value = NUMBER
+    argument_types = [TypeHint.Numeric, TypeHint.Numeric]
+    return_value = TypeHint.Numeric
     operator = None
 
     @classmethod
@@ -105,9 +103,9 @@ class ArrayContains(FunctionSignature):
     """Check if ``value`` is a member of the array ``some_array``."""
 
     name = "arrayContains"
-    argument_types = [PRIMITIVE_ARRAY, PRIMITIVES]
-    return_value = BOOLEAN
-    additional_types = PRIMITIVES
+    argument_types = [TypeHint.Array, TypeHint.primitives()]
+    return_value = TypeHint.Boolean
+    additional_types = TypeHint.primitives()
 
     @classmethod
     def run(cls, array, *value):
@@ -128,8 +126,8 @@ class ArrayCount(DynamicFunctionSignature):
     """Search for matches to a dynamic expression in an array."""
 
     name = "arrayCount"
-    argument_types = [ARRAY, VARIABLE, EXPRESSION]
-    return_value = NUMBER
+    argument_types = [TypeHint.Array, TypeHint.Variable, TypeHint.Boolean]
+    return_value = TypeHint.Numeric
 
 
 @register
@@ -137,8 +135,8 @@ class ArraySearch(DynamicFunctionSignature):
     """Search for matches to a dynamic expression in an array."""
 
     name = "arraySearch"
-    argument_types = [ARRAY, VARIABLE, EXPRESSION]
-    return_value = BOOLEAN
+    argument_types = [TypeHint.Array, TypeHint.Variable, TypeHint.Boolean]
+    return_value = TypeHint.Boolean
 
 
 @register
@@ -146,9 +144,9 @@ class Between(FunctionSignature):
     """Return a substring that's between two other substrings."""
 
     name = "between"
-    argument_types = [STRING, STRING, STRING, literal(BOOLEAN), literal(BOOLEAN)]
+    argument_types = [TypeHint.String, TypeHint.String, TypeHint.String, TypeHint.Boolean, TypeHint.Boolean]
     minimum_args = 3
-    return_value = STRING
+    return_value = TypeHint.String
 
     @classmethod
     def run(cls, source_string, first, second, greedy=False, case_sensitive=False):
@@ -184,9 +182,9 @@ class CidrMatch(FunctionSignature):
     """Math an IP address against a list of IPv4 subnets in CIDR notation."""
 
     name = "cidrMatch"
-    argument_types = [STRING, literal(STRING)]
-    additional_types = literal(STRING)
-    return_value = BOOLEAN
+    argument_types = [TypeHint.String, TypeHint.String.require_literal()]
+    additional_types = TypeHint.String.require_literal()
+    return_value = TypeHint.Boolean
 
     octet_re = r'(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])'
     ip_re = r'\.'.join([octet_re, octet_re, octet_re, octet_re])
@@ -329,33 +327,34 @@ class CidrMatch(FunctionSignature):
         return False
 
     @classmethod
-    def validate(cls, arguments, type_hints=None):
+    def validate(cls, arguments):
         """Validate the calling convention and change the argument order if necessary."""
         # used to have just two arguments and the pattern was on the left and expression on the right
-        error_position, _, _ = super(CidrMatch, cls).validate(arguments, type_hints)
+        error_position = super(CidrMatch, cls).validate(arguments)
 
         if error_position is not None:
-            return error_position, arguments, type_hints
+            return error_position
 
         # create a copy of the array that we can modify
         arguments = arguments[:]
 
         for pos, argument in enumerate(arguments[1:], 1):
-            argument = arguments[pos] = String(argument.value.strip())
+            # overwrite the original node
+            text = argument.node.value.strip()
 
-            if not cls.cidr_compiled.match(argument.value):
-                return pos, arguments, type_hints
+            if not cls.cidr_compiled.match(argument.node.value):
+                return pos
 
-            # Since it does match, we should also rewrite the string
-            ip_address, size = argument.value.split("/")
-            subnet_integer, _ = cls.to_mask(argument.value)
+            # Since it does match, we should also rewrite the string to align to the base of the subnet
+            ip_address, size = text.split("/")
+            subnet_integer, _ = cls.to_mask(text)
             subnet_bytes = struct.pack(">L", subnet_integer)
             subnet_base = socket.inet_ntoa(subnet_bytes)
 
             # overwrite the original argument so it becomes the subnet
-            argument.value = "{}/{}".format(subnet_base, size)
+            argument.node = String("{}/{}".format(subnet_base, size))
 
-        return None, arguments, type_hints
+        return None
 
 
 @register
@@ -363,9 +362,9 @@ class Concat(FunctionSignature):
     """Concatenate multiple values as strings."""
 
     name = "concat"
-    additional_types = PRIMITIVES
+    additional_types = TypeHint.primitives()
     minimum_args = 1
-    return_value = STRING
+    return_value = TypeHint.String
 
     @classmethod
     def run(cls, *arguments):
@@ -392,8 +391,8 @@ class EndsWith(FunctionSignature):
     """Check if a string ends with a substring."""
 
     name = "endsWith"
-    argument_types = [STRING, STRING]
-    return_value = BOOLEAN
+    argument_types = [TypeHint.String, TypeHint.String]
+    return_value = TypeHint.Boolean
 
     @classmethod
     def run(cls, source, substring):
@@ -407,8 +406,8 @@ class IndexOf(FunctionSignature):
     """Check the start position of a substring."""
 
     name = "indexOf"
-    argument_types = [STRING, STRING, NUMBER]
-    return_value = NUMBER
+    argument_types = [TypeHint.String, TypeHint.String, TypeHint.Numeric]
+    return_value = TypeHint.Numeric
     minimum_args = 2
 
     @classmethod
@@ -429,8 +428,8 @@ class Length(FunctionSignature):
     """Get the length of an array or string."""
 
     name = "length"
-    argument_types = [(STRING, ARRAY)]
-    return_value = NUMBER
+    argument_types = [(TypeHint.String, TypeHint.Array)]
+    return_value = TypeHint.Numeric
 
     @classmethod
     def run(cls, array):
@@ -445,9 +444,9 @@ class Match(FunctionSignature):
     """Perform regular expression matching on a string."""
 
     name = "match"
-    argument_types = [STRING, literal(STRING)]
-    return_value = BOOLEAN
-    additional_types = literal(STRING)
+    argument_types = [TypeHint.String, TypeHint.String.require_literal()]
+    return_value = TypeHint.Boolean
+    additional_types = TypeHint.String.require_literal()
 
     @classmethod
     def join_regex(cls, *regex):
@@ -466,13 +465,22 @@ class Match(FunctionSignature):
         return callback
 
     @classmethod
-    def validate(cls, arguments, type_hints=None):
+    def validate(cls, arguments):
         """Validate the calling convention and change the argument order if necessary."""
-        # used to have just two arguments and the pattern was on the left and expression on the right
-        if len(arguments) == 2 and type_hints and is_literal(type_hints[0]) and is_dynamic(type_hints[1]):
-            arguments = list(reversed(arguments))
-            type_hints = list(reversed(type_hints))
-        return super(Match, cls).validate(arguments, type_hints)
+        if len(arguments) == 2 and isinstance(arguments[0].node, String) and not isinstance(arguments[1].node, String):
+            # used to have just two arguments and the pattern was on the left and expression on the right
+            arguments[0], arguments[1] = arguments[1], arguments[0]
+
+        pos = super(Match, cls).validate(arguments)
+
+        if pos is not None:
+            return pos
+
+        for pos, argument in enumerate(arguments[1:], 1):
+            try:
+                re.compile(argument.node.value, REGEX_FLAGS)
+            except re.error:
+                return pos
 
     @classmethod
     def run(cls, source, *matches):
@@ -523,8 +531,8 @@ class Safe(FunctionSignature):
     """Evaluate an expression and suppress exceptions."""
 
     name = "safe"
-    argument_types = [EXPRESSION]
-    return_value = EXPRESSION
+    argument_types = [TypeHint.Unknown]
+    return_value = TypeHint.Unknown
 
 
 @register
@@ -532,8 +540,8 @@ class StartsWith(FunctionSignature):
     """Check if a string starts with a substring."""
 
     name = "startsWith"
-    argument_types = [STRING, STRING]
-    return_value = BOOLEAN
+    argument_types = [TypeHint.String, TypeHint.String]
+    return_value = TypeHint.Boolean
 
     @classmethod
     def run(cls, source, substring):
@@ -547,8 +555,8 @@ class StringContains(FunctionSignature):
     """Check if a string is a substring of another."""
 
     name = "stringContains"
-    argument_types = [STRING, STRING]
-    return_value = BOOLEAN
+    argument_types = [TypeHint.String, TypeHint.String]
+    return_value = TypeHint.Boolean
 
     @classmethod
     def run(cls, source, substring):
@@ -563,8 +571,8 @@ class Substring(FunctionSignature):
     """Extract a substring."""
 
     name = "substring"
-    argument_types = [STRING, NUMBER, NUMBER]
-    return_value = STRING
+    argument_types = [TypeHint.String, TypeHint.Numeric, TypeHint.Numeric]
+    return_value = TypeHint.String
     minimum_args = 1
 
     @classmethod
@@ -592,8 +600,8 @@ class ToNumber(FunctionSignature):
     """Convert a string to a number."""
 
     name = "number"
-    argument_types = [(STRING, NUMBER), NUMBER]
-    return_value = NUMBER
+    argument_types = [(TypeHint.String, TypeHint.Numeric), TypeHint.Numeric]
+    return_value = TypeHint.Numeric
     minimum_args = 1
 
     @classmethod
@@ -617,8 +625,8 @@ class ToString(FunctionSignature):
     """Convert a value to a string."""
 
     name = "string"
-    argument_types = [PRIMITIVES]
-    return_value = STRING
+    argument_types = [TypeHint.primitives()]
+    return_value = TypeHint.String
 
     @classmethod
     def run(cls, source):
@@ -631,9 +639,9 @@ class Wildcard(FunctionSignature):
     """Perform glob matching on a string."""
 
     name = "wildcard"
-    argument_types = [STRING, literal(STRING)]
-    return_value = BOOLEAN
-    additional_types = literal(STRING)
+    argument_types = [TypeHint.String, TypeHint.String.require_literal()]
+    return_value = TypeHint.Boolean
+    additional_types = TypeHint.String.require_literal()
 
     @classmethod
     def to_regex(cls, *wildcards):

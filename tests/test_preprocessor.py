@@ -88,7 +88,7 @@ class TestPreProcessor(unittest.TestCase):
             parse_query("process where true | filter CONSTANT()")
 
             # unique requires a dynamic type, but there are no fields in CONSTANT
-            with self.assertRaisesRegex(EqlTypeMismatchError, "Expected dynamic boolean/number/string"):
+            with self.assertRaisesRegex(EqlTypeMismatchError, "Expected dynamic number not literal number to unique"):
                 parse_query("process where true | unique CONSTANT()")
 
     def test_macro_expansion(self):
