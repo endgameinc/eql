@@ -1206,8 +1206,12 @@ expected_event_ids = [82]
 query = "file where serial_event_id * 2 == 164"
 
 [[queries]]
-expected_event_ids = [82]
+expected_event_ids = [82, 83]
 query = "file where serial_event_id / 2 == 41"
+
+[[queries]]
+expected_event_ids = [82]
+query = "file where serial_event_id / 2.0 == 41"
 
 [[queries]]
 expected_event_ids = [82]

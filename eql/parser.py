@@ -462,9 +462,6 @@ class LarkToEQL(Interpreter):
         else:
             value = float(token)
 
-            if int(value) == value:
-                value = int(value)
-
         if node["SIGN"] == "-":
             return -value
         return value
