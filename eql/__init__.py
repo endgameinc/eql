@@ -42,8 +42,6 @@ from .parser import (
     parse_field,
     parse_literal,
     parse_query,
-    skip_optimizations,
-    strict_field_schema,
     extract_query_terms,
 )
 from .schema import Schema
@@ -124,6 +122,4 @@ __all__ = (
     "save_analytic",
     "save_analytics",
     "save_dump",
-    "skip_optimizations",
-    "strict_field_schema",
 )

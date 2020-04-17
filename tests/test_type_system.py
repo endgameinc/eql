@@ -1,10 +1,13 @@
 """Test case."""
 import unittest
+import itertools
 
-from eql.errors import EqlTypeMismatchError
-from eql.parser import parse_expression
-from eql.types import TypeFoldCheck, TypeHint, NodeInfo
 from eql.ast import Field, Null, FunctionCall
+from eql.errors import EqlTypeMismatchError
+from eql.parser import parse_expression, implied_booleans
+from eql.types import TypeFoldCheck, TypeHint, NodeInfo
+
+from . import utils
 
 
 class TestTypeSystem(unittest.TestCase):
@@ -39,12 +42,12 @@ class TestTypeSystem(unittest.TestCase):
             (TypeHint.Numeric, TypeHint.String, False),
 
             # anything could potentially be null
-            (TypeHint.Null, TypeHint.Numeric, False),
-            (TypeHint.String, TypeHint.Null, False),
+            (TypeHint.Null, TypeHint.Numeric, True),
+            (TypeHint.String, TypeHint.Null, True),
             (TypeHint.Null, TypeHint.Null, True),
 
             # test out unions
-            (TypeHint.String, (TypeHint.Numeric, TypeHint.Null), False),
+            (TypeHint.String, (TypeHint.Numeric, TypeHint.Null), True),
             (TypeHint.String, TypeHint.primitives(), True),
         ]
 
@@ -52,56 +55,95 @@ class TestTypeSystem(unittest.TestCase):
             output = NodeInfo(None, hint1).validate_type(hint2)
             self.assertEqual(output, expected, "hint {}.validate({}) != {}".format(hint1, hint2, expected))
 
-    def test_parse_type_matches(self):
-        """Check that improperly compared types are raising errors."""
-        expected_type_match = [
-            '1 or 2',
-            'abc == null or def == null',
-            "false or 1",
-            "1 or 'abcdefg'",
-            "false or 'string-false'",
-            "port == 80 or command_line == 'defghi'",
-            "(port != null or command_line != null)",
-            "(process_path or process_name) == true",
-            "'hello' < 'hELLO'",
-            "1 < 2",
-            "(data and data.alert_details and data.alert_details.process_path) == false",
+    def test_null_compares(self):
+        """Test that all types can be compared to null."""
+        values = [None, utils.random_bool(), utils.random_int(), utils.random_string(), utils.random_float()]
+
+        for v in values:
+            unparsed = utils.unfold(v)
+
+            def folds_to(fmt_string, expected):
+                parsed = parse_expression(fmt_string.format(unparsed))
+                self.assertEqual(parsed.fold(), expected)
+
+            folds_to("{}   == null", v is None)
+            folds_to("{}   != null", v is not None)
+            folds_to("null ==   {}", v is None)
+            folds_to("null !=   {}", v is not None)
+
+            if not isinstance(v, bool):
+                folds_to("{} <    null", None)
+                folds_to("{}   <= null", None)
+                folds_to("{}   >  null", None)
+                folds_to("{}   >= null", None)
+                folds_to("null <    {}", None)
+                folds_to("null <=   {}", None)
+                folds_to("null >=   {}", None)
+                folds_to("null >    {}", None)
+
+    def test_type_match_comparisons(self):
+        """Test that all valid non-null type comparisons."""
+        comparables = [
+            [utils.random_bool],
+            [utils.random_int, utils.random_float],
+            [utils.random_string]
         ]
 
-        for expression in expected_type_match:
-            parse_expression(expression)
+        for row in comparables:
+            for left_getter, right_getter in itertools.product(row, repeat=2):
+                lv = left_getter()
+                rv = right_getter()
+                left = utils.unfold(lv)
+                right = utils.unfold(rv)
 
-    def test_parse_type_mismatches(self):
-        """Check that improperly compared types are raising errors."""
-        expected_type_mismatch = [
-            '1 == "*"',
-            'false = 1',
-            '100 = "a"',
-            '100 != "*abcdef*"',
-            '100 in ("string1", "string2")',
-            'true != 100',
-            '100 != "abc"',
-            '"some string" == null',
-            'true < false',
-            'true > "abc"',
-            'field < true',
-            'true <= 6',
-            "'hello' > 500",
+                def parse_op(op):
+                    parse_expression("{} {} {}".format(left, op, right))
 
-            "(process_path or process_name) == 'net.exe'",
-            "(process_path and process_name) == 'net.exe'",
+                parse_op("==")
+                parse_op("!=")
 
-            # check for return types
-            'true == length(abc)',
-            '"true" == length(abc)',
+                for op in ("<", "<=", ">=", ">"):
+                    if isinstance(lv, bool):
+                        # booleans can't be compared with inequalities
+                        with self.assertRaises(EqlTypeMismatchError):
+                            parse_op(op)
+                    else:
+                        parse_op(op)
 
-            # check for mixed sets
-            "'rundll' in (1, 2, 3, abc.def[100], 'RUNDLL', false)",
-            "not 'rundll' in (1, 2, 3, '100', 'nothing', false)",
-        ]
+    def test_type_mismatch_comparisons(self):
+        """Check that improperly compared types raise mismatch errors."""
+        comparables = {
+            (float, int),
+            (int, float),
+            (bool, bool),
+            (str, str),
+        }
 
-        for expression in expected_type_mismatch:
-            self.assertRaises(EqlTypeMismatchError, parse_expression, expression)
+        get_values = [utils.random_bool, utils.random_int, utils.random_float, utils.random_string]
+
+        for lhs_getter, rhs_getter in itertools.product(get_values, repeat=2):
+            lv = lhs_getter()
+            rv = rhs_getter()
+
+            # skip over types that we know will match
+            if type(lv) == type(rv) or (type(lv), type(rv)) in comparables:
+                continue
+
+            left = utils.unfold(lv)
+            right = utils.unfold(rv)
+
+            for comparison in ["==", "!=", "<", "<=", ">=", ">"]:
+                with self.assertRaises(EqlTypeMismatchError):
+                    parse_expression("{left} {comp} {right}".format(left=left, comp=comparison, right=right))
+
+    def test_parse_implied_booleans(self):
+        """Test that parsing with implicit boolean casting works."""
+        with implied_booleans:
+            for num_bools in range(2, 10):
+                values = [utils.unfold(utils.random_value()) for _ in range(num_bools)]
+
+                parse_expression(" and ".join(values))
+                parse_expression(" or ".join(values))
 
     def test_invalid_function_signature(self):
         """Check that function signatures are correct."""

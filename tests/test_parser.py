@@ -42,11 +42,18 @@ class TestParser(unittest.TestCase):
             'abc and def',
             '(1==abc) and def',
             '1 * 2 + 3 * 4 + 10 / 2',
-            'abc == (1 and 2)',
-            'abc == (def and 2)',
+
+            # opt-in with eql.parser.implied_booleans
+            # 'abc == (1 and 2)',
+            # 'abc == (def and 2)',
+
             'abc == (def and def)',
             'abc == (def and ghi)',
             '"\\b\\t\\r\\n\\f\\\\\\"\\\'"',
+            '1 - -2',
+            '1 + -2',
+            '1 * (-2)',
+            '3 * -length(file_path)',
         ]
 
         for query in valid:
@@ -160,10 +167,13 @@ class TestParser(unittest.TestCase):
             'image_load where not x > y',
             'process where _leadingUnderscore == 100',
             'network where 1 * 2 + 3 * 4 + 10 / 2 == 2 + 12 + 5',
-            'file where 1 - -2',
-            'file where 1 + (-2)',
-            'file where 1 * (-2)',
-            'file where 3 * -length(file_path)',
+
+            # now requires eql.parser.implied_booleans
+            # 'file where (1 - -2)',
+            # 'file where 1 + (-2)',
+            # 'file where 1 * (-2)',
+            # 'file where 3 * -length(file_path)',
+
             'network where a * b + c * d + e / f == g + h + i',
             'network where a * (b + c * d) + e / f == g + h + i',
             'process where pid == 4 or pid == 5 or pid == 6 or pid == 7 or pid == 8',
@@ -213,8 +223,8 @@ class TestParser(unittest.TestCase):
             # multiple by values
             'sequence by field1  [file where true] by f1 [process where true] by f1',
             'sequence by a,b,c,d [file where true] by f1,f2 [process where true] by f1,f2',
-            'sequence [file where 1] by f1,f2 [process where 1] by f1,f2 until [process where 1] by f1,f2',
-            'sequence by f [file where true] by a,b [process where true] by c,d until [process where 1] by e,f',
+            'sequence [file where 1=1] by f1,f2 [process where 1=1] by f1,f2 until [process where 1=1] by f1,f2',
+            'sequence by f [file where true] by a,b [process where true] by c,d until [process where 1=1] by e,f',
             # sequence with named params
             'sequence by unique_pid [process where true] [file where true] fork',
             'sequence by unique_pid [process where true] [file where true] fork=true',
@@ -371,7 +381,7 @@ class TestParser(unittest.TestCase):
     def test_method_syntax(self):
         """Test correct parsing and rendering of methods."""
         parse1 = parse_expression("(a and b):concat():length()")
-        parse2 = parse_expression("a and b:concat():length()")
+        parse2 = parse_expression("a and b:concat():length() > 0")
         self.assertNotEqual(parse1, parse2)
 
         class Unmethodize(DepthFirstWalker):

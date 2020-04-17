@@ -32,6 +32,8 @@ __all__ = (
     # boolean logic
     "Comparison",
     "InSet",
+    "IsNotNull",
+    "IsNull",
     "And",
     "Or",
     "Not",
@@ -580,6 +582,30 @@ class Comparison(Expression):
         if self.comparator == Comparison.EQ and isinstance(other, InSet) and self.left == other.expression:
             return InSet(self.left, [self.right]) & other
         return super(Comparison, self).__and__(other)
+
+
+class IsNull(Expression):
+    """Node for checking if values are null."""
+
+    template = Template("$expr == null")
+    precedence = Comparison.precedence
+    __slots__ = "expr",
+
+    def __init__(self, expr):  # type: (Expression) -> None
+        """Check if a value is null."""
+        self.expr = expr
+
+
+class IsNotNull(Expression):
+    """Node for checking if values are null."""
+
+    template = Template("$expr != null")
+    precedence = Comparison.precedence
+    __slots__ = "expr",
+
+    def __init__(self, expr):  # type: (Expression) -> None
+        """Check if a value is not null."""
+        self.expr = expr
 
 
 class InSet(Expression):

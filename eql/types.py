@@ -56,7 +56,7 @@ class TypeFoldCheck(object):
 class NodeInfo(object):
     """Class for holding full type and schema information for an expression."""
 
-    def __init__(self, node, type_info=None, nullable=False, schema=None, source=None):
+    def __init__(self, node, type_info=None, nullable=True, schema=None, source=None):
         """Capture node information for an AST.
 
         :param ast.EqlNode node: The EQL node in the tree.
@@ -95,10 +95,10 @@ class NodeInfo(object):
             other_nullable = expected.nullable
         elif isinstance(expected, TypeHint):
             other_type = expected
-            other_nullable = other_type in (TypeHint.Null, TypeHint.Unknown)
+            other_nullable = True
         elif isinstance(expected, TypeFoldCheck):
             other_type = expected.type_info
-            other_nullable = other_type in (TypeHint.Null, TypeHint.Unknown)
+            other_nullable = True
         else:
             raise TypeError("Expected one of {}, got {}", (NodeInfo, TypeHint, TypeFoldCheck), expected)
 
