@@ -638,7 +638,7 @@ class LarkToEQL(Interpreter):
 
         # if there are an odd number of NOTs then we negate
         if len(node.get_list("NOT_OP")) % 2 == 1:
-            term.node = ~term.node
+            term.node = ast.Not(term.node)
 
         return term
 

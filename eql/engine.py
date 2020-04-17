@@ -139,6 +139,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         """Helper decorator for performing type checks before evaluating comparisons."""
         @functools.wraps(f)
         def decorated(a, b):
+            if a is None or b is None:
+                return
+
             if is_string(a) and is_string(b) or \
                     is_number(a) and is_number(b) or \
                     type(a) == type(b):

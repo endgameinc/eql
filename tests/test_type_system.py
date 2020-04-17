@@ -55,32 +55,6 @@ class TestTypeSystem(unittest.TestCase):
             output = NodeInfo(None, hint1).validate_type(hint2)
             self.assertEqual(output, expected, "hint {}.validate({}) != {}".format(hint1, hint2, expected))
 
-    def test_null_compares(self):
-        """Test that all types can be compared to null."""
-        values = [None, utils.random_bool(), utils.random_int(), utils.random_string(), utils.random_float()]
-
-        for v in values:
-            unparsed = utils.unfold(v)
-
-            def folds_to(fmt_string, expected):
-                parsed = parse_expression(fmt_string.format(unparsed))
-                self.assertEqual(parsed.fold(), expected)
-
-            folds_to("{}   == null", v is None)
-            folds_to("{}   != null", v is not None)
-            folds_to("null ==   {}", v is None)
-            folds_to("null !=   {}", v is not None)
-
-            if not isinstance(v, bool):
-                folds_to("{} <    null", None)
-                folds_to("{}   <= null", None)
-                folds_to("{}   >  null", None)
-                folds_to("{}   >= null", None)
-                folds_to("null <    {}", None)
-                folds_to("null <=   {}", None)
-                folds_to("null >=   {}", None)
-                folds_to("null >    {}", None)
-
     def test_type_match_comparisons(self):
         """Test that all valid non-null type comparisons."""
         comparables = [
@@ -137,7 +111,7 @@ class TestTypeSystem(unittest.TestCase):
                     parse_expression("{left} {comp} {right}".format(left=left, comp=comparison, right=right))
 
     def test_parse_implied_booleans(self):
-        """Test that parsing with implicit boolean casting works."""
+        """Test that parsing with implicit boolean casting works as expected."""
         with implied_booleans:
             for num_bools in range(2, 10):
                 values = [utils.unfold(utils.random_value()) for _ in range(num_bools)]
