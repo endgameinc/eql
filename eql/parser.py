@@ -481,15 +481,17 @@ class LarkToEQL(Interpreter):
 
     def base_field(self, node):
         """Get a base field."""
-        name = node["name"]
-        text = name["NAME"]
+        child = node.children[0]
+        token = child["NAME"] or child["ESCAPED_NAME"]
+        name = token.value.strip("`")
 
-        if text in RESERVED:
-            value = RESERVED[text]
-            return NodeInfo(value, value.type_hint, source=node)
+        if token.type != "ESCAPED_NAME":
+            if name in RESERVED:
+                value = RESERVED[name]
+                return NodeInfo(value, value.type_hint, source=node)
 
-        # validate against the remaining keywords
-        name = self.visit(name)
+            # validate against the remaining keywords
+            self.visit(child)
 
         if name in self.preprocessor.constants:
             constant = self.preprocessor.constants[name]
@@ -505,11 +507,24 @@ class LarkToEQL(Interpreter):
 
     def field(self, node):
         """Callback function to walk the AST."""
-        full_path = [s.strip() for s in re.split(r"[.\[\]]+", node.children[0])]
-        full_path = [int(s) if s.isdigit() else s for s in full_path if s]
+        full_path = []
 
-        if any(p in keywords for p in full_path):
-            raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
+        # to get around parser ambiguities, we had to create a token to mash all of the parts together
+        # but we have a separate rule "field_parts" that can safely re-parse and separate out the tokens.
+        # we can walk through each token, and build the field path accordingly
+        for part in lark_parser.parse(node.children[0], "field_parts").children:
+            if part["NAME"]:
+                name = to_unicode(part["NAME"])
+                full_path.append(name)
+
+                if name in keywords:
+                    raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
+            elif part["ESCAPED_NAME"]:
+                full_path.append(to_unicode(part["ESCAPED_NAME"]).strip("`"))
+            elif part["UNSIGNED_INTEGER"]:
+                full_path.append(int(part["UNSIGNED_INTEGER"]))
+            else:
+                raise self._error(node, "Unable to parser field", cls=EqlSyntaxError)
 
         base, path = full_path[0], full_path[1:]
 
@@ -1037,7 +1052,7 @@ class LarkToEQL(Interpreter):
 
 lark_parser = Lark(get_etc_file('eql.g'), debug=False,
                    propagate_positions=True, tree_class=KvTree, parser='lalr',
-                   start=['piped_query', 'definition', 'definitions',
+                   start=['piped_query', 'definition', 'definitions', 'field_parts',
                           'query_with_definitions', 'expr', 'signed_single_atom'])
 
 

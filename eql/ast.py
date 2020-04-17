@@ -384,6 +384,8 @@ class Field(Expression):
     __slots__ = 'base', 'path',
     precedence = Expression.precedence + 1
 
+    field_re = re.compile("^[_A-Za-z][_A-Za-z0-9]+$")
+
     def __init__(self, base, path=None):
         """Query the event for the field expression.
 
@@ -405,14 +407,24 @@ class Field(Expression):
         """Get the full path for a field."""
         return [self.base] + self.path
 
+    @classmethod
+    def escape_ident(cls, key):
+        """Escape identifiers that are keywords."""
+        from .parser import keywords
+
+        if key in keywords or cls.field_re.match(key) is None:
+            return "`{key}`".format(key=key)
+        return key
+
     def _render(self):
-        text = self.base
+        text = [self.escape_ident(self.base)]
+
         for key in self.path:
             if is_number(key):
-                text += "[{}]".format(key)
+                text.append("[{}]".format(key))
             else:
-                text += ".{}".format(key)
-        return text
+                text.append(".{}".format(self.escape_ident(key)))
+        return "".join(text)
 
 
 class FunctionCall(Expression):
