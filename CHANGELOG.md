@@ -4,6 +4,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## Version 0.8.7
 _Released 2020-##-##_
 
+### Added
+* Support for escaped identifiers in fields using \`backtick\` syntax
+
 ### Changed
 * (Internal) Changed the type system to use TypeHint/TypeFoldCheck/NodeInfo instead of tuples
 
