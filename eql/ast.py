@@ -1,11 +1,11 @@
 """EQL syntax tree nodes/schema."""
 from __future__ import unicode_literals
 
-import datetime
 import re
 from collections import OrderedDict
 from operator import lt, le, eq, ne, ge, gt, mul, truediv, mod, add, sub
 from string import Template
+from enum import Enum
 
 from .errors import EqlError
 from .signatures import SignatureMixin
@@ -25,6 +25,7 @@ __all__ = (
     "Null",
     "Boolean",
     "TimeRange",
+    "TimeUnit",
 
     # fields and subfields
     "Field",
@@ -332,48 +333,57 @@ class String(Literal):
         return '"{}"'.format(self.escape(self.value))
 
 
+class TimeUnit(Enum):
+    """Elasticsearch compatible time units."""
+
+    Milliseconds = "ms"
+    Seconds = "s"
+    Minutes = "m"
+    Hours = "h"
+    Days = "d"
+
+    @classmethod
+    def get_units(cls):
+        """Return all time units in order of precision."""
+        return [cls.Milliseconds, cls.Seconds, cls.Minutes, cls.Hours, cls.Days]
+
+    def as_milliseconds(self):
+        """Convert a time unit to a number of milliseconds."""
+        if self == TimeUnit.Milliseconds:
+            return 1
+        elif self == TimeUnit.Seconds:
+            return 1000
+        elif self == TimeUnit.Minutes:
+            return 1000 * 60
+        elif self == TimeUnit.Hours:
+            return 1000 * 60 * 60
+        elif self == TimeUnit.Days:
+            return 1000 * 60 * 60 * 24
+        else:
+            raise ValueError("Unknown time unit {}".format(repr(self)))
+
+    def __repr__(self):
+        """Override the default __repr__ method."""
+        return "{}({})".format(type(self).__name__, repr(self.value))
+
+
 class TimeRange(Expression):
     """EQL node for an interval of time."""
 
-    __slots__ = 'delta',
+    __slots__ = 'quantity', 'unit',
     precedence = Expression.precedence + 1
 
-    def __init__(self, delta):  # type: (datetime.timedelta) -> None
+    def __init__(self, quantity, unit):  # type: (int, TimeUnit) -> None
         """EQL time interval."""
-        self.delta = delta
+        self.quantity = quantity
+        self.unit = unit
 
-    @classmethod
-    def convert(cls, node):
-        """Convert a StaticValue to a time range."""
-        if isinstance(node, TimeRange):
-            return node
-        elif isinstance(node, Number):
-            return TimeRange(datetime.timedelta(seconds=node.value))
+    def as_milliseconds(self):
+        """Convert a time range to milliseconds."""
+        return self.quantity * self.unit.as_milliseconds()
 
     def _render(self):
-        interval = self.delta.total_seconds()
-        second = 1
-        minute = 60 * second
-        hour = minute * 60
-        day = hour * 24
-        decimal = interval
-        unit = 's'
-
-        if interval >= day:
-            decimal = float(interval) / day
-            unit = 'd'
-        elif interval >= hour:
-            decimal = float(interval) / hour
-            unit = 'h'
-        elif interval >= minute:
-            if interval % minute == 0 or (interval % second) != 0:
-                decimal = float(interval) / minute
-                unit = 'm'
-
-        # Drop fractional part if it's 0
-        if decimal == int(decimal):
-            decimal = int(decimal)
-        return '{}{}'.format(decimal, unit)
+        return '{:d}{:s}'.format(self.quantity, self.unit.value)
 
 
 class Field(Expression):
@@ -838,18 +848,26 @@ class NamedParams(EqlNode):
 class SubqueryBy(EqlNode):
     """Node for holding the :class:`~EventQuery` and parameters to join on."""
 
-    __slots__ = 'query', 'params', 'join_values'
+    __slots__ = 'query', 'join_values', 'fork',
 
-    def __init__(self, query, params=None, join_values=None):
+    def __init__(self, query, join_values=None, fork=None):
         """Init.
 
         :param EventQuery query: The event query enclosed in the term
-        :param NamedParams params: The parameters for the query.
         :param list[Expression] join_values: The field to join values on
+        :param bool fork: Toggle for copying instead of moving a sequence on match
         """
         self.query = query
-        self.params = params or NamedParams()
         self.join_values = join_values or []
+        self.fork = fork
+
+    @property
+    def params(self):
+        """Keep params for backwards compatibility."""
+        params = {}
+        if self.fork is not None:
+            params["fork"] = Boolean(self.fork)
+        return NamedParams(params)
 
     def _render(self):
         text = "[{}]".format(self.query.render())
@@ -891,24 +909,31 @@ class Sequence(EqlNode):
     Sequence supports the ``until`` keyword, which indicates an event that causes it to terminate early.
     """
 
-    __slots__ = 'queries', 'params', 'close'
+    __slots__ = 'queries', 'max_span', 'close'
 
-    def __init__(self, queries, params=None, close=None):
+    def __init__(self, queries, max_span=None, close=None):
         """Create a Sequence of multiple events.
 
         :param list[SubqueryBy] queries: List of queries to be sequenced
-        :param NamedParams params: Dictionary of timing parameters for the sequence.
+        :param TimeUnit max_span: Dictionary of timing parameters for the sequence.
         :param SubqueryBy close: An optional query that causes all sequence state to expire
         """
         self.queries = queries
-        self.params = params or NamedParams()
+        self.max_span = max_span
         self.close = close
+
+    @property
+    def params(self):
+        """Keep params for backwards compatibility."""
+        params = {}
+        if self.max_span is not None:
+            params["maxspan"] = self.max_span
+        return NamedParams(params)
 
     def _render(self):
         text = 'sequence'
-        params = self.params.render()
-        if params:
-            text += ' with {}'.format(self.params.render())
+        if self.max_span:
+            text += ' with maxspan={}'.format(self.max_span.render())
         text += '\n'
         text += self.indent('\n'.join(query.render() for query in self.queries))
 

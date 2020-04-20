@@ -18,13 +18,13 @@ pipes: pipe+
 pipe: "|" name [single_atom single_atom+ | expressions]
 
 join_values.2: "by" expressions
-?with_params.2: "with" named_params
-kv: name [EQUALS (time_range | atom)]
-time_range: number name
-named_params: kv ("," kv)*
-subquery_by: subquery named_params? join_values?
-subquery: "[" event_query "]"
+?with_params.2: "with" "maxspan" EQUALS time_range
+time_range: number name?
 
+
+subquery_by: subquery fork_param? join_values?
+subquery: "[" event_query "]"
+fork_param: "fork" (EQUALS boolean)?
 
 // Expressions
 expressions: expr ("," expr)* [","]
@@ -65,7 +65,12 @@ function_call.2: name "(" [expressions] ")"
 base_field: name
 field: FIELD
 literal: number
+       | boolean
+       | null
        | string
+!boolean: "true"
+        | "false"
+null: "null"
 number: UNSIGNED_INTEGER
       | DECIMAL
 string: DQ_STRING

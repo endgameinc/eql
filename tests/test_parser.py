@@ -177,14 +177,10 @@ class TestParser(unittest.TestCase):
             'join [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
             'sequence [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
             'sequence by pid [process where process_name == "*"] [file where file_path == "*"]',
-            'sequence by pid with maxspan=200 [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2s [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2sec [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2seconds [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence with maxspan=2.5m [process where x == x] by pid [file where file_path == "*"] by ppid',
-            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
-            'sequence by pid with maxspan=1.0075d [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=200ms [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=1s [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2h [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=3d [process where process_name == "*"] [file where file_path == "*"]',
             'dns where pid == 100 | head 100 | tail 50 | unique pid',
             'network where pid == 100 | unique command_line | count',
             'security where user_domain == "endgame" | count user_name a b | tail 5',
@@ -218,10 +214,7 @@ class TestParser(unittest.TestCase):
             # sequence with named params
             'sequence by unique_pid [process where true] [file where true] fork',
             'sequence by unique_pid [process where true] [file where true] fork=true',
-            'sequence by unique_pid [process where true] [file where true] fork=1',
             'sequence by unique_pid [process where true] [file where true] fork=false',
-            'sequence by unique_pid [process where true] [file where true] fork=0 [network where true]',
-            'sequence by unique_pid [process where true] [file where true] fork=0',
         ]
 
         datetime.datetime.now()
@@ -297,6 +290,20 @@ class TestParser(unittest.TestCase):
             'sequence [process where 1] [network where 1] fork fork',
             'process where descendant of [file where true] bad=param',
             '| filter true'
+
+            # forks updated to stictly take true/false (true if not defined)
+            'sequence by unique_pid [process where true] [file where true] fork=1',
+            'sequence by unique_pid [process where true] [file where true] fork=0 [network where true]',
+            'sequence by unique_pid [process where true] [file where true] fork=0',
+
+            # time units made stricter, and floating points removed
+            'sequence by pid with maxspan=2sec [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=200 [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2seconds [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence with maxspan=2.5m [process where x == x] by pid [file where file_path == "*"] by ppid',
+            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=1.0075d [process where process_name == "*"] [file where file_path == "*"]',
         ]
         for query in invalid:
             self.assertRaises(EqlParseError, parse_query, query)
@@ -356,6 +363,26 @@ class TestParser(unittest.TestCase):
         macro = parse_definitions("macro test() pid = 4 and ppid = 0")
         self.assertEqual(commented, macro)
 
+    def test_float_time_unit(self):
+        """Test that error messages are raised and formatted when time units are missing."""
+        def error(query, message):
+            with self.assertRaises(EqlSemanticError) as exc:
+                parse_query(query)
+
+            self.assertEqual(exc.exception.error_msg, message)
+
+        error("sequence with maxspan=0.150s [foo where true] [bar where true]",
+              "Only integer values allowed for maxspan. Did you mean 150ms?")
+
+        error("sequence with maxspan=1.6h [foo where true] [bar where true]",
+              "Only integer values allowed for maxspan.\nTry choosing a more precise time unit: ms, s, m.")
+
+        error("sequence with maxspan=0.5ms [foo where true] [bar where true]",
+              "Only integer values allowed for maxspan.")
+
+        error("sequence with maxspan=0.5zz [foo where true] [bar where true]",
+              "Only integer values allowed for maxspan.")
+
     def test_invalid_comments(self):
         """Test that invalid/overlapping comments fail."""
         query_text = "process where /* something */ else */ true"
@@ -367,6 +394,14 @@ class TestParser(unittest.TestCase):
 
         query_text = "process where // true"
         self.assertRaises(EqlParseError, parse_query, query_text)
+
+    def test_invalid_time_unit(self):
+        """Test that error messages are raised and formatted when time units are missing."""
+        with self.assertRaisesRegex(EqlSemanticError, "Unknown time unit. Recognized units are: ms, s, m, h, d."):
+            parse_query("sequence with maxspan=150 zz [foo where true] [bar where true]")
+
+        with self.assertRaisesRegex(EqlSemanticError, "Unknown time unit. Recognized units are: ms, s, m, h, d."):
+            parse_query("sequence with maxspan=150 hours [foo where true] [bar where true]")
 
     def test_method_syntax(self):
         """Test correct parsing and rendering of methods."""
@@ -387,6 +422,11 @@ class TestParser(unittest.TestCase):
         self.assertEqual(parse1, parse_expression("(a and b):concat():length()"))
         self.assertIsNot(parse1, without_method)
         self.assertEqual(without_method, expected)
+
+    def test_missing_time_unit(self):
+        """Test that error messages are raised and formatted when time units are missing."""
+        with self.assertRaisesRegex(EqlSemanticError, "Missing time unit. Did you mean 150s?"):
+            parse_query("sequence with maxspan=150 [foo where true] [bar where true]")
 
     def test_term_extraction(self):
         """Test that EQL terms are correctly extracted."""
