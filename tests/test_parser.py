@@ -375,7 +375,7 @@ class TestParser(unittest.TestCase):
               "Only integer values allowed for maxspan. Did you mean 150ms?")
 
         error("sequence with maxspan=1.6h [foo where true] [bar where true]",
-              "Only integer values allowed for maxspan.\nTry choosing a more precise time unit: ms, s, m.")
+              "Only integer values allowed for maxspan.\nTry a more precise time unit: ms, s, m.")
 
         error("sequence with maxspan=0.5ms [foo where true] [bar where true]",
               "Only integer values allowed for maxspan.")
