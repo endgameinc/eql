@@ -343,7 +343,7 @@ class LarkToEQL(Interpreter):
 
         if isinstance(quantity, float):
             if interval is None or interval == "s":
-                guess = round(quantity * ast.TimeUnit.Seconds.as_milliseconds())
+                guess = int(round(quantity * ast.TimeUnit.Seconds.as_milliseconds()))
                 time_range = ast.TimeRange(guess, ast.TimeUnit.Milliseconds)
                 raise self._error(node, "Only integer values allowed for maxspan. Did you mean {time_range}?",
                                   time_range=time_range)
