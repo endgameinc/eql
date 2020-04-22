@@ -99,7 +99,7 @@ DIGIT: "0".."9"
 LETTER: UCASE_LETTER | LCASE_LETTER
 WORD: LETTER+
 
-ESCAPED_NAME: "`" /[^`]+/ "`"
+ESCAPED_NAME: "`" /[^`\r\n]+/ "`"
 NAME: ("_"|LETTER) ("_"|LETTER|DIGIT)*
 UNSIGNED_INTEGER: /[0-9]+/
 EXPONENT: /[Ee][-+]?\d+/

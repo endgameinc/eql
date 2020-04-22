@@ -1,9 +1,10 @@
 """Test case."""
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
 import datetime
 import sys
 import traceback
 import unittest
-from collections import OrderedDict  # noqa: F403
 
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
@@ -301,7 +302,7 @@ class TestParser(unittest.TestCase):
         for query in invalid:
             self.assertRaises(EqlParseError, parse_query, query)
 
-    def test_fields(self):
+    def test_backtick_fields(self):
         """Test that backticks are accepted with fields."""
         def parse_to(text, path):
             node = parse_expression(text)
@@ -313,7 +314,11 @@ class TestParser(unittest.TestCase):
             self.assertEqual(node2, node)
 
         parse_to("`foo-bar-baz`", ["foo-bar-baz"])
+        parse_to("`foo bar baz`", ["foo bar baz"])
+        parse_to("`foo.bar.baz`", ["foo.bar.baz"])
         parse_to("`foo`.`bar-baz`", ["foo", "bar-baz"])
+        parse_to("`foo`.`bar-baz`", ["foo", "bar-baz"])
+        parse_to("`💩`", ["💩"])
 
         parse_to("`foo`[0]", ["foo", 0])
         parse_to("`foo`[0].`bar`", ["foo", 0, "bar"])
@@ -323,6 +328,11 @@ class TestParser(unittest.TestCase):
             parse_to("`{keyword}`".format(keyword=keyword), [keyword])
             parse_to("prefix.`{keyword}`".format(keyword=keyword), ["prefix", keyword])
             parse_to("`{keyword}`[0].suffix".format(keyword=keyword), [keyword, 0, "suffix"])
+
+    def test_backtick_split_lines(self):
+        """Confirm that backticks can't be split across lines."""
+        with self.assertRaises(EqlSyntaxError):
+            parse_expression("`abc \n def`")
 
     def test_query_events(self):
         """Test that event queries work with events[n].* syntax in pipes."""
