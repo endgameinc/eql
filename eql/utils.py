@@ -230,7 +230,7 @@ def is_stateful(query):
         query = query.query
 
     elif not isinstance(query, ast.EqlNode):
-        raise TypeError("unsupported type {} to is_stateful. Expected {}".format(type(query), ast.EqlNode))
+        raise TypeError("unsupported type {} to eql.utils.is_stateful. Expected {}".format(type(query), ast.EqlNode))
 
     stateful_nodes = (
         ast.SubqueryBy,  # join/sequence
@@ -241,6 +241,30 @@ def is_stateful(query):
     )
 
     return any(isinstance(node, stateful_nodes) for node in query)
+
+
+def get_query_type(query):
+    """Get the type of a query (sequence/join/event).
+
+    :param ast.PipedQuery|ast.Analytic query: The parsed query AST to analyze
+    :rtype: str
+    """
+    from . import ast  # noqa: E402
+
+    if isinstance(query, ast.EqlAnalytic):
+        query = query.query
+
+    elif not isinstance(query, ast.PipedQuery):
+        raise TypeError("unsupported type {} to eql.utils.get_query_type. Expected {}".format(type(query), ast.EqlNode))
+
+    if isinstance(query.first, ast.Sequence):
+        return "sequence"
+    elif isinstance(query.first, ast.Join):
+        return "join"
+    elif isinstance(query.first, ast.EventQuery):
+        return "event"
+    else:
+        raise TypeError("Unknown query type: {}".format(type(query.first)))
 
 
 def match_kv(condition):
@@ -281,6 +305,40 @@ def match_kv(condition):
         and_node &= match_node
 
     return and_node
+
+
+def uses_ancestry(query):
+    """Determine if a query requires process ancestry tracking.
+
+    :param ast.PipedQuery|ast.Analytic query: The parsed query AST to analyze
+    :rtype: bool
+    """
+    from . import ast  # noqa: E402
+
+    if isinstance(query, ast.EqlAnalytic):
+        query = query.query
+
+    elif not isinstance(query, ast.EqlNode):
+        raise TypeError("unsupported type {} to eql.utils.uses_ancestry. Expected {}".format(type(query), ast.EqlNode))
+
+    return any(isinstance(node, ast.NamedSubquery) for node in query)
+
+
+def get_required_event_types(query):
+    """Get a set of all event types required for the query.
+
+    :param ast.PipedQuery|ast.Analytic query: The parsed query AST to analyze
+    :rtype: set[str]
+    """
+    from . import ast  # noqa: E402
+
+    if isinstance(query, ast.EqlAnalytic):
+        query = query.query
+
+    elif not isinstance(query, ast.EqlNode):
+        raise TypeError("unsupported type {} to eql.utils.uses_ancestry. Expected {}".format(type(query), ast.EqlNode))
+
+    return set(node.event_type for node in query if isinstance(node, ast.EventQuery))
 
 
 def get_output_types(query):

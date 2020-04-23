@@ -1,6 +1,14 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Version 0.8.7
+_Released 2020-04-06_
+
+### Added
+* Function `eql.utils.get_query_type`
+* Function `eql.utils.get_required_event_types`
+* Function `eql.utils.uses_ancestry`
+
 ## Version 0.8.6
 _Released 2020-04-06_
 
