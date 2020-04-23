@@ -45,7 +45,7 @@ class TestNullPropagation(unittest.TestCase):
     def test_null_and_handling(self):
         """Test that nulls are correctly propagated through ``and``."""
         expected = [
-            ("true  and false",  False),
+            ("true  and false", False),
             ("true  and null ", None),
             ("true  and true ", True),
             ("false and null ", False),
