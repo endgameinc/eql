@@ -275,7 +275,7 @@ def match_kv(condition):
     """
     # Resolve circular dependency for match_kv
     from . import ast  # noqa: E402
-    from .parser import parse_expression
+    from .parser import parse_field
 
     if not isinstance(condition, dict):
         raise TypeError("unsupported type {} to match_kv. Expected {}".format(type(condition), ast.EqlNode))
@@ -286,9 +286,7 @@ def match_kv(condition):
         if not isinstance(field_match, (list, tuple)):
             field_match = [field_match]
 
-        field_node = parse_expression(field_text)
-        if not isinstance(field_node, ast.Field):
-            raise TypeError("expected Field as key to dictionary, got {}".format(type(field_node).__name__))
+        field_node = parse_field(field_text)
 
         exact = []
         wildcards = []

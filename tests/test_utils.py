@@ -136,7 +136,7 @@ class TestUtils(unittest.TestCase):
     def test_match_kv_errors(self):
         """Test that KV matching raises errors when expected."""
         self.assertRaises(EqlParseError, match_kv, {"invalid^field&syntax": "abc"})
-        self.assertRaises(TypeError, match_kv, {"100": "invalid field"})
+        self.assertRaises(EqlParseError, match_kv, {"100": "invalid field"})
 
         # Test that the parameters are validated
         self.assertRaises(TypeError, match_kv, {"process_name": ["a", tuple()]})
