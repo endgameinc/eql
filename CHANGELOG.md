@@ -2,7 +2,7 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Version 0.8.7
-_Released 2020-04-06_
+_Released 2020-04-23_
 
 ### Added
 * Function `eql.utils.get_query_type`
