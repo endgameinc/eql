@@ -211,4 +211,4 @@ is equivalent to the method syntax:
 
 .. code-block:: eql
 
-    command_line:between(command_line, "-enc ", " "):length() > 500
+    command_line:between("-enc ", " "):length() > 500
