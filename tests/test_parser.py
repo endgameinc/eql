@@ -1,15 +1,16 @@
 """Test case."""
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
 import datetime
 import sys
 import traceback
 import unittest
-from collections import OrderedDict  # noqa: F403
 
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
-    extract_query_terms
+    extract_query_terms, keywords
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -310,6 +311,38 @@ class TestParser(unittest.TestCase):
         ]
         for query in invalid:
             self.assertRaises(EqlParseError, parse_query, query)
+
+    def test_backtick_fields(self):
+        """Test that backticks are accepted with fields."""
+        def parse_to(text, path):
+            node = parse_expression(text)
+            self.assertIsInstance(node, Field)
+            self.assertEqual(node.full_path, path)
+
+            # now render back as text and parse again
+            node2 = parse_expression(node.render())
+            self.assertEqual(node2, node)
+
+        parse_to("`foo-bar-baz`", ["foo-bar-baz"])
+        parse_to("`foo bar baz`", ["foo bar baz"])
+        parse_to("`foo.bar.baz`", ["foo.bar.baz"])
+        parse_to("`foo`.`bar-baz`", ["foo", "bar-baz"])
+        parse_to("`foo.bar-baz`", ["foo.bar-baz"])
+        parse_to("`💩`", ["💩"])
+
+        parse_to("`foo`[0]", ["foo", 0])
+        parse_to("`foo`[0].`bar`", ["foo", 0, "bar"])
+
+        # keywords
+        for keyword in keywords:
+            parse_to("`{keyword}`".format(keyword=keyword), [keyword])
+            parse_to("prefix.`{keyword}`".format(keyword=keyword), ["prefix", keyword])
+            parse_to("`{keyword}`[0].suffix".format(keyword=keyword), [keyword, 0, "suffix"])
+
+    def test_backtick_split_lines(self):
+        """Confirm that backticks can't be split across lines."""
+        with self.assertRaises(EqlSyntaxError):
+            parse_expression("`abc \n def`")
 
     def test_query_events(self):
         """Test that event queries work with events[n].* syntax in pipes."""

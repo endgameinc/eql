@@ -62,7 +62,7 @@ function_call.2: name "(" [expressions] ")"
 ?single_atom: literal
             | field
             | base_field
-base_field: name
+base_field: name | escaped_name
 field: FIELD
 literal: number
        | string
@@ -75,12 +75,23 @@ string: DQ_STRING
 
 // Check against keyword usage
 name: NAME
+escaped_name: ESCAPED_NAME
 
 // Tokens
-// make this a token to avoid ambiguity, and make more rigid on whitespace
+// pin the first "." or "[" to resolve token ambiguities
 // sequence by pid [1] [true] looks identical to:
 // sequence by pid[1] [true]
-FIELD: NAME ("." WHITESPACE* NAME | "[" WHITESPACE* UNSIGNED_INTEGER WHITESPACE* "]")+
+FIELD: FIELD_IDENT (ATTR | INDEX)+
+ATTR: "." WHITESPACE? FIELD_IDENT
+INDEX: "[" WHITESPACE? UNSIGNED_INTEGER WHITESPACE? "]"
+FIELD_IDENT: NAME | ESCAPED_NAME
+
+// create a non-conflicting helper rule to deconstruct
+field_parts: field_ident ("." field_ident | "[" array_index "]")+
+!array_index: UNSIGNED_INTEGER
+!field_ident: NAME | ESCAPED_NAME
+
+
 LCASE_LETTER: "a".."z"
 UCASE_LETTER: "A".."Z"
 DIGIT: "0".."9"
@@ -88,6 +99,7 @@ DIGIT: "0".."9"
 LETTER: UCASE_LETTER | LCASE_LETTER
 WORD: LETTER+
 
+ESCAPED_NAME: "`" /[^`\r\n]+/ "`"
 NAME: ("_"|LETTER) ("_"|LETTER|DIGIT)*
 UNSIGNED_INTEGER: /[0-9]+/
 EXPONENT: /[Ee][-+]?\d+/
