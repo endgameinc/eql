@@ -81,8 +81,6 @@ class TestUtils(unittest.TestCase):
             """Helper function for validation."""
             condition_node = match_kv(condition_dict)
             parsed_node = parse_expression(condition_text)
-            print(condition_node)
-            print(parsed_node)
             self.assertEqual(condition_node.render(), parsed_node.render(), *args)
 
         assert_kv_match({"name": "net.exe"},
