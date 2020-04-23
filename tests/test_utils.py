@@ -146,12 +146,10 @@ class TestUtils(unittest.TestCase):
 
     def test_query_type(self):
         """Check eql.utils.get_query_type."""
-        self.assertEqual(eql.utils.get_query_type(parse_query("any where true")), "event")
-        self.assertEqual(eql.utils.get_query_type(parse_query("process where true")), "event")
-        self.assertEqual(eql.utils.get_query_type(parse_query("sequence [process where true] [network where true]")),
-                         "sequence")
-        self.assertEqual(eql.utils.get_query_type(parse_query("join [process where true] [network where true]")),
-                         "join")
+        self.assertEqual(get_query_type(parse_query("any where true")), "event")
+        self.assertEqual(get_query_type(parse_query("process where true")), "event")
+        self.assertEqual(get_query_type(parse_query("sequence [process where true] [network where true]")), "sequence")
+        self.assertEqual(get_query_type(parse_query("join [process where true] [network where true]")), "join")
 
     def test_required_event_types(self):
         """Test that ancestry checks are detected."""
