@@ -385,7 +385,9 @@ class Divide(MathFunctionSignature):
     def run(cls, x, y):
         """Divide numeric values."""
         if is_number(x) and is_number(y) and y != 0:
-            return float(x) / float(y)
+            if isinstance(x, float) or isinstance(y, float):
+                return float(x) / float(y)
+            return x // y
 
 
 @register
