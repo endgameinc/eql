@@ -355,6 +355,7 @@ class TestPythonEngine(TestEngine):
         return x
 
     @staticmethod
+    @PythonEngine.null_checked
     def _custom_reverse(x):
         return x[::-1]
 

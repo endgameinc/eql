@@ -32,7 +32,8 @@ class FunctionSignature(SignatureMixin):
     """Helper class for declaring function signatures."""
 
     name = str()
-    return_value = TypeHint.Boolean
+    return_value = TypeHint.Unknown
+    sometimes_null = False
 
     @classmethod
     def get_callback(cls, *arguments):
@@ -147,6 +148,7 @@ class Between(FunctionSignature):
     argument_types = [TypeHint.String, TypeHint.String, TypeHint.String, TypeHint.Boolean, TypeHint.Boolean]
     minimum_args = 3
     return_value = TypeHint.String
+    sometimes_null = True
 
     @classmethod
     def run(cls, source_string, first, second, greedy=False, case_sensitive=False):
@@ -408,6 +410,7 @@ class IndexOf(FunctionSignature):
     name = "indexOf"
     argument_types = [TypeHint.String, TypeHint.String, TypeHint.Numeric]
     return_value = TypeHint.Numeric
+    sometimes_null = True
     minimum_args = 2
 
     @classmethod
@@ -436,7 +439,6 @@ class Length(FunctionSignature):
         """Get the length of an array or string."""
         if is_string(array) or isinstance(array, (dict, list, tuple)):
             return len(array)
-        return 0
 
 
 @register
@@ -527,7 +529,7 @@ class Multiply(MathFunctionSignature):
 
 
 @register
-class Safe(FunctionSignature):
+class Safe(DynamicFunctionSignature):
     """Evaluate an expression and suppress exceptions."""
 
     name = "safe"
@@ -600,24 +602,21 @@ class ToNumber(FunctionSignature):
     """Convert a string to a number."""
 
     name = "number"
-    argument_types = [(TypeHint.String, TypeHint.Numeric), TypeHint.Numeric]
-    return_value = TypeHint.Numeric
+    argument_types = [TypeHint.String, TypeHint.Numeric]
     minimum_args = 1
+    return_value = TypeHint.Numeric
+    sometimes_null = True
 
     @classmethod
-    def run(cls, source, base=10):
+    def run(cls, source, base=None):
         """Convert a string to a number."""
-        if source is None:
-            return 0
-        elif is_number(source):
-            return source
-        elif is_string(source):
-            if source.isdigit():
-                return int(source, base)
-            elif source.startswith("0x"):
-                return int(source[2:], 16)
-            elif len(source.split(".")) == 2:
+        if is_string(source):
+            if len(source.split(".")) == 2 and base in (None, 10):
                 return float(source)
+            elif source.startswith("0x") and base in (None, 16):
+                return int(source[2:], 16)
+            elif source.isdigit():
+                return int(source, base or 10)
 
 
 @register
@@ -631,7 +630,8 @@ class ToString(FunctionSignature):
     @classmethod
     def run(cls, source):
         """"Convert a value to a string."""
-        return to_unicode(source)
+        if source is not None:
+            return to_unicode(source)
 
 
 @register

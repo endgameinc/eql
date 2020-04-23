@@ -67,53 +67,53 @@ process where serial_event_id<=8 and serial_event_id > 7
 expected_event_ids  = [8]
 
 [[queries]]
-note = "check that comparisons against null values return false"
+note = "check that comparisons against null values return null"
 expected_event_ids  = [58, 64, 69, 74, 80, 85, 90, 93, 94, 75303]
 query = 'process where exit_code >= 0'
 
 [[queries]]
-note = "check that comparisons against null values return false"
+note = "check that comparisons against null values return null"
 expected_event_ids  = [58, 64, 69, 74, 80, 85, 90, 93, 94, 75303]
 query = 'process where 0 <= exit_code'
 
 [[queries]]
-note = "check that comparisons against null values return false"
+note = "check that comparisons against null values return null"
 expected_event_ids  = [58, 64, 69, 74, 80, 85, 90, 93, 94, 75303]
 query = 'process where exit_code <= 0'
 
 [[queries]]
-note = "check that comparisons against null values return false"
+note = "check that comparisons against null values return null"
 expected_event_ids  = [58, 64, 69, 74, 80, 85, 90, 93, 94, 75303]
 query = 'process where exit_code < 1'
 
 [[queries]]
-note = "check that comparisons against null values return false"
+note = "check that comparisons against null values return null"
 expected_event_ids  = [58, 64, 69, 74, 80, 85, 90, 93, 94, 75303]
 query = 'process where exit_code > -1'
 
 [[queries]]
-note = "check that comparisons against null values return false"
+note = "check that comparisons against null values return null"
 expected_event_ids  = [58, 64, 69, 74, 80, 85, 90, 93, 94, 75303]
 query = 'process where -1 < exit_code'
 
 [[queries]]
-note = "check that comparisons against null values return false"
+note = "check that comparisons against null values return null"
 expected_event_ids = []
 query = '''
-process where not (exit_code > -1)
+process where null == (exit_code > -1)
   and serial_event_id in (58, 64, 69, 74, 80, 85, 90, 93, 94)
 | head 10
 '''
 
 [[queries]]
-note = "check that comparisons against null values return false"
+note = "check that comparisons against null values return null"
 expected_event_ids  = [1, 2, 3, 4, 5, 6, 7]
-query = 'process where not (exit_code > -1) | head 7'
+query = 'process where null == (exit_code > -1) | head 7'
 
 [[queries]]
-note = "check that comparisons against null values return false"
+note = "check that comparisons against null values return null"
 expected_event_ids  = [1, 2, 3, 4, 5, 6, 7]
-query = 'process where not (-1 < exit_code) | head 7'
+query = 'process where null == (-1 < exit_code) | head 7'
 
 [[queries]]
 query = 'process where exit_code > 0'
@@ -152,19 +152,22 @@ expected_event_ids  = [3, 34, 48]
 [[queries]]
 query = '''
 process where process_name in ("python.exe", "smss.exe", "Explorer.exe")
-| unique length(process_name)'''
+| unique length(process_name)
+'''
 expected_event_ids  = [3, 34, 48]
 
 [[queries]]
 query = '''
 process where process_name in ("python.exe", "smss.exe", "explorer.exe")
-| unique length(process_name) == length("python.exe")'''
+| unique length(process_name) == length("python.exe")
+'''
 expected_event_ids  = [3, 48]
 
 [[queries]]
 query = '''
 process where process_name in ("Python.exe", "smss.exe", "explorer.exe")
-| unique process_name != "python.exe"'''
+| unique process_name != "python.exe"
+'''
 expected_event_ids  = [3, 48]
 
 [[queries]]
@@ -214,7 +217,8 @@ expected_event_ids  = [79]
 
 [[queries]]
 query = '''
-process where process_path == "*\\red_ttp\\wininit.*" and opcode in (0,1,2,3,4)'''
+process where process_path == "*\\red_ttp\\wininit.*" and opcode in (0,1,2,3,4)
+'''
 expected_event_ids  = [84, 85]
 
 [[queries]]
@@ -940,51 +944,57 @@ description = "check built-in string functions"
 
 [[queries]]
 query = '''
-file where opcode=0 and indexOf(file_name, 'plore') == 2 and not indexOf(file_name, '.pf')
+file where opcode=0 and indexOf(file_name, 'plore') == 2 and indexOf(file_name, '.pf') == null
 '''
 expected_event_ids  = [88]
 description = "check built-in string functions"
 
 [[queries]]
 query = '''
-file where opcode=0 and indexOf(file_name, 'explorer.') and indexOf(file_name, 'plore', 100)
+file where opcode=0 and indexOf(file_name, 'explorer.') > 0 and indexOf(file_name, 'plore', 100) > 0
 '''
 expected_event_ids = []
 description = "check built-in string functions"
 
 [[queries]]
 query = '''
-file where opcode=0 and indexOf(file_name, 'plorer.', 0) == 2'''
+file where opcode=0 and indexOf(file_name, 'plorer.', 0) == 2
+'''
 expected_event_ids  = [88, 92]
 description = "check built-in string functions"
 
 [[queries]]
 query = '''
-file where opcode=0 and indexOf(file_name, 'plorer.', 2)'''
+file where opcode=0 and indexOf(file_name, 'plorer.', 2) != null
+'''
 expected_event_ids  = [88, 92]
 description = "check built-in string functions"
 
 [[queries]]
 query = '''
-file where opcode=0 and indexOf(file_name, 'plorer.', 4)'''
+file where opcode=0 and indexOf(file_name, 'plorer.', 4) != null
+'''
 expected_event_ids = []
 description = "check built-in string functions"
 
 [[queries]]
 query = '''
-file where opcode=0 and indexOf(file_name, 'thing that never happened')'''
+file where opcode=0 and indexOf(file_name, 'thing that never happened') != null
+'''
 expected_event_ids = []
 description = "check built-in string functions"
 
 [[queries]]
 query = '''
-file where opcode=0 and indexOf(file_name, 'plorer.', 2) == 2'''
+file where opcode=0 and indexOf(file_name, 'plorer.', 2) == 2
+'''
 expected_event_ids  = [88, 92]
 description = "check substring ranges"
 
 [[queries]]
 query = '''
-file where opcode=0 and indexOf(file_name, 'explorer.', 0) == 0'''
+file where opcode=0 and indexOf(file_name, 'explorer.', 0) == 0
+'''
 expected_event_ids  = [88, 92]
 description = "check substring ranges"
 
@@ -1018,31 +1028,36 @@ description = "check substring ranges"
 
 [[queries]]
 query = '''
-process where add(serial_event_id, 0) == 1 and add(0, 1) == serial_event_id'''
+process where add(serial_event_id, 0) == 1 and add(0, 1) == serial_event_id
+'''
 expected_event_ids  = [1]
 description = "test built-in math functions"
 
 [[queries]]
 query = '''
-process where subtract(serial_event_id, -5) == 6'''
+process where subtract(serial_event_id, -5) == 6
+'''
 expected_event_ids  = [1]
 description = "test built-in math functions"
 
 [[queries]]
 query = '''
-process where multiply(6, serial_event_id) == 30 and divide(30, 4.0) == 7.5'''
+process where multiply(6, serial_event_id) == 30 and divide(30, 4.0) == 7.5
+'''
 expected_event_ids  = [5]
 description = "test built-in math functions"
 
 [[queries]]
 query = '''
-process where modulo(11, add(serial_event_id, 1)) == serial_event_id'''
+process where modulo(11, add(serial_event_id, 1)) == serial_event_id
+'''
 expected_event_ids  = [1, 2, 3, 5, 11]
 description = "test built-in math functions"
 
 [[queries]]
 query = '''
-process where serial_event_id == number('5')'''
+process where serial_event_id == number('5')
+'''
 expected_event_ids  = [5]
 description = "test string/number conversions"
 
@@ -1050,19 +1065,16 @@ description = "test string/number conversions"
 expected_event_ids  = [50]
 description = "test string/number conversions"
 query = '''
-process where serial_event_id == number('0x32', 16)'''
+process where serial_event_id == number('0x32', 16)
+'''
 
 [[queries]]
 expected_event_ids  = [50]
 description = "test string/number conversions"
 query = '''
-process where serial_event_id == number('32', 16)'''
+process where serial_event_id == number('32', 16)
+'''
 
-[[queries]]
-query = '''
-process where number(serial_event_id) == number(5)'''
-expected_event_ids  = [5]
-description = "test string/number conversions"
 
 [[queries]]
 query = '''
@@ -1074,7 +1086,8 @@ description = "test string concatenation"
 [[queries]]
 query = '''
 process where process_name != original_file_name
-| filter length(original_file_name) > 0'''
+| filter length(original_file_name) > 0
+'''
 expected_event_ids = []
 description = "check that case insensitive comparisons are performed for fields."
 
@@ -1088,13 +1101,15 @@ description = "test that process sequences are working correctly"
 expected_event_ids  = [57]
 description = "test arraySearch functionality for lists of strings, and lists of objects"
 query = '''
-registry where arraySearch(bytes_written_string_list, a, a == 'en-us')'''
+registry where arraySearch(bytes_written_string_list, a, a == 'en-us')
+'''
 
 [[queries]]
 expected_event_ids  = [57]
 description = "test arraySearch functionality for lists of strings, and lists of objects"
 query = '''
-registry where arraySearch(bytes_written_string_list, a, endsWith(a, '-us'))'''
+registry where arraySearch(bytes_written_string_list, a, endsWith(a, '-us'))
+'''
 
 [[queries]]
 expected_event_ids  = [75305]

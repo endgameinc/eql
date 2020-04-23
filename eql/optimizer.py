@@ -39,10 +39,32 @@ class Optimizer(DepthFirstWalker):
         return current
 
     @staticmethod
+    def _walk_is_null(node):
+        if isinstance(node.expr, Null):
+            return Boolean(True)
+        elif isinstance(node.expr, Literal):
+            return Boolean(False)
+        else:
+            return node
+
+    @staticmethod
+    def _walk_is_not_null(node):
+        if isinstance(node.expr, Null):
+            return Boolean(False)
+        elif isinstance(node.expr, Literal):
+            return Boolean(True)
+        else:
+            return node
+
+    @staticmethod
     def _walk_comparison(node):
         if isinstance(node.left, Literal) and isinstance(node.right, Literal):
             lhs = node.left.value
             rhs = node.right.value
+
+            # folding to null is not the same
+            if lhs is None or rhs is None:
+                return Null()
 
             # Check that the types match first
             if not isinstance(node.right, type(node.left)):
@@ -121,8 +143,28 @@ class Optimizer(DepthFirstWalker):
 
     @staticmethod
     def _walk_not(node):
-        optimized_term = node.term.optimize()
-        return ~ optimized_term
+        # remove double negations
+        if isinstance(node.term, Not):
+            return node.term.term
+
+        elif isinstance(node.term, Comparison):
+            flipped = {'<': '>=', '<=': '>', '==': '!=',
+                       '>': '<=', '>=': '<', '!=': '=='}
+            return Comparison(node.term.left, flipped[node.term.comparator], node.term.right)
+
+        elif isinstance(node.term, IsNull):
+            return IsNotNull(node.term.expr)
+
+        elif isinstance(node.term, IsNotNull):
+            return IsNull(node.term.expr)
+
+        elif isinstance(node.term, Boolean):
+            return Boolean(not node.term.value)
+
+        elif isinstance(node.term, Null):
+            return Null()
+
+        return node
 
     @staticmethod
     def _walk_or(node):
