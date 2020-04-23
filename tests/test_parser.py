@@ -317,7 +317,7 @@ class TestParser(unittest.TestCase):
         parse_to("`foo bar baz`", ["foo bar baz"])
         parse_to("`foo.bar.baz`", ["foo.bar.baz"])
         parse_to("`foo`.`bar-baz`", ["foo", "bar-baz"])
-        parse_to("`foo`.`bar-baz`", ["foo", "bar-baz"])
+        parse_to("`foo.bar-baz`", ["foo.bar-baz"])
         parse_to("`💩`", ["💩"])
 
         parse_to("`foo`[0]", ["foo", 0])
