@@ -21,13 +21,17 @@ install_requires = [
 
 test_requires = [
     "mock~=1.3.0",
-    "pytest~=3.8.2",
-    "pytest-cov~=2.4",
-    "flake8~=2.5.1",
-    "pep257~=0.7.0",
-    "flake8-pep257~=1.0.5",
+    "pytest==3.8.2",
+    "pytest-cov==2.4",
+    "flake8==2.5.1",
+    "pep257==0.7.0",
+    "coverage==4.5.3",
+    "flake8-pep257==1.0.5",
     "PyYAML",
     "toml~=0.10",
+    "configparser<5.0",
+    "more-itertools~=5.0",
+    "zipp<1.0",
 ]
 etc_files = [os.path.relpath(fn, 'eql') for fn in glob.glob('eql/etc/*') if not fn.endswith('.py')]
 
