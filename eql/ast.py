@@ -33,6 +33,8 @@ __all__ = (
     # boolean logic
     "Comparison",
     "InSet",
+    "IsNotNull",
+    "IsNull",
     "And",
     "Or",
     "Not",
@@ -187,10 +189,17 @@ class Expression(EqlNode):
 
     def __and__(self, other):
         """Boolean AND between two AST nodes."""
-        if isinstance(other, Literal):
-            if other.value:
-                return self
+        if self == Boolean(False) or other == Boolean(False):
             return Boolean(False)
+        elif self == Boolean(True):
+            return other
+        elif other == Boolean(True):
+            return self
+
+        if isinstance(self, Literal) and isinstance(other, Literal):
+            if self == Null() or other == Null():
+                return Null()
+            return Boolean(bool(self.value) and bool(other.value))
 
         if isinstance(other, And):
             return And([self] + other.terms)
@@ -198,9 +207,17 @@ class Expression(EqlNode):
 
     def __or__(self, other):
         """"Boolean OR between two AST nodes."""
-        if isinstance(other, Literal):
-            if other.value:
-                return Boolean(True)
+        if self == Boolean(True) or other == Boolean(True):
+            return Boolean(True)
+        elif self == Boolean(False):
+            return other
+        elif other == Boolean(False):
+            return self
+
+        if isinstance(self, Literal) and isinstance(other, Literal):
+            if self == Null() or other == Null():
+                return Null()
+            return Boolean(bool(self.value) and bool(other.value))
 
         if isinstance(other, Or):
             return Or([self] + other.terms)
@@ -244,24 +261,6 @@ class Literal(Expression):
         subcls = cls.find_type(python_value)
         return subcls(python_value)
 
-    def __and__(self, other):
-        """Shortcut ANDing of Static Value nodes together."""
-        if isinstance(other, Literal):
-            return Boolean(self.value and other.value)
-        elif self.value:
-            return other
-        else:
-            return Boolean(False)
-
-    def __or__(self, other):
-        """Shortcut ORing of Static Value nodes together."""
-        if isinstance(other, Literal):
-            return Boolean(self.value or other.value)
-        elif self.value:
-            return self
-        else:
-            return other
-
     def __invert__(self):
         """Negate a static value."""
         return Boolean(not self.value)
@@ -284,6 +283,10 @@ class Null(Literal):
     def __init__(self, value=None):
         """Null literal value."""
         super(Null, self).__init__(None)
+
+    def __invert__(self):
+        """Null values can't be inverted."""
+        return Null()
 
     def _render(self):
         return 'null'
@@ -394,6 +397,8 @@ class Field(Expression):
     __slots__ = 'base', 'path',
     precedence = Expression.precedence + 1
 
+    field_re = re.compile("^[_A-Za-z][_A-Za-z0-9]+$")
+
     def __init__(self, base, path=None):
         """Query the event for the field expression.
 
@@ -415,14 +420,24 @@ class Field(Expression):
         """Get the full path for a field."""
         return [self.base] + self.path
 
+    @classmethod
+    def escape_ident(cls, key):
+        """Escape identifiers that are keywords."""
+        from .parser import keywords
+
+        if key in keywords or cls.field_re.match(key) is None:
+            return "`{key}`".format(key=key)
+        return key
+
     def _render(self):
-        text = self.base
+        text = [self.escape_ident(self.base)]
+
         for key in self.path:
             if is_number(key):
-                text += "[{}]".format(key)
+                text.append("[{}]".format(key))
             else:
-                text += ".{}".format(key)
-        return text
+                text.append(".{}".format(self.escape_ident(key)))
+        return "".join(text)
 
 
 class FunctionCall(Expression):
@@ -590,6 +605,30 @@ class Comparison(Expression):
         if self.comparator == Comparison.EQ and isinstance(other, InSet) and self.left == other.expression:
             return InSet(self.left, [self.right]) & other
         return super(Comparison, self).__and__(other)
+
+
+class IsNull(Expression):
+    """Node for checking if values are null."""
+
+    template = Template("$expr == null")
+    precedence = Comparison.precedence
+    __slots__ = "expr",
+
+    def __init__(self, expr):  # type: (Expression) -> None
+        """Check if a value is null."""
+        self.expr = expr
+
+
+class IsNotNull(Expression):
+    """Node for checking if values are null."""
+
+    template = Template("$expr != null")
+    precedence = Comparison.precedence
+    __slots__ = "expr",
+
+    def __init__(self, expr):  # type: (Expression) -> None
+        """Check if a value is not null."""
+        self.expr = expr
 
 
 class InSet(Expression):

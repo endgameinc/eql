@@ -1,15 +1,16 @@
 """Test case."""
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
 import datetime
 import sys
 import traceback
 import unittest
-from collections import OrderedDict  # noqa: F403
 
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
-    extract_query_terms
+    extract_query_terms, keywords
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -42,11 +43,18 @@ class TestParser(unittest.TestCase):
             'abc and def',
             '(1==abc) and def',
             '1 * 2 + 3 * 4 + 10 / 2',
-            'abc == (1 and 2)',
-            'abc == (def and 2)',
+
+            # opt-in with eql.parser.implied_booleans
+            # 'abc == (1 and 2)',
+            # 'abc == (def and 2)',
+
             'abc == (def and def)',
             'abc == (def and ghi)',
             '"\\b\\t\\r\\n\\f\\\\\\"\\\'"',
+            '1 - -2',
+            '1 + -2',
+            '1 * (-2)',
+            '3 * -length(file_path)',
         ]
 
         for query in valid:
@@ -160,10 +168,13 @@ class TestParser(unittest.TestCase):
             'image_load where not x > y',
             'process where _leadingUnderscore == 100',
             'network where 1 * 2 + 3 * 4 + 10 / 2 == 2 + 12 + 5',
-            'file where 1 - -2',
-            'file where 1 + (-2)',
-            'file where 1 * (-2)',
-            'file where 3 * -length(file_path)',
+
+            # now requires eql.parser.implied_booleans
+            # 'file where (1 - -2)',
+            # 'file where 1 + (-2)',
+            # 'file where 1 * (-2)',
+            # 'file where 3 * -length(file_path)',
+
             'network where a * b + c * d + e / f == g + h + i',
             'network where a * (b + c * d) + e / f == g + h + i',
             'process where pid == 4 or pid == 5 or pid == 6 or pid == 7 or pid == 8',
@@ -209,8 +220,8 @@ class TestParser(unittest.TestCase):
             # multiple by values
             'sequence by field1  [file where true] by f1 [process where true] by f1',
             'sequence by a,b,c,d [file where true] by f1,f2 [process where true] by f1,f2',
-            'sequence [file where 1] by f1,f2 [process where 1] by f1,f2 until [process where 1] by f1,f2',
-            'sequence by f [file where true] by a,b [process where true] by c,d until [process where 1] by e,f',
+            'sequence [file where 1=1] by f1,f2 [process where 1=1] by f1,f2 until [process where 1=1] by f1,f2',
+            'sequence by f [file where true] by a,b [process where true] by c,d until [process where 1=1] by e,f',
             # sequence with named params
             'sequence by unique_pid [process where true] [file where true] fork',
             'sequence by unique_pid [process where true] [file where true] fork=true',
@@ -307,6 +318,38 @@ class TestParser(unittest.TestCase):
         ]
         for query in invalid:
             self.assertRaises(EqlParseError, parse_query, query)
+
+    def test_backtick_fields(self):
+        """Test that backticks are accepted with fields."""
+        def parse_to(text, path):
+            node = parse_expression(text)
+            self.assertIsInstance(node, Field)
+            self.assertEqual(node.full_path, path)
+
+            # now render back as text and parse again
+            node2 = parse_expression(node.render())
+            self.assertEqual(node2, node)
+
+        parse_to("`foo-bar-baz`", ["foo-bar-baz"])
+        parse_to("`foo bar baz`", ["foo bar baz"])
+        parse_to("`foo.bar.baz`", ["foo.bar.baz"])
+        parse_to("`foo`.`bar-baz`", ["foo", "bar-baz"])
+        parse_to("`foo.bar-baz`", ["foo.bar-baz"])
+        parse_to("`💩`", ["💩"])
+
+        parse_to("`foo`[0]", ["foo", 0])
+        parse_to("`foo`[0].`bar`", ["foo", 0, "bar"])
+
+        # keywords
+        for keyword in keywords:
+            parse_to("`{keyword}`".format(keyword=keyword), [keyword])
+            parse_to("prefix.`{keyword}`".format(keyword=keyword), ["prefix", keyword])
+            parse_to("`{keyword}`[0].suffix".format(keyword=keyword), [keyword, 0, "suffix"])
+
+    def test_backtick_split_lines(self):
+        """Confirm that backticks can't be split across lines."""
+        with self.assertRaises(EqlSyntaxError):
+            parse_expression("`abc \n def`")
 
     def test_query_events(self):
         """Test that event queries work with events[n].* syntax in pipes."""
@@ -406,7 +449,7 @@ class TestParser(unittest.TestCase):
     def test_method_syntax(self):
         """Test correct parsing and rendering of methods."""
         parse1 = parse_expression("(a and b):concat():length()")
-        parse2 = parse_expression("a and b:concat():length()")
+        parse2 = parse_expression("a and b:concat():length() > 0")
         self.assertNotEqual(parse1, parse2)
 
         class Unmethodize(DepthFirstWalker):

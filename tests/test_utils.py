@@ -6,7 +6,7 @@ import unittest
 import eql.utils
 from eql.errors import EqlParseError
 from eql.parser import parse_query, parse_expression, parse_analytic
-from eql.utils import is_stateful, match_kv, get_output_types
+from eql.utils import is_stateful, match_kv, get_output_types, get_query_type, uses_ancestry, get_required_event_types
 
 
 class TestUtils(unittest.TestCase):
@@ -81,8 +81,6 @@ class TestUtils(unittest.TestCase):
             """Helper function for validation."""
             condition_node = match_kv(condition_dict)
             parsed_node = parse_expression(condition_text)
-            print(condition_node)
-            print(parsed_node)
             self.assertEqual(condition_node.render(), parsed_node.render(), *args)
 
         assert_kv_match({"name": "net.exe"},
@@ -136,13 +134,80 @@ class TestUtils(unittest.TestCase):
     def test_match_kv_errors(self):
         """Test that KV matching raises errors when expected."""
         self.assertRaises(EqlParseError, match_kv, {"invalid^field&syntax": "abc"})
-        self.assertRaises(TypeError, match_kv, {"100": "invalid field"})
+        self.assertRaises(EqlParseError, match_kv, {"100": "invalid field"})
 
         # Test that the parameters are validated
         self.assertRaises(TypeError, match_kv, {"process_name": ["a", tuple()]})
         self.assertRaises(TypeError, match_kv, [])
         self.assertRaises(TypeError, match_kv, True)
         self.assertRaises(TypeError, match_kv, 1)
+
+    def test_query_type(self):
+        """Check eql.utils.get_query_type."""
+        self.assertEqual(get_query_type(parse_query("any where true")), "event")
+        self.assertEqual(get_query_type(parse_query("process where true")), "event")
+        self.assertEqual(get_query_type(parse_query("sequence [process where true] [network where true]")), "sequence")
+        self.assertEqual(get_query_type(parse_query("join [process where true] [network where true]")), "join")
+
+    def test_required_event_types(self):
+        """Test that ancestry checks are detected."""
+        self.assertSetEqual(get_required_event_types(parse_query("file where true")), {"file"})
+
+        self.assertSetEqual(get_required_event_types(parse_query("any where event of [process where true]")),
+                            {"any", "process"})
+        self.assertSetEqual(get_required_event_types(parse_query("any where descendant of [process where true]")),
+                            {"any", "process"})
+
+        self.assertSetEqual(get_required_event_types(parse_query("""
+        sequence
+            [file where true]
+            [process where true]
+            [network where true]
+        """)), {"file", "process", "network"})
+
+        self.assertSetEqual(get_required_event_types(parse_query("""
+        join
+            [file where true]
+            [process where true]
+            [network where true]
+        """)), {"file", "process", "network"})
+
+        self.assertSetEqual(get_required_event_types(parse_query("""
+        file where descendant of [
+            dns where child of
+                [registry where true]]
+        """)), {"file", "dns", "registry"})
+
+        self.assertSetEqual(get_required_event_types(parse_query("""
+        sequence
+            [file where descendant of [dns where child of [registry where true]]]
+            [process where true]
+            [network where true]
+        """)), {"file", "dns", "network", "process", "registry"})
+
+    def test_uses_ancestry(self):
+        """Test that ancestry checks are detected."""
+        self.assertFalse(uses_ancestry(parse_query("any where true")))
+        self.assertTrue(uses_ancestry(parse_query("any where child of [any where true]")))
+        self.assertTrue(uses_ancestry(parse_query("any where descendant of [any where true]")))
+        self.assertTrue(uses_ancestry(parse_query("any where event of [any where true]")))
+
+        self.assertFalse(uses_ancestry(parse_query("sequence [process where true] [network where true]")))
+        self.assertTrue(uses_ancestry(parse_query("""
+        sequence
+            [process where child of [file where true]]
+            [network where true]
+        """)))
+        self.assertTrue(uses_ancestry(parse_query("""
+        join
+            [process where event of [file where true]]
+            [network where true]
+        """)))
+        self.assertTrue(uses_ancestry(parse_query("""
+        join
+            [process where descendant of [file where true]]
+            [network where true]
+        """)))
 
     def test_output_types(self):
         """Test that output types are correctly returned from eql.utils.get_output_types."""

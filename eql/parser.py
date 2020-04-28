@@ -22,21 +22,24 @@ from .schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC, Schema
 from .utils import to_unicode, load_extensions, ParserConfig, is_string
 
 __all__ = (
+    "allow_enum_fields",
+    "extract_query_terms",
     "get_preprocessor",
+    "ignore_missing_fields",
+    "ignore_missing_functions",
+    "implied_booleans",
+    "non_nullable_fields",
+    "nullable_fields",
+    "parse_analytic",
+    "parse_analytics",
     "parse_definition",
     "parse_definitions",
     "parse_expression",
     "parse_field",
     "parse_literal",
     "parse_query",
-    "parse_analytic",
-    "parse_analytics",
-    "ignore_missing_fields",
-    "ignore_missing_functions",
     "skip_optimizations",
-    "strict_field_schema",
-    "allow_enum_fields",
-    "extract_query_terms",
+    "strict_booleans",
 )
 
 
@@ -47,12 +50,18 @@ NON_SPACE_WS = re.compile(r"[^\S ]+")
 skip_optimizations = ParserConfig(optimized=False)
 ignore_missing_functions = ParserConfig(check_functions=False)
 ignore_missing_fields = ParserConfig(ignore_missing_fields=False)
-strict_field_schema = ParserConfig(strict_fields=True, implied_booleans=False)
+implied_booleans = ParserConfig(implied_booleans=True)
+strict_booleans = ParserConfig(implied_booleans=False)
+nullable_fields = ParserConfig(strict_fields=False)
+non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
+
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
             "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
             )
+
+RESERVED = {n.render(): n for n in [ast.Boolean(True), ast.Boolean(False), ast.Null()]}
 
 
 class KvTree(Tree):
@@ -117,7 +126,7 @@ class LarkToEQL(Interpreter):
             self._function_lookup[signature.name] = signature
 
         self._allowed_pipes = ParserConfig.read_stack("allowed_pipes", set(pipes.list_pipes()))
-        self._implied_booleans = ParserConfig.read_stack("implied_booleans", True)
+        self._implied_booleans = ParserConfig.read_stack("implied_booleans", False)
         self._in_pipes = False
         self._event_types = []
         self._schema = Schema.current()
@@ -332,7 +341,7 @@ class LarkToEQL(Interpreter):
     def literal(self, node):
         """Callback function to walk the AST."""
         value = ast.Literal.from_python(self.visit_children(node)[0])
-        return NodeInfo(value, value.type_hint, source=node)
+        return NodeInfo(value, value.type_hint, nullable=not self._strict_fields, source=node)
 
     def time_range(self, node):
         """Callback function to walk the AST."""
@@ -416,7 +425,7 @@ class LarkToEQL(Interpreter):
 
                 if base_hint is not None and base_hint[0] == TypeHint.String:
                     comparison = ast.Comparison(base_field, ast.Comparison.EQ, enum_value)
-                    return NodeInfo(comparison, TypeHint.String, nullable=not self._strict_fields, source=node_info)
+                    return NodeInfo(comparison, TypeHint.Boolean, nullable=not self._strict_fields, source=node_info)
 
         else:
             type_hint = self._var_types[field.base]
@@ -444,6 +453,7 @@ class LarkToEQL(Interpreter):
         for prev_node, function_node in zip(node.children[:-1], node.children[1:]):
             rv = self.function_call(function_node, prev_node, rv)
 
+        rv.source = node
         return rv
 
     def value(self, node):
@@ -493,10 +503,17 @@ class LarkToEQL(Interpreter):
 
     def base_field(self, node):
         """Get a base field."""
-        name = node["name"]
+        child = node.children[0]
+        token = child["NAME"] or child["ESCAPED_NAME"]
+        name = token.value.strip("`")
 
-        # validate against the remaining keywords
-        name = self.visit(name)
+        if token.type != "ESCAPED_NAME":
+            if name in RESERVED:
+                value = RESERVED[name]
+                return NodeInfo(value, value.type_hint, source=node)
+
+            # validate against the remaining keywords
+            self.visit(child)
 
         if name in self.preprocessor.constants:
             constant = self.preprocessor.constants[name]
@@ -512,11 +529,24 @@ class LarkToEQL(Interpreter):
 
     def field(self, node):
         """Callback function to walk the AST."""
-        full_path = [s.strip() for s in re.split(r"[.\[\]]+", node.children[0])]
-        full_path = [int(s) if s.isdigit() else s for s in full_path if s]
+        full_path = []
 
-        if any(p in keywords for p in full_path):
-            raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
+        # to get around parser ambiguities, we had to create a token to mash all of the parts together
+        # but we have a separate rule "field_parts" that can safely re-parse and separate out the tokens.
+        # we can walk through each token, and build the field path accordingly
+        for part in lark_parser.parse(node.children[0], "field_parts").children:
+            if part["NAME"]:
+                name = to_unicode(part["NAME"])
+                full_path.append(name)
+
+                if name in keywords:
+                    raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
+            elif part["ESCAPED_NAME"]:
+                full_path.append(to_unicode(part["ESCAPED_NAME"]).strip("`"))
+            elif part["UNSIGNED_INTEGER"]:
+                full_path.append(int(part["UNSIGNED_INTEGER"]))
+            else:
+                raise self._error(node, "Unable to parser field", cls=EqlSyntaxError)
 
         base, path = full_path[0], full_path[1:]
 
@@ -540,13 +570,28 @@ class LarkToEQL(Interpreter):
         accepted_types = TypeHint.primitives()
         error_message = "Invalid comparison of {expected_type} to {actual_type}"
 
+        def check_null(expr, null_side):
+            # check for `expr == null` or `expr != null`
+            if isinstance(null_side.node, ast.Null) and op in (ast.Comparison.NE, ast.Comparison.EQ):
+                if not expr.validate_type(TypeHint.Null):
+                    # check if the types can actually be compared, and don't allow comparison of nested types
+                    raise self._type_error(left, TypeHint.Null, error_message, error_node=node)
+
+                comp = ast.IsNull(expr.node) if op == ast.Comparison.EQ else ast.IsNotNull(expr.node)
+                return NodeInfo(comp, TypeHint.Boolean, nullable=not self._strict_fields)
+
+        comp = check_null(left, right) or check_null(right, left)
+
+        if comp is not None:
+            return comp
+
         if not left.validate_type(accepted_types) or \
                 not right.validate_type(accepted_types) or \
                 not right.validate_type(left):
             # check if the types can actually be compared, and don't allow comparison of nested types
             raise self._type_error(right, left, error_message, error_node=node)
 
-        if op in (ast.Comparison.LT, ast.Comparison.LE, ast.Comparison.GE, ast.Comparison.GE):
+        if op in (ast.Comparison.LT, ast.Comparison.LE, ast.Comparison.GE, ast.Comparison.GT):
             # check that <, <=, >, >= are only supported for strings or numbers
             if not (left.validate_type(TypeHint.Numeric) and right.validate_type(TypeHint.Numeric) or
                     left.validate_type(TypeHint.String) and right.validate_type(TypeHint.String)):
@@ -564,7 +609,7 @@ class LarkToEQL(Interpreter):
             elif op == ast.Comparison.NE:
                 eql_node = ~func_call
 
-        return NodeInfo(eql_node, TypeHint.Boolean, nullable=False, source=node)
+        return NodeInfo(eql_node, TypeHint.Boolean, nullable=left.nullable or right.nullable, source=node)
 
     def mathop(self, node):
         """Callback function to walk the AST."""
@@ -622,7 +667,7 @@ class LarkToEQL(Interpreter):
 
         # if there are an odd number of NOTs then we negate
         if len(node.get_list("NOT_OP")) % 2 == 1:
-            term.node = ~term.node
+            term.node = ast.Not(term.node)
 
         return term
 
@@ -648,7 +693,8 @@ class LarkToEQL(Interpreter):
 
         # This will always evaluate to true/false, so it should be a boolean
         term = ast.InSet(outer.node, [c.node for c in container])
-        return NodeInfo(term, TypeHint.Boolean, nullable=False, source=node)
+        nullable = outer.nullable or any(c.nullable for c in container)
+        return NodeInfo(term, TypeHint.Boolean, nullable=nullable, source=node)
 
     def _get_type_hint(self, node, ast_node):
         """Get the recommended type hint for a node when it isn't already known.
@@ -742,7 +788,8 @@ class LarkToEQL(Interpreter):
             self._var_types = old_variables
 
             expr = ast.FunctionCall(function_name, [a.node for a in args], as_method=prev_node is not None)
-            return NodeInfo(expr, signature.return_value, nullable=False, source=node)
+            nullable = any(a.nullable for a in args) or signature.sometimes_null
+            return NodeInfo(expr, signature.return_value, nullable=nullable, source=node)
 
         elif self._check_functions:
             raise self._error(node["name"], "Unknown function {NAME}")
@@ -1033,7 +1080,7 @@ class LarkToEQL(Interpreter):
 
 lark_parser = Lark(get_etc_file('eql.g'), debug=False,
                    propagate_positions=True, tree_class=KvTree, parser='lalr',
-                   start=['piped_query', 'definition', 'definitions',
+                   start=['piped_query', 'definition', 'definitions', 'field_parts',
                           'query_with_definitions', 'expr', 'signed_single_atom'])
 
 
