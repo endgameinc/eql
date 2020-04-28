@@ -20,7 +20,7 @@ install_requires = [
 ]
 
 test_requires = [
-    "mock>=1.3.0",
+    "mock~=1.3.0",
     "pytest~=3.8.2",
     "pytest-cov~=2.4",
     "flake8~=2.5.1",
