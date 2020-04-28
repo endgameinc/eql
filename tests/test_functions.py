@@ -131,7 +131,9 @@ class TestFunctions(unittest.TestCase):
             start, end = min(start, end), max(start, end)
 
             # now build the regex and check that each one matches
-            regex = re.compile("^(" + CidrMatch.make_octet_re(start, end) + ")$")
+            regex = re.compile("^(?:" + CidrMatch.make_octet_re(start, end) + ")$")
+            self.assertEqual(regex.groups, 0)
+
             for num in range(500):
                 should_match = start <= num <= end
                 did_match = regex.match(str(num)) is not None
@@ -156,7 +158,9 @@ class TestFunctions(unittest.TestCase):
 
             pattern = CidrMatch.make_cidr_regex(cidr_mask)
 
-            regex = re.compile("^({})$".format(pattern))
+            regex = re.compile("^(?:{})$".format(pattern))
+            self.assertEqual(regex.groups, 0)
+
             min_ip, max_ip = CidrMatch.to_range(cidr_mask)
 
             # randomly pick IPs that *are* in the range

@@ -188,10 +188,10 @@ class CidrMatch(FunctionSignature):
     additional_types = TypeHint.String.require_literal()
     return_value = TypeHint.Boolean
 
-    octet_re = r'(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])'
+    octet_re = r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])'
     ip_re = r'\.'.join([octet_re, octet_re, octet_re, octet_re])
     ip_compiled = re.compile(r'^{}$'.format(ip_re))
-    cidr_compiled = re.compile(r'^{}/(3[0-2]|2[0-9]|1[0-9]|[0-9])$'.format(ip_re))
+    cidr_compiled = re.compile(r'^{}/(?:3[0-2]|2[0-9]|1[0-9]|[0-9])$'.format(ip_re))
 
     # store it in native representation, then recover it in network order
     masks = [struct.unpack(">L", struct.pack(">L", MAX_IP & ~(MAX_IP >> b)))[0] for b in range(33)]
@@ -276,9 +276,9 @@ class CidrMatch(FunctionSignature):
             if len(hundreds_matches) == 1:
                 combos.append("{:s}{:s}".format(h_digit, hundreds_matches[0]))
             elif len(hundreds_matches) > 1:
-                combos.append("{:s}({:s})".format(h_digit, "|".join(hundreds_matches)))
+                combos.append("{:s}(?:{:s})".format(h_digit, "|".join(hundreds_matches)))
 
-        return "({})".format("|".join(combos))
+        return "(?:{})".format("|".join(combos))
 
     @classmethod
     def make_cidr_regex(cls, cidr):
