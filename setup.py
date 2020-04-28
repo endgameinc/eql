@@ -97,7 +97,7 @@ setup(
         'Topic :: Scientific/Engineering :: Information Analysis',
     ],
     url='https://eql.readthedocs.io',
-    tests_require=test_requires,
+    tests_require=install_requires + test_requires,
     cmdclass={
         'lint': Lint,
         'test': Test
