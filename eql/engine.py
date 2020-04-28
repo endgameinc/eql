@@ -175,9 +175,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         scoped = kwargs.pop("scoped", False)
         method = self.get_node_method(node, "_convert_")
 
-        if not method:
-            raise EqlCompileError(u"Unable to convert {}".format(node))
-
         cb = method(node, *args, **kwargs)
 
         if not scoped:
@@ -984,16 +981,13 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                         sequence.append(event)
                         next_pipe(sequence)
 
-    def _convert_time_range(self, node):
-        return int(node.delta.total_seconds() * self.time_unit)
-
     def _convert_sequence(self, node, next_pipe):  # type: (Sequence, callable) -> callable
         # Two lookups can help avoid unnecessary calls
         size = len(node.queries)
         lookups = [{} for _ in range(size)]  # type: list[dict[object, list[Event]]]
 
-        if 'maxspan' in node.params.kv:
-            max_span = self.convert(node.params.kv['maxspan'])
+        if node.max_span is not None:
+            max_span = self.convert_time_range(node.max_span)
             event_types = set(q.query.event_type for q in node.queries)
 
             @self.event_callback(*event_types)

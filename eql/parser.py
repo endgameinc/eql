@@ -4,7 +4,7 @@ from __future__ import unicode_literals
 import datetime
 import re
 import sys
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 import contextlib
 
 from lark import Lark, Tree, Token
@@ -45,26 +45,7 @@ __all__ = (
 
 debugger_attached = 'pydevd' in sys.modules
 
-# Used for time units
-SECOND = 1
-MINUTE = 60 * SECOND
-HOUR = MINUTE * 60
-DAY = HOUR * 24
-
-# Time units (shorthand)
-units = {
-    'second': SECOND,
-    'minute': MINUTE,
-    'hour': HOUR,
-    'hr': HOUR,
-    'day': DAY
-}
-
-RESERVED = {n.render(): n for n in [ast.Boolean(True), ast.Boolean(False), ast.Null()]}
-
-
 NON_SPACE_WS = re.compile(r"[^\S ]+")
-
 
 skip_optimizations = ParserConfig(optimized=False)
 ignore_missing_functions = ParserConfig(check_functions=False)
@@ -79,6 +60,8 @@ allow_enum_fields = ParserConfig(enable_enum=True)
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
             "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
             )
+
+RESERVED = {n.render(): n for n in [ast.Boolean(True), ast.Boolean(False), ast.Null()]}
 
 
 class KvTree(Tree):
@@ -347,6 +330,14 @@ class LarkToEQL(Interpreter):
         return self.visit(node.children[0])
 
     # literals
+    def null(self, node):
+        """Callback function to walk the AST."""
+        return None
+
+    def boolean(self, node):
+        """Callback function to walk the AST."""
+        return node.children[0] == "true"
+
     def literal(self, node):
         """Callback function to walk the AST."""
         value = ast.Literal.from_python(self.visit_children(node)[0])
@@ -354,14 +345,40 @@ class LarkToEQL(Interpreter):
 
     def time_range(self, node):
         """Callback function to walk the AST."""
-        val, unit = self.visit_children(node)
+        quantity = self.visit(node["number"])  # type: int|float
+        interval = self.visit(node["name"])  # type: str
 
-        for name, interval in units.items():
-            if name.startswith(unit.rstrip('s') or 's'):
-                span = ast.TimeRange(datetime.timedelta(seconds=val * interval))
-                return NodeInfo(span, TypeHint.Numeric, source=node)
+        units = [v.value for v in ast.TimeUnit.get_units()]
 
-        raise self._error(node["name"], "Unknown time unit")
+        if isinstance(quantity, float):
+            if interval is None or interval == "s":
+                guess = int(round(quantity * ast.TimeUnit.Seconds.as_milliseconds()))
+                time_range = ast.TimeRange(guess, ast.TimeUnit.Milliseconds)
+                raise self._error(node, "Only integer values allowed for maxspan. Did you mean {time_range}?",
+                                  time_range=time_range)
+
+            # if a valid unit was specified, then filter out the less-precise units
+            if interval in units and interval != ast.TimeUnit.Milliseconds.value:
+                units = units[:units.index(interval)]
+
+                raise self._error(node, "Only integer values allowed for maxspan.\n"
+                                        "Try a more precise time unit: {all_units}.", all_units=", ".join(units))
+
+            raise self._error(node, "Only integer values allowed for maxspan.", all_units=", ".join(units))
+
+        if interval is None:
+            time_range = ast.TimeRange(quantity, ast.TimeUnit.Seconds)
+            raise self._error(node, "Missing time unit. Did you mean {time_range}?", time_range=time_range)
+
+        try:
+            unit = ast.TimeUnit(interval)
+        except ValueError:
+            raise self._error(node["name"],
+                              "Unknown time unit. Recognized units are: {all_units}.",
+                              interval=interval,
+                              all_units=", ".join(units))
+
+        return ast.TimeRange(quantity, unit)
 
     # fields
     def _update_field_info(self, node_info):
@@ -875,23 +892,7 @@ class LarkToEQL(Interpreter):
         query = self.visit(node["subquery"]["event_query"])
         return NodeInfo(ast.NamedSubquery(name, query), TypeHint.Boolean, source=node)
 
-    def named_params(self, node, get_param=None, position=None, close=None):
-        """Callback function to walk the AST."""
-        if node is None:
-            return ast.NamedParams({})
-
-        params = OrderedDict()
-        if get_param is None and len(node.children) > 0:
-            raise self._error(node.children[0], "Unexpected parameters")
-
-        for param in node.children:
-            key, value = get_param(param, position=position, close=close)
-            if key in params:
-                raise self._error(param, "Repeated parameter {name}")
-            params[key] = value
-        return ast.NamedParams(params)
-
-    def subquery_by(self, node, num_values=None, position=None, close=None, get_param=None):
+    def subquery_by(self, node, num_values=None, position=None, close=None, allow_fork=False):
         """Callback function to walk the AST."""
         if not self._subqueries_enabled:
             raise self._error(node, "Subqueries not supported")
@@ -911,10 +912,15 @@ class LarkToEQL(Interpreter):
                 message += "s"
             raise self._error(error_node, message, num=num_values, end=end)
 
-        if node["named_params"]:
-            params = self.named_params(node["named_params"], get_param=get_param, position=position, close=close)
-        else:
-            params = ast.NamedParams()
+        kwargs = {}
+        fork_param = node["fork_param"]
+
+        if fork_param is not None:
+            fork_value = fork_param["boolean"]
+            if allow_fork is False or position == 0 or close:
+                raise self._error(fork_param, "Fork is not allowed here")
+
+            kwargs["fork"] = self.visit(fork_value) if fork_value is not None else True
 
         query = self.visit(node["subquery"]["event_query"])
 
@@ -924,7 +930,7 @@ class LarkToEQL(Interpreter):
         else:
             join_values = []
 
-        return NodeInfo(ast.SubqueryBy(query, params, [v.node for v in join_values]), source=node), join_values
+        return NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs), source=node), join_values
 
     def join_values(self, node):
         """Return all of the expressions."""
@@ -935,7 +941,7 @@ class LarkToEQL(Interpreter):
         queries, close = self._get_subqueries_and_close(node)
         return ast.Join(queries, close)
 
-    def _get_subqueries_and_close(self, node, get_param=None):
+    def _get_subqueries_and_close(self, node, allow_fork=False):
         """Helper function used by join and sequence to avoid duplicate code."""
         if not self._subqueries_enabled:
             # Raise the error earlier (instead of waiting until subquery_by) so that it's more meaningful
@@ -943,7 +949,7 @@ class LarkToEQL(Interpreter):
 
         # Figure out how many fields are joined by in the first query, and match across all
         subquery_nodes = node.get_list("subquery_by")
-        first, first_info = self.subquery_by(subquery_nodes[0], get_param=get_param, position=0)
+        first, first_info = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork, position=0)
         num_values = len(first_info)
         subqueries = [(first, first_info)]
 
@@ -955,7 +961,7 @@ class LarkToEQL(Interpreter):
             subquery_nodes.append(until_node["subquery_by"])
 
         for pos, subquery in enumerate(subquery_nodes[1:], 1):
-            subqueries.append(self.subquery_by(subquery, num_values=num_values, get_param=get_param, position=pos))
+            subqueries.append(self.subquery_by(subquery, num_values=num_values, allow_fork=allow_fork, position=pos))
 
         # Validate that each field has matching types
         default_hint = TypeHint.primitives()
@@ -1043,10 +1049,10 @@ class LarkToEQL(Interpreter):
 
         params = None
 
-        if node['named_params']:
-            params = self.named_params(node['named_params'], get_param=self.get_sequence_parameter)
+        if node['with_params']:
+            params = self.time_range(node['with_params']['time_range'])
 
-        queries, close = self._get_subqueries_and_close(node, get_param=self.get_sequence_term_parameter)
+        queries, close = self._get_subqueries_and_close(node, allow_fork=True)
         return ast.Sequence(queries, params, close)
 
     def definitions(self, node):
