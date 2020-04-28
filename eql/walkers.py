@@ -2,9 +2,11 @@
 import re
 from collections import defaultdict, deque
 from contextlib import contextmanager
+
+from .ast import TimeUnit
 from .schema import Schema
-from .utils import is_string, to_unicode
 from .types import NodeInfo, TypeHint
+from .utils import is_string, to_unicode
 
 
 __all__ = (
@@ -242,6 +244,18 @@ class ConfigurableWalker(RecursiveWalker):
         if self.get_config('schema', None) is not None:
             self._schema = Schema(**self.get_config('schema'))
         super(ConfigurableWalker, self).__init__()
+
+    def convert_time_range(self, node):  # type: (eql.ast.TimeRange) -> (int|float)
+        """Convert a time range to a timestamp delta."""
+        tick_rate = TimeUnit.Seconds.as_milliseconds()
+        node_ms = node.as_milliseconds() // tick_rate
+
+        if not isinstance(self.time_unit, float) and self.time_unit > tick_rate and self.time_unit % tick_rate == 0:
+            # strictly use integer math if we can safely divide the engine's rate by TimeUnits
+            return self.time_unit * node_ms
+        else:
+            # if it doesn't evenly divide, resort to floating point math
+            return float(self.time_unit) * node_ms
 
     @property
     def schema(self):
