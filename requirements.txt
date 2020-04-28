@@ -1,2 +1,0 @@
-lark-parser~=0.8.5;
-enum34; python_version<'3.4'

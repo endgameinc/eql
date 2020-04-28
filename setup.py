@@ -7,11 +7,6 @@ import os
 import re
 import io
 
-try:  # for pip >= 10
-    from pip._internal.req import parse_requirements
-except ImportError:  # for pip <= 9.0.3
-    from pip.req import parse_requirements
-
 from setuptools import setup, Command
 from setuptools.command.test import test as TestCommand
 
@@ -19,12 +14,21 @@ from setuptools.command.test import test as TestCommand
 with io.open('eql/__init__.py', 'rt', encoding='utf8') as f:
     __version__ = re.search(r'__version__ = \'(.*?)\'', f.read()).group(1)
 
-install_requires = parse_requirements('requirements.txt', session=False)
-install_requires = [str(req.req) for req in install_requires]
+install_requires = [
+    "lark-parser~=0.8.5",
+    "enum34; python_version<'3.4'",
+]
 
-test_requires = parse_requirements('requirements_test.txt', session=False)
-test_requires = [str(req.req) for req in test_requires]
-
+test_requires = [
+    "mock>=1.3.0",
+    "pytest~=3.8.2",
+    "pytest-cov~=2.4",
+    "flake8~=2.5.1",
+    "pep257~=0.7.0",
+    "flake8-pep257~=1.0.5",
+    "PyYAML",
+    "toml~=0.10",
+]
 etc_files = [os.path.relpath(fn, 'eql') for fn in glob.glob('eql/etc/*') if not fn.endswith('.py')]
 
 

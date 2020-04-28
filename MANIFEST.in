@@ -1,3 +1,2 @@
-include requirements.txt
-include requirements_test.txt
 include README.md
+include LICENSE
