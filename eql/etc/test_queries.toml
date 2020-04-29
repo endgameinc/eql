@@ -584,13 +584,18 @@ query = '''
 process where fake_field == "*"'''
 
 [[queries]]
-expected_event_ids  = [1, 2, 3, 4]
+# no longer valid, since this returns `null`, and `not null` is still null
+# expected_event_ids  = [1, 2, 3, 4]
+
+expected_event_ids = []
 query = '''
 process where fake_field != "*"
 | head 4'''
 
 [[queries]]
-expected_event_ids  = [1, 2, 3, 4]
+# no longer valid, since this returns `null`, and `not null` is still null
+# expected_event_ids  = [1, 2, 3, 4]
+expected_event_ids = []
 query = '''
 process where not (fake_field == "*")
 | head 4'''

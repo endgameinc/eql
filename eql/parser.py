@@ -609,6 +609,14 @@ class LarkToEQL(Interpreter):
             elif op == ast.Comparison.NE:
                 eql_node = ~func_call
 
+        elif isinstance(left.node, ast.String) and '*' in left.node.value:
+            func_call = ast.FunctionCall('wildcard', [right.node, left.node])
+
+            if op == ast.Comparison.EQ:
+                eql_node = func_call
+            elif op == ast.Comparison.NE:
+                eql_node = ~func_call
+
         return NodeInfo(eql_node, TypeHint.Boolean, nullable=left.nullable or right.nullable, source=node)
 
     def mathop(self, node):
