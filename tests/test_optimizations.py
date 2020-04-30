@@ -101,7 +101,7 @@ class TestParseOptimizations(unittest.TestCase):
 
         comp_and_set = parse_expression('name == "b" and name in ("a", "b")')
         optimized = parse_expression('name == "b"')
-        self.assertEqual(comp_and_set, optimized, "Failed to AND a comparisong with a matching set")
+        self.assertEqual(comp_and_set, optimized, "Failed to AND a comparison with a matching set")
 
         # test that values can be subtracted individually from sets
         set_and_not = parse_expression('name in ("a", "b", "c") and name != "c"')
