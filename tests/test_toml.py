@@ -5,10 +5,7 @@ import string
 import eql
 import eql.etc
 
-try:
-    from . import utils
-except ImportError:
-    import utils
+from . import utils
 
 
 fold_tests = []
