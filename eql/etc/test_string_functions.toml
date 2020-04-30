@@ -41,21 +41,21 @@ description = "Test the proper evaluation of the `between` function"
     expression = 'between("welcome to the planet", "welcome", "x", true)'
     # expected = null
 
-#    [[between.fold.tests]]
-#    expression = 'between("welcome to the planet", "", "x", true)'
-#    # expected = null
-#
-#    [[between.fold.tests]]
-#    expression = 'between("welcome to the planet", "", "", true)'
-#    expected = "welcome to the planet"
-#
-#    [[between.fold.tests]]
-#    expression = 'between("welcome to the planet", "", "", false)'
-#    expected = ""
-#
-#    [[between.fold.tests]]
-#    expression = 'between("welcome to the planet", "", "planet", false)'
-#    expected = "welcome to the "
+    [[between.fold.tests]]
+    expression = 'between("welcome to the planet", "", "x", true)'
+    # expected = null
+
+    [[between.fold.tests]]
+    expression = 'between("welcome to the planet", "", "", true)'
+    expected = "welcome to the planet"
+
+    [[between.fold.tests]]
+    expression = 'between("welcome to the planet", "", "", false)'
+    expected = ""
+
+    [[between.fold.tests]]
+    expression = 'between("welcome to the planet", "", "planet", false)'
+    expected = "welcome to the "
 
 
 [concat]
