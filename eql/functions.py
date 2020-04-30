@@ -153,7 +153,7 @@ class Between(FunctionSignature):
     @classmethod
     def run(cls, source_string, first, second, greedy=False, case_sensitive=False):
         """Return the substring between two other ones."""
-        if is_string(source_string) and is_string(first) and is_string(second) and first and second:
+        if is_string(source_string) and is_string(first) and is_string(second):
             match_string = source_string
 
             if not case_sensitive:
@@ -161,22 +161,13 @@ class Between(FunctionSignature):
                 first = first.lower()
                 second = second.lower()
 
-            before, first_match, remaining = match_string.partition(first)
-            if not first_match:
+            try:
+                start_pos = match_string.index(first) + len(first)
+                end_pos = match_string.rindex(second, start_pos) if greedy else match_string.index(second, start_pos)
+                return source_string[start_pos:end_pos]
+
+            except ValueError:
                 return
-
-            start_pos = len(before) + len(first_match)
-
-            if greedy:
-                between, second_match, _ = remaining.rpartition(second)
-            else:
-                between, second_match, _ = remaining.partition(second)
-
-            if not second_match:
-                return
-
-            end_pos = start_pos + len(between)
-            return source_string[start_pos:end_pos]
 
 
 @register

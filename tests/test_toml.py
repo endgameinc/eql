@@ -28,7 +28,6 @@ type_lookup = {
 def extract_tests(test_name, contents, case_sensitive, **params):
     """Extract tests from a TOML test dict."""
     for param in contents.get("params", []):
-        print(param)
         value = type_lookup[param["type"]]()
         params[param["name"]] = eql.ast.Literal.from_python(value)
 
