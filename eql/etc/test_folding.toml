@@ -330,10 +330,7 @@ description = "Check that three-value boolean logic works for `and`."
     expected = false
 
     [[and.fold.tests]]
-    # expected = null
-    
-    [[and.fold.tests]]
-    expression = "true and true "
+    expression = "true and true"
     expected = true
     
     [[and.fold.tests]]
@@ -345,7 +342,7 @@ description = "Check that three-value boolean logic works for `and`."
     expected = false
     
     [[and.fold.tests]]
-    expression = "false and true "
+    expression = "false and true"
     expected = false
     
     [[and.fold.tests]]
@@ -353,10 +350,12 @@ description = "Check that three-value boolean logic works for `and`."
     expected = false
     
     [[and.fold.tests]]
-    expression = "null and null "
+    expression = "null and null"
+    # expected = null
     
     [[and.fold.tests]]
-    expression = "null and true "
+    expression = "null and true"
+    # expected = null
 
 
 [not]
@@ -364,6 +363,7 @@ description = "Check that `not` negates `null` as null`"
 
     [[not.fold.tests]]
     expression = "not null"
+    # expected = null
 
     [[not.fold.tests]]
     expression = "not true"
@@ -418,27 +418,35 @@ description = "Check that any literals compared to `null` fold as `null`."
         [null_comparison.loop.fold]
             [[null_comparison.loop.fold.tests]]
             expression = "null < $value"
+            # expected = null
 
             [[null_comparison.loop.fold.tests]]
             expression = "null <= $value"
+            # expected = null
 
             [[null_comparison.loop.fold.tests]]
             expression = "null >= $value"
+            # expected = null
 
             [[null_comparison.loop.fold.tests]]
             expression = "null > $value"
+            # expected = null
 
             [[null_comparison.loop.fold.tests]]
             expression = "$value < null"
+            # expected = null
 
             [[null_comparison.loop.fold.tests]]
             expression = "$value <= null"
+            # expected = null
 
             [[null_comparison.loop.fold.tests]]
             expression = "$value >= null"
+            # expected = null
 
             [[null_comparison.loop.fold.tests]]
             expression = "$value > null"
+            # expected = null
 
 [complex]
 description = "Test recurisve folding for more complex expressions."
