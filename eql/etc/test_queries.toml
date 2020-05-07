@@ -974,7 +974,7 @@ sequence by user_name
   [file where opcode=0] by pid,file_path
   [file where opcode=2] by pid,file_path
 until
-  [process where opcode=2] by ppid,process_path
+  [process where opcode == 2] by ppid,process_path
 '''
 expected_event_ids = []
 
@@ -984,7 +984,7 @@ sequence by user_name
   [file where opcode=0] by pid,file_path
   [file where opcode=2] by pid,file_path
 until
-  [process where opcode=5] by ppid,process_path
+  [process where opcode == 5] by ppid,process_path
 | head 2'''
 expected_event_ids  = [55, 59, 61, 65]
 
@@ -1100,13 +1100,15 @@ registry where bytes_written_string_list[1] == 'EN'
 case_sensitive = false
 expected_event_ids  = [57]
 query = '''
-registry where arrayContains(bytes_written_string_list, 'en-US')'''
+registry where arrayContains(bytes_written_string_list, 'en-US')
+'''
 
 [[queries]]
 case_sensitive = false
 expected_event_ids  = [57]
 query = '''
-registry where arrayContains(bytes_written_string_list, 'en')'''
+registry where arrayContains(bytes_written_string_list, 'en')
+'''
 
 [[queries]]
 case_sensitive = false
