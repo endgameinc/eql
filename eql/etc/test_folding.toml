@@ -330,7 +330,7 @@ description = "Check that three-value boolean logic works for `and`."
     expected = false
 
     [[and.fold.tests]]
-    expression = "true and null "
+    # expected = null
     
     [[and.fold.tests]]
     expression = "true and true "
