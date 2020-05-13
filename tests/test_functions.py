@@ -11,7 +11,7 @@ from eql import types
 class TestFunctions(unittest.TestCase):
     """Direct tests for EQL functions."""
 
-    def test_mutli_line_functions(self):
+    def test_multi_line_functions(self):
         """Test wildcard and match functions."""
         sources = [
             "this is a single line comment",

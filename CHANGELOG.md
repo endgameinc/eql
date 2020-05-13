@@ -6,9 +6,12 @@ _Released 2020-##-##_
 
 ### Added
 * Support for escaped identifiers in fields using \`backtick\` syntax
+* Implemented three-value logic for boolean and null handling
+* Migrate python tests to TOML files
 
 ### Changed
 * (Internal) Changed the type system to use TypeHint/TypeFoldCheck/NodeInfo instead of tuples
+* Treat wildcards the same on the left and right side of `==` or `!=`
 
 
 ## Version 0.8.8

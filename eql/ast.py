@@ -3,7 +3,7 @@ from __future__ import unicode_literals
 
 import re
 from collections import OrderedDict
-from operator import lt, le, eq, ne, ge, gt, mul, truediv, mod, add, sub
+from operator import lt, le, eq, ne, ge, gt
 from string import Template
 from enum import Enum
 
@@ -196,14 +196,17 @@ class Expression(EqlNode):
         elif other == Boolean(True):
             return self
 
-        if isinstance(self, Literal) and isinstance(other, Literal):
-            if self == Null() or other == Null():
-                return Null()
-            return Boolean(bool(self.value) and bool(other.value))
+        if self == Null() or other == Null():
+            return Null()
 
-        if isinstance(other, And):
-            return And([self] + other.terms)
-        return And([self, other])
+        # flatten out the terms in the And
+        terms = []
+        for t in (self, other):
+            if isinstance(t, And):
+                terms.extend(t.terms)
+            else:
+                terms.append(t)
+        return And(terms)
 
     def __or__(self, other):
         """"Boolean OR between two AST nodes."""
@@ -214,14 +217,17 @@ class Expression(EqlNode):
         elif other == Boolean(False):
             return self
 
-        if isinstance(self, Literal) and isinstance(other, Literal):
-            if self == Null() or other == Null():
-                return Null()
-            return Boolean(bool(self.value) and bool(other.value))
+        if self == Null() or other == Null():
+            return Null()
 
-        if isinstance(other, Or):
-            return Or([self] + other.terms)
-        return Or([self, other])
+        # flatten out the terms in the Or
+        terms = []
+        for t in (self, other):
+            if isinstance(t, Or):
+                terms.extend(t.terms)
+            else:
+                terms.append(t)
+        return Or(terms)
 
     def __invert__(self):
         """Negate an expression with Not."""
@@ -397,7 +403,7 @@ class Field(Expression):
     __slots__ = 'base', 'path',
     precedence = Expression.precedence + 1
 
-    field_re = re.compile("^[_A-Za-z][_A-Za-z0-9]+$")
+    field_re = re.compile("^[_A-Za-z][_A-Za-z0-9]*$")
 
     def __init__(self, base, path=None):
         """Query the event for the field expression.
@@ -522,7 +528,6 @@ class MathOperation(Expression):
     __slots__ = 'left', 'operator', 'right'
     OPERATORS = ('*', '/', '%', '+', '-')
 
-    op_lookup = {'*': mul, '/': truediv, '%': mod, '+': add, '-': sub}
     func_lookup = {"*": "multiply", "+": "add", "-": "subtract", "%": "modulo", "/": "divide"}
 
     min_precedence = NamedSubquery.precedence + 1
@@ -552,11 +557,6 @@ class MathOperation(Expression):
     def template(self):
         """Make the template dynamic."""
         return self.negative_template if self.left == Number(0) else self.full_template
-
-    @property
-    def func(self):
-        """Get a callback function for the specific operator."""
-        return self.op_lookup[self.operator]
 
 
 class Comparison(Expression):
@@ -819,30 +819,12 @@ class And(BaseCompound):
     precedence = Not.precedence + 1
     operator = 'and'
 
-    def __and__(self, other):
-        """Flatten multiple ``and`` terms."""
-        terms = self.terms
-        if isinstance(other, And):
-            terms.extend(other.terms)
-        else:
-            terms.append(other)
-        return And(terms)
-
 
 class Or(BaseCompound):
     """Perform a boolean ``or`` on a list of expressions."""
 
     precedence = And.precedence + 1
     operator = 'or'
-
-    def __or__(self, other):
-        """Flatten multiple ``or`` terms."""
-        terms = self.terms
-        if isinstance(other, Or):
-            terms.extend(other.terms)
-        else:
-            terms.append(other)
-        return Or(terms)
 
 
 class EventQuery(EqlNode):
