@@ -27,16 +27,17 @@ class TestEngine(unittest.TestCase):
     __events = None
 
     @classmethod
-    def get_analytic(cls, query_text):
+    def get_analytic(cls, query_text, is_case_sensitive=None):
         """Get a cached EQL analytic."""
+        cache_key = (query_text, is_case_sensitive)
         with cls.schema:
-            if query_text not in cls.query_cache:
+            if cache_key not in cls.query_cache:
                 analytic_info = {
                     'metadata': {'id': 'query-{:d}'.format(len(cls.query_cache)), 'name': query_text},
                     'query': query_text
                 }
-                cls.query_cache[query_text] = parse_analytic(analytic_info)
-        return cls.query_cache[query_text]
+                cls.query_cache[cache_key] = parse_analytic(analytic_info)
+        return cls.query_cache[cache_key]
 
     @classmethod
     def get_events(cls):
@@ -53,22 +54,25 @@ class TestEngine(unittest.TestCase):
         return True
 
     @classmethod
-    def get_example_queries(cls):
+    def get_example_queries(cls, match_case_sensitive=False):
         """Get example queries with their expected outputs."""
         with open(cls.queries_file, "r") as f:
             queries = []
             for q in toml.load(f)["queries"]:
-                analytic = cls.get_analytic(q['query'])
+                is_case_sensitive = q.get("case_sensitive")
+                analytic = cls.get_analytic(q['query'], is_case_sensitive)
                 analytic.metadata['_info'] = q.copy()
                 q['analytic'] = analytic
-                queries.append(q)
+
+                if is_case_sensitive in (None, match_case_sensitive):
+                    queries.append(q)
 
             return list(filter(cls.filter_queries, queries))
 
     @classmethod
-    def get_example_analytics(cls):
+    def get_example_analytics(cls, match_case_sensitive=False):
         """Get a list of example analytics from test queries."""
-        return [q["analytic"] for q in cls.get_example_queries()]
+        return [q["analytic"] for q in cls.get_example_queries(match_case_sensitive=match_case_sensitive)]
 
     def validate_results(self, actual, expected, query=None):
         """Validate that a list of results matches."""

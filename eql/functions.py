@@ -153,7 +153,7 @@ class Between(FunctionSignature):
     @classmethod
     def run(cls, source_string, first, second, greedy=False, case_sensitive=False):
         """Return the substring between two other ones."""
-        if is_string(source_string) and is_string(first) and is_string(second) and first and second:
+        if is_string(source_string) and is_string(first) and is_string(second):
             match_string = source_string
 
             if not case_sensitive:
@@ -161,22 +161,13 @@ class Between(FunctionSignature):
                 first = first.lower()
                 second = second.lower()
 
-            before, first_match, remaining = match_string.partition(first)
-            if not first_match:
-                return ""
+            try:
+                start_pos = match_string.index(first) + len(first)
+                end_pos = match_string.rindex(second, start_pos) if greedy else match_string.index(second, start_pos)
+                return source_string[start_pos:end_pos]
 
-            start_pos = len(before) + len(first_match)
-
-            if greedy:
-                between, second_match, _ = remaining.rpartition(second)
-            else:
-                between, second_match, _ = remaining.partition(second)
-
-            if not second_match:
-                return ""
-
-            end_pos = start_pos + len(between)
-            return source_string[start_pos:end_pos]
+            except ValueError:
+                return
 
 
 @register
@@ -371,8 +362,9 @@ class Concat(FunctionSignature):
     @classmethod
     def run(cls, *arguments):
         """Concatenate multiple values as strings."""
-        output = [to_unicode(arg) for arg in arguments]
-        return "".join(output)
+        if all(arg is not None for arg in arguments):
+            output = [ToString.run(arg) for arg in arguments]
+            return "".join(output)
 
 
 @register
@@ -464,7 +456,8 @@ class Match(FunctionSignature):
         compiled = re.compile("|".join(regs), REGEX_FLAGS)
 
         def callback(source, *_):
-            return is_string(source) and compiled.match(source) is not None
+            if is_string(source):
+                return compiled.match(source) is not None
 
         return callback
 
@@ -577,7 +570,7 @@ class Substring(FunctionSignature):
     name = "substring"
     argument_types = [TypeHint.String, TypeHint.Numeric, TypeHint.Numeric]
     return_value = TypeHint.String
-    minimum_args = 1
+    minimum_args = 2
 
     @classmethod
     def run(cls, a, start=None, end=None):
@@ -617,7 +610,7 @@ class ToNumber(FunctionSignature):
                 return float(source)
             elif source.startswith("0x") and base in (None, 16):
                 return int(source[2:], 16)
-            elif source.isdigit():
+            elif source.lstrip("-+").isdigit():
                 return int(source, base or 10)
 
 
@@ -633,6 +626,9 @@ class ToString(FunctionSignature):
     def run(cls, source):
         """"Convert a value to a string."""
         if source is not None:
+            if source in (True, False):
+                return str(source).lower()
+
             return to_unicode(source)
 
 
@@ -672,7 +668,8 @@ class Wildcard(FunctionSignature):
         compiled = re.compile(pattern, REGEX_FLAGS)
 
         def callback(source, *_):
-            return is_string(source) and compiled.match(source) is not None
+            if is_string(source):
+                return compiled.match(source) is not None
 
         return callback
 
@@ -686,9 +683,10 @@ class Wildcard(FunctionSignature):
     @classmethod
     def run(cls, source, *wildcards):
         """Compare a string against a list of wildcards."""
-        pattern = cls.to_regex(*wildcards)
-        compiled = re.compile(pattern, REGEX_FLAGS)
-        return is_string(source) and compiled.match(source) is not None
+        if is_string(source):
+            pattern = cls.to_regex(*wildcards)
+            compiled = re.compile(pattern, REGEX_FLAGS)
+            return compiled.match(source) is not None
 
 
 # circular dependency

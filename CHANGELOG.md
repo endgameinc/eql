@@ -7,11 +7,14 @@ _Released 2020-##-##_
 ### Added
 * Support for escaped identifiers in fields using \`backtick\` syntax
 * Implemented three-value logic for boolean and null handling
+* Migrate python tests to TOML files
 
 ### Changed
 * Use integer division when both arguments are integers
 * Changed default behavior to require explicit booleans for `and`, `or` and `not`
 * (Internal) Changed the type system to use TypeHint/TypeFoldCheck/NodeInfo instead of tuples
+* Treat wildcards the same on the left and right side of `==` or `!=`
+
 
 ## Version 0.8.8
 _Released 2020-04-24_

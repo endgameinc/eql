@@ -25,6 +25,7 @@ class Optimizer(DepthFirstWalker):
 
     @staticmethod
     def _walk_and(node):
+        """Walk through each term, calling the specialized __and__ on adjacent terms."""
         terms = []
         current = node.terms[0]
         for term in node.terms[1:]:
@@ -34,8 +35,7 @@ class Optimizer(DepthFirstWalker):
                 current = current.terms[-1]
 
         if terms:
-            terms.append(current)
-            return And(terms)
+            return And(terms) & current
         return current
 
     @staticmethod
@@ -128,16 +128,14 @@ class Optimizer(DepthFirstWalker):
         left = node.left.optimize()
         right = node.right.optimize()
 
-        if isinstance(left, Number) and isinstance(right, Number):
-            # don't divide by zero when optimizing, leave that to the target implementation
-            if not (right.value == 0 and node.operator in ("/", "%")):
-                return Number(node.func(left.value, right.value))
-
         if isinstance(right, MathOperation) and right.left == Number(0):
             # a +- b parses as a + (0 - b) should become a + -b
             if node.operator in ("-", "+") and right.operator in ("-", "+"):
                 operator = "-" if (node.operator == "-") ^ (right.operator == "-") else "+"
                 return MathOperation(left, operator, right.right)
+
+        if isinstance(left, Literal) and isinstance(right, Literal):
+            return node.to_function_call().optimize()
 
         return MathOperation(left, node.operator, right)
 
@@ -168,8 +166,10 @@ class Optimizer(DepthFirstWalker):
 
     @staticmethod
     def _walk_or(node):
+        """Walk through each term, calling the specialized __or__ on adjacent terms."""
         terms = []
         current = node.terms[0]
+
         for term in node.terms[1:]:
             current = current | term
             if isinstance(current, Or):
@@ -177,8 +177,7 @@ class Optimizer(DepthFirstWalker):
                 current = current.terms[-1]
 
         if terms:
-            terms.append(current)
-            return Or(terms)
+            return Or(terms) | current
         return current
 
 
