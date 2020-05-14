@@ -143,6 +143,61 @@ query = 'process where (serial_event_id<9 and serial_event_id >= 7) or (opcode =
 expected_event_ids  = [7, 8]
 
 [[queries]]
+query = 'process where process_name >= "System" and process_name <= "System Idle Process"'
+expected_event_ids  = [1, 2]
+
+[[queries]]
+query = 'process where process_name >= "System" and process_name < "System Idle Process"'
+expected_event_ids  = [2]
+
+[[queries]]
+query = 'process where process_name > "System" and process_name <= "System Idle Process"'
+expected_event_ids  = [1]
+
+[[queries]]
+query = 'process where process_name > "System" and process_name < "System Idle Process"'
+expected_event_ids  = []
+
+[[queries]]
+query = 'process where process_name >= "Syste" and process_name <= "Systez"'
+expected_event_ids  = [1, 2]
+
+[[queries]]
+query = 'process where process_name > "System" and process_name < "Systez"'
+expected_event_ids  = [1]
+
+[[queries]]
+query = 'process where process_name >= "System Idle Process" and process_name <= "System Idle Process"'
+expected_event_ids  = [1]
+
+[[queries]]
+case_sensitive = true
+notes = "s == 0x73; S == 0x53"
+query = 'process where process_name >= "system idle process" and process_name <= "System Idle Process"'
+expected_event_ids  = []
+
+[[queries]]
+case_insensitive = true
+query = 'process where process_name >= "system idle process" and process_name <= "System Idle Process"'
+expected_event_ids  = [1]
+
+[[queries]]
+case_insensitive = true
+query = 'process where process_name >= "SYSTE" and process_name < "systex"'
+expected_event_ids  = [1, 2]
+
+[[queries]]
+case_insensitive = true
+query = 'process where process_name >= "sysT" and process_name < "SYsTeZZZ"'
+expected_event_ids  = [1, 2]
+
+[[queries]]
+case_insensitive = true
+query = 'process where process_name >= "SYSTE" and process_name <= "systex"'
+expected_event_ids  = [1, 2]
+
+
+[[queries]]
 case_insensitive = true
 query = '''
 process where process_name == "VMACTHLP.exe" and unique_pid == 12
