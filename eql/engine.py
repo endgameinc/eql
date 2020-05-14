@@ -447,8 +447,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         get_left = self.convert(node.left)
         get_right = self.convert(node.right)
 
-        # perform string-insensitive checks for == and !=
-        if node.comparator in (Comparison.EQ, Comparison.NE):
+        # if left and right could be strings, then we should normalize case
+        possible_string_types = FunctionCall, String, Field
+        if isinstance(node.left, possible_string_types) and isinstance(node.right, possible_string_types):
             compare = self.check_types(self.lowercase(node.function, always=False))
         else:
             compare = self.check_types(node.function)

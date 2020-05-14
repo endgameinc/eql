@@ -104,7 +104,7 @@ description = "Test the `endsWith` function with case matching"
 
 [endswith_insensitive]
 description = "Test the `endsWith` function with case insensitivity"
-case_sensitive = false
+case_insensitive = true
 
     [[endswith_insensitive.fold.tests]]
     expression = "endsWith('FooBarBaz', 'baz')"
@@ -497,7 +497,7 @@ description = "Test that `wildcard` folds with correct case matches."
 
 [wildcard_case_insensitive]
 description = "Test that `wildcard` function folds case insensitive as expected."
-case_sensitive = false
+case_insensitive = true
 
     [[wildcard_case_insensitive.fold.tests]]
     expression = 'wildcard("FOO", "f*o*o*")'

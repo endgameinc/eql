@@ -66,7 +66,12 @@ def load_tests():
         data = eql.load_dump(eql.etc.get_etc_path(name))
 
         for test_name, contents in sorted(data.items()):
-            case_sensitive = contents.get("case_sensitive")
+            case_sensitive = None
+
+            if "case_sensitive" in contents:
+                case_sensitive = contents["case_sensitive"]
+            elif "case_insensitive" in contents:
+                case_sensitive = not contents["case_insensitive"]
 
             extract_tests(test_name, contents, case_sensitive=case_sensitive)
 
