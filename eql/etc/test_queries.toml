@@ -147,6 +147,17 @@ query = 'process where process_name >= "System" and process_name <= "System Idle
 expected_event_ids  = [1, 2]
 
 [[queries]]
+# test that it works for comparing field <--> field
+case_insensitive = true
+query = 'process where serial_event_id < 5 and process_name <= parent_process_name'
+expected_event_ids  = [2, 3]
+
+[[queries]]
+case_sensitive = true
+query = 'process where serial_event_id < 5 and process_name <= parent_process_name'
+expected_event_ids  = [2]
+
+[[queries]]
 query = 'process where process_name >= "System" and process_name < "System Idle Process"'
 expected_event_ids  = [2]
 
