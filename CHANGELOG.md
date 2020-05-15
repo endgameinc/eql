@@ -14,7 +14,7 @@ _Released 2020-##-##_
 * Changed default behavior to require explicit booleans for `and`, `or` and `not`
 * (Internal) Changed the type system to use TypeHint/TypeFoldCheck/NodeInfo instead of tuples
 * Treat wildcards the same on the left and right side of `==` or `!=`
-
+* Made `<`, `<=`, `>=`, `>` perform case-insensitive string comparisons
 
 ## Version 0.8.8
 _Released 2020-04-24_
