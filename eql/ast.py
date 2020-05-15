@@ -788,11 +788,11 @@ class Not(Expression):
 
     def demorgans(self):
         """Apply DeMorgan's law."""
-        if isinstance(self, Or):
-            return And([~ t for t in self.terms]).optimize()
+        if isinstance(self.term, Or):
+            return And([(~ t).optimize() for t in self.term.terms]).optimize()
 
-        elif isinstance(self, And):
-            return Or([~ t for t in self.terms]).optimize()
+        elif isinstance(self.term, And):
+            return Or([(~ t).optimize() for t in self.term.terms]).optimize()
 
         else:
             return ~ self.term.optimize()
