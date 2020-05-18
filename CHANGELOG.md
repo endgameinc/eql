@@ -8,11 +8,24 @@ _Released 2020-##-##_
 * Support for escaped identifiers in fields using \`backtick\` syntax
 * Implemented three-value logic for boolean and null handling
 * Migrate python tests to TOML files
+* Optimization rule for inverting comparisons (`not (x <= y)` ==> `x > y`)
+* (Internal) AST nodes for `IsNull`/`IsNotNull`
 
 ### Changed
 * (Internal) Changed the type system to use TypeHint/TypeFoldCheck/NodeInfo instead of tuples
 * Treat wildcards the same on the left and right side of `==` or `!=`
+* Removed forced float division (now `3 / 2` ==> `1` instead of `1.5`)
 * Made `<`, `<=`, `>=`, `>` perform case-insensitive string comparisons
+
+### Fixed
+* Boolean optimizations: `x and true and y` is correctly converted to `x and y`
+* DeMorgan logic for expanding `not` nodes
+
+### Removed
+* Deprecated sequence units besides `d`,`h`,`m`,`s`,`ms`
+* Fractional sequence intervals
+* Requirements.txt and moved into `setup.py`
+
 
 ## Version 0.8.8
 _Released 2020-04-24_
@@ -29,6 +42,9 @@ _Released 2020-04-23_
 * Function `eql.utils.get_required_event_types`
 * Function `eql.utils.uses_ancestry`
 
+
+## Version 0.8.6
+_Released 2020-04-06_
 
 ### Changed
 * Made missing `where` raise a `EqlSyntaxError` instead of a `EqlSemanticError`
