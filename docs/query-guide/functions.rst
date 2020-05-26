@@ -61,23 +61,26 @@ math, string manipulation or more sophisticated expressions to be expressed.
         arraySearch(my_array, item, item.props[1].level == 4)                  // returns false
         arraySearch(my_array, item, arraySearch(item.props, p, p.level == 2))  // returns true
 
-.. function:: between(source, left, right [, greedy=false, case_sensitive=false])
+.. function:: between(source, left, right [, greedy=false])
 
     Extracts a substring from ``source`` that's also between ``left`` and ``right``.
 
     :param greedy: Matches the longest string when set, similar to ``.*`` vs ``.*?``.
-    :param case_sensitive: Match case when searching for ``left`` and ``right```.
+
+    .. versionchanged:: 0.9.1
+        Removed ``case_sensitive`` parameter
 
     .. code-block:: eql
 
         between("welcome to event query language", " ", " ")            // returns "to"
         between("welcome to event query language", " ", " ", true)      // returns "to event query"
 
+
 .. function:: cidrMatch(ip_address, cidr_block [, ...])
 
     Returns ``true`` if the source address matches any of the provided CIDR blocks.
 
-    .. versionchanged:: 0.8
+    .. versionadded:: 0.8
 
     .. code-block:: eql
 
