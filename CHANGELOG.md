@@ -2,7 +2,7 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Version 0.9.1
-_Released 2020-05-26_
+_Released 2020-05-27_
 
 ### Removed
 * `case_sensitive` parameter to `between`
