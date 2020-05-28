@@ -21,7 +21,7 @@ If Python is configured and already in the PATH, then ``eql`` will be readily av
 
 ```console
 $ eql --version
-eql 0.8
+eql 0.9
 ```
 
 From there, try a [sample json file](docs/_static/example.json) and test it with EQL.

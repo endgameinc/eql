@@ -145,21 +145,18 @@ class Between(FunctionSignature):
     """Return a substring that's between two other substrings."""
 
     name = "between"
-    argument_types = [TypeHint.String, TypeHint.String, TypeHint.String, TypeHint.Boolean, TypeHint.Boolean]
+    argument_types = [TypeHint.String, TypeHint.String, TypeHint.String, TypeHint.Boolean]
     minimum_args = 3
     return_value = TypeHint.String
     sometimes_null = True
 
     @classmethod
-    def run(cls, source_string, first, second, greedy=False, case_sensitive=False):
+    def run(cls, source_string, first, second, greedy=False):
         """Return the substring between two other ones."""
         if is_string(source_string) and is_string(first) and is_string(second):
-            match_string = source_string
-
-            if not case_sensitive:
-                match_string = match_string.lower()
-                first = first.lower()
-                second = second.lower()
+            match_string = source_string.lower()
+            first = first.lower()
+            second = second.lower()
 
             try:
                 start_pos = match_string.index(first) + len(first)
