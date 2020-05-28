@@ -1254,31 +1254,31 @@ registry where bytes_written_string_list[1] == 'en'
 
 [[queries]]
 query = '''
-process where matchLite(?'.*?net1\s+localgroup\s+.*?', command_line)
+process where matchLite(command_line, ?'.*?net1\s+localgroup\s+.*?')
 '''
 expected_event_ids  = [98]
 
 [[queries]]
 query = '''
-process where matchLite(?'.*?net1\s+\w+\s+.*?', command_line)
+process where matchLite(command_line, ?'.*?net1\s+\w+\s+.*?')
 '''
 expected_event_ids  = [98]
 
 [[queries]]
 query = '''
-process where matchLite(?'.*?net1\s+\w{4,15}\s+.*?', command_line)
+process where matchLite(command_line, ?'.*?net1\s+\w{4,15}\s+.*?')
 '''
 expected_event_ids  = [98]
 
 [[queries]]
 expected_event_ids  = [98]
 query = '''
-process where match(?'.*?net1\s+\w{4,15}\s+.*?', command_line)
+process where match(command_line, ?'.*?net1\s+\w{4,15}\s+.*?')
 '''
 
 [[queries]]
 query = '''
-process where matchLite(?'.*?net1\s+[localgrup]{4,15}\s+.*?', command_line)
+process where matchLite(command_line, ?'.*?net1\s+[localgrup]{4,15}\s+.*?')
 '''
 expected_event_ids  = [98]
 
