@@ -125,6 +125,9 @@ class UniqueCountPipe(ByPipe):
     def output_schemas(cls, arguments, event_schemas):
         # type: (list, list[Schema]) -> list[Schema]
         """Generate the output schema and determine the ``key`` field dyanmically."""
+        if len(event_schemas) < 1:
+            return event_schemas
+
         event_schemas = list(event_schemas)
         first_event_type, = event_schemas[0].schema.keys()
 

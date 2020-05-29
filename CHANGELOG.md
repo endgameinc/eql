@@ -1,6 +1,13 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Version 0.9.2
+_Released 2020-05-29_
+
+### Fixed
+* Removed invalid index into empty array for `UniqueCountPipe.output_schemas` with custom walkers
+
+
 ## Version 0.9.1
 _Released 2020-05-28_
 
