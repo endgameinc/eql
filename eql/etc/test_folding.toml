@@ -512,10 +512,10 @@ description = "Check that any literals compared to `null` fold as `null`."
 [complex]
 description = "Test recurisve folding for more complex expressions."
 
-    [[and.fold.tests]]
+    [[complex.fold.tests]]
     expression = '(100 * 10) - ("hello":length())'
     expected = 995
 
-    [[and.fold.tests]]
+    [[complex.fold.tests]]
     expression = 'concat((100 * 10) - ("hello":length()) == 995, "...")'
     expected = "true..."
