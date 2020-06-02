@@ -90,7 +90,7 @@ description = "Test the `concat` function"
     expected = "a||1||true||b"
 
 
-[endswith.fold]
+[endswith]
 description = "Test the `endsWith` function with case matching"
 
     [[endswith.fold.tests]]
