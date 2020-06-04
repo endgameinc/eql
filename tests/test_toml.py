@@ -94,12 +94,12 @@ def engine_eval(expr):
 
 
 @contextlib.contextmanager
-def case_sensitivity(value: bool):
+def case_sensitivity(enabled):
     """Helper function for toggling case sensitivity."""
     prev = eql.utils.CASE_INSENSITIVE
 
     try:
-        eql.utils.CASE_INSENSITIVE = not value
+        eql.utils.CASE_INSENSITIVE = not enabled
         yield
     finally:
         eql.utils.CASE_INSENSITIVE = prev
