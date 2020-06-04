@@ -8,6 +8,7 @@ import sys
 import threading
 
 PLUGIN_PREFIX = "eql_"
+CASE_INSENSITIVE = True
 _loaded_plugins = False
 
 # Python2 and Python3 compatible type checking
@@ -52,6 +53,18 @@ def is_number(n):
 def is_array(a):
     """Check if a number is array-like."""
     return isinstance(a, (list, tuple))
+
+
+def is_insensitive():
+    """Check if insensitivity is enabled."""
+    return CASE_INSENSITIVE
+
+
+def fold_case(s):
+    """Helper function for normalizing case for strings."""
+    if is_insensitive() and is_string(s):
+        return s.lower()
+    return s
 
 
 def str_presenter(dumper, data):

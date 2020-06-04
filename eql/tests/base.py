@@ -59,13 +59,22 @@ class TestEngine(unittest.TestCase):
         with open(cls.queries_file, "r") as f:
             queries = []
             for q in toml.load(f)["queries"]:
-                is_case_sensitive = q.get("case_sensitive")
-                analytic = cls.get_analytic(q['query'], is_case_sensitive)
-                analytic.metadata['_info'] = q.copy()
-                q['analytic'] = analytic
+                case_settings = []
+                if q.get("case_sensitive") is True:
+                    case_settings.append(True)
 
-                if is_case_sensitive in (None, match_case_sensitive):
-                    queries.append(q)
+                if q.get("case_insensitive") is True:
+                    case_settings.append(False)
+
+                assert len(case_settings) > 0, q
+
+                for cs in case_settings:
+                    analytic = cls.get_analytic(q['query'], cs)
+                    analytic.metadata['_info'] = q.copy()
+                    q['analytic'] = analytic
+
+                    if cs == match_case_sensitive:
+                        queries.append(q)
 
             return list(filter(cls.filter_queries, queries))
 

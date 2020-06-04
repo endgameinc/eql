@@ -1,4 +1,5 @@
 """Test Python Engine for EQL."""
+import contextlib
 import pytest
 import string
 
@@ -22,7 +23,7 @@ type_lookup = {
 }
 
 
-def extract_tests(test_name, contents, case_sensitive, **params):
+def extract_tests(test_name, contents, case_settings, **params):
     """Extract tests from a TOML test dict."""
     for param in contents.get("params", []):
         value = type_lookup[param["type"]]()
@@ -34,16 +35,23 @@ def extract_tests(test_name, contents, case_sensitive, **params):
         return expr
 
     for fold_test in contents.get("fold", {}).get("tests", []):
-        test_info = test_name, parametrize(fold_test["expression"]), fold_test.get("expected"), case_sensitive
-        fold_tests.append(test_info)
+        expression = parametrize(fold_test["expression"])
+        expected = fold_test.get("expected", None)
+
+        assert len(case_settings) > 0, test_name
+
+        for case_sensitive in case_settings:
+            fold_tests.append((test_name, expression, expected, case_sensitive))
 
     for verifier_test in contents.get("verifier", {}).get("failures", []):
         test_info = test_name, parametrize(verifier_test["expression"])
         verifier_failures.append(test_info)
 
     for optimizer_test in contents.get("optimizer", {}).get("tests", []):
-        test_info = test_name, parametrize(optimizer_test["expression"]), parametrize(optimizer_test["optimized"])
-        optimizer_tests.append(test_info)
+        expression = parametrize(optimizer_test["expression"])
+        expected = parametrize(optimizer_test["optimized"])
+
+        optimizer_tests.append((test_name, expression, expected))
 
     for equivalent_test in contents.get("equivalent", {}).get("tests", []):
         test_info = test_name, parametrize(equivalent_test["expression"]), parametrize(equivalent_test["alternate"])
@@ -54,7 +62,7 @@ def extract_tests(test_name, contents, case_sensitive, **params):
             p_loop = loop.copy()
             p_loop["params"] = [{"type": param, "name": loop["param"]["name"]}]
 
-            extract_tests(test_name, p_loop, case_sensitive, **params)
+            extract_tests(test_name, p_loop, case_settings, **params)
 
 
 def load_tests():
@@ -66,14 +74,15 @@ def load_tests():
         data = eql.load_dump(eql.etc.get_etc_path(name))
 
         for test_name, contents in sorted(data.items()):
-            case_sensitive = None
+            test_name = "{file}:{test}".format(file=name, test=test_name)
+            case_settings = []
+            if contents.get("case_sensitive") is True:
+                case_settings.append(True)
 
-            if "case_sensitive" in contents:
-                case_sensitive = contents["case_sensitive"]
-            elif "case_insensitive" in contents:
-                case_sensitive = not contents["case_insensitive"]
+            if contents.get("case_insensitive") is True:
+                case_settings.append(False)
 
-            extract_tests(test_name, contents, case_sensitive=case_sensitive)
+            extract_tests(test_name, contents, case_settings)
 
 
 load_tests()
@@ -84,18 +93,28 @@ def engine_eval(expr):
     return eql.PythonEngine().convert(expr)(None)
 
 
+@contextlib.contextmanager
+def case_sensitivity(value: bool):
+    """Helper function for toggling case sensitivity."""
+    prev = eql.utils.CASE_INSENSITIVE
+
+    try:
+        eql.utils.CASE_INSENSITIVE = not value
+        yield
+    finally:
+        eql.utils.CASE_INSENSITIVE = prev
+
+
 @pytest.mark.parametrize("name, text, expected, case_sensitive", fold_tests)
 def test_fold(name, text, expected, case_sensitive):
     """Check that expressions fold and evaluate correctly."""
-    with eql.parser.skip_optimizations:
-        parsed = eql.parse_expression(text)
+    with case_sensitivity(case_sensitive):
+        with eql.parser.skip_optimizations:
+            parsed = eql.parse_expression(text)
 
-    if case_sensitive is True:
-        raise pytest.skip("Case-sensitivity not yet supported")
-
-    assert not isinstance(parsed, eql.ast.Literal)
-    assert engine_eval(parsed) == expected
-    assert parsed.fold() == expected
+        assert not isinstance(parsed, eql.ast.Literal)
+        assert engine_eval(parsed) == expected
+        assert parsed.fold() == expected
 
 
 @pytest.mark.parametrize("name, text", verifier_failures)

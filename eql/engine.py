@@ -11,7 +11,7 @@ from .pipes import *  # noqa: F403
 from .transpilers import BaseEngine, BaseTranspiler
 from .events import Event, AnalyticOutput
 from .schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC
-from .utils import is_string, is_array, is_number, get_type_converter
+from .utils import is_string, is_array, is_number, get_type_converter, fold_case
 
 PIPE_EOF = object()
 
@@ -155,7 +155,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         @functools.wraps(f)
         def decorated(a, b):
             if is_string(a) and is_string(b):
-                return f(a.lower(), b.lower())
+                return f(fold_case(a), fold_case(b))
 
             if not always:
                 return f(a, b)
@@ -195,7 +195,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
     @classmethod
     def _remove_case(cls, key):
         if is_string(key):
-            return key.lower()
+            return fold_case(key)
         elif is_array(key):
             return tuple(cls._remove_case(k) for k in key)
         else:
@@ -414,10 +414,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             values = set()
             for item in node.container:
                 value = item.value
-                if is_string(value):
-                    values.add(value.lower())
-                else:
-                    values.add(value)
+                values.add(fold_case(value))
 
             get_value = self.convert(node.expression)
 
@@ -426,9 +423,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 if check_value is None:
                     return
 
-                if is_string(check_value):
-                    check_value = check_value.lower()
-                return check_value in values
+                return fold_case(check_value) in values
 
             return callback
 

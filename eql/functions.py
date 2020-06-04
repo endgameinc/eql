@@ -6,12 +6,17 @@ import struct
 from .signatures import SignatureMixin
 from .errors import EqlError
 from .types import TypeHint
-from .utils import is_string, to_unicode, is_number
+from .utils import is_string, to_unicode, is_number, fold_case, is_insensitive
 
 
 _registry = {}
-REGEX_FLAGS = re.IGNORECASE | re.UNICODE | re.DOTALL
+REGEX_FLAGS = re.UNICODE | re.DOTALL
 MAX_IP = 0xffffffff
+
+
+def regex_flags():
+    """Helper function to properly cased regex flags."""
+    return (REGEX_FLAGS | re.IGNORECASE) if is_insensitive() else REGEX_FLAGS
 
 
 def register(func):
@@ -111,15 +116,13 @@ class ArrayContains(FunctionSignature):
     @classmethod
     def run(cls, array, *value):
         """Search an array for a literal value."""
-        values = [v.lower() if is_string(v) else v for v in value]
+        values = [fold_case(v) for v in value]
 
         if array is not None:
             for v in array:
-                if is_string(v) and v.lower() in values:
+                if fold_case(v) in values:
                     return True
-                elif v in values:
-                    return True
-        return False
+            return False
 
 
 @register
@@ -154,9 +157,9 @@ class Between(FunctionSignature):
     def run(cls, source_string, first, second, greedy=False):
         """Return the substring between two other ones."""
         if is_string(source_string) and is_string(first) and is_string(second):
-            match_string = source_string.lower()
-            first = first.lower()
-            second = second.lower()
+            match_string = fold_case(source_string)
+            first = fold_case(first)
+            second = fold_case(second)
 
             try:
                 start_pos = match_string.index(first) + len(first)
@@ -391,7 +394,7 @@ class EndsWith(FunctionSignature):
     def run(cls, source, substring):
         """Check if a string ends with a substring."""
         if is_string(source) and is_string(substring):
-            return source.lower().endswith(substring.lower())
+            return fold_case(source).endswith(fold_case(substring))
 
 
 @register
@@ -411,8 +414,8 @@ class IndexOf(FunctionSignature):
             start = 0
 
         if is_string(source) and is_string(substring):
-            source = source.lower()
-            substring = substring.lower()
+            source = fold_case(source)
+            substring = fold_case(substring)
             if substring in source[start:]:
                 return source.index(substring, start)
 
@@ -450,7 +453,7 @@ class Match(FunctionSignature):
     def get_callback(cls, source_ast, *regex_literals):
         """Get a callback function that uses the compiled regex."""
         regs = [reg.value for reg in regex_literals]
-        compiled = re.compile("|".join(regs), REGEX_FLAGS)
+        compiled = re.compile("|".join(regs), regex_flags())
 
         def callback(source, *_):
             if is_string(source):
@@ -472,7 +475,7 @@ class Match(FunctionSignature):
 
         for pos, argument in enumerate(arguments[1:], 1):
             try:
-                re.compile(argument.node.value, REGEX_FLAGS)
+                re.compile(argument.node.value, regex_flags())
             except re.error:
                 return pos
 
@@ -483,7 +486,7 @@ class Match(FunctionSignature):
             source = source.decode("utf-8", "ignore")
 
         if is_string(source):
-            match = re.match("|".join(matches), source, REGEX_FLAGS)
+            match = re.match("|".join(matches), source, regex_flags())
             return match is not None
 
 
@@ -541,7 +544,7 @@ class StartsWith(FunctionSignature):
     def run(cls, source, substring):
         """Check if a string ends with a substring."""
         if is_string(source) and is_string(substring):
-            return source.lower().startswith(substring.lower())
+            return fold_case(source).startswith(fold_case(substring))
 
 
 @register
@@ -556,7 +559,7 @@ class StringContains(FunctionSignature):
     def run(cls, source, substring):
         """Check if a string is a substring of another."""
         if is_string(source) and is_string(substring):
-            return substring.lower() in source.lower()
+            return fold_case(substring) in fold_case(source)
         return False
 
 
@@ -623,8 +626,8 @@ class ToString(FunctionSignature):
     def run(cls, source):
         """"Convert a value to a string."""
         if source is not None:
-            if source in (True, False):
-                return str(source).lower()
+            if source is True or source is False:
+                return "true" if source else "false"
 
             return to_unicode(source)
 
@@ -646,7 +649,7 @@ class Wildcard(FunctionSignature):
         tail = "$"
 
         for wildcard in wildcards:
-            pieces = [re.escape(p) for p in wildcard.lower().split('*')]
+            pieces = [re.escape(p) for p in fold_case(wildcard).split('*')]
             regex = head + '.*?'.join(pieces) + tail
 
             tail_skip = '.*?$'
@@ -662,7 +665,7 @@ class Wildcard(FunctionSignature):
         """Get a callback function that uses the compiled regex."""
         wc_values = [wc.value for wc in wildcard_literals]
         pattern = cls.to_regex(*wc_values)
-        compiled = re.compile(pattern, REGEX_FLAGS)
+        compiled = re.compile(pattern, regex_flags())
 
         def callback(source, *_):
             if is_string(source):
@@ -682,7 +685,7 @@ class Wildcard(FunctionSignature):
         """Compare a string against a list of wildcards."""
         if is_string(source):
             pattern = cls.to_regex(*wildcards)
-            compiled = re.compile(pattern, REGEX_FLAGS)
+            compiled = re.compile(pattern, regex_flags())
             return compiled.match(source) is not None
 
 
