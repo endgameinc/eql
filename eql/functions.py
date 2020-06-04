@@ -626,7 +626,7 @@ class ToString(FunctionSignature):
     def run(cls, source):
         """"Convert a value to a string."""
         if source is not None:
-            if source is True or source is False:
+            if isinstance(source, bool):
                 return "true" if source else "false"
 
             return to_unicode(source)
