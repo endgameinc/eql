@@ -38,8 +38,6 @@ def extract_tests(test_name, contents, case_settings, **params):
         expression = parametrize(fold_test["expression"])
         expected = fold_test.get("expected", None)
 
-        assert len(case_settings) > 0, test_name
-
         for case_sensitive in case_settings:
             fold_tests.append((test_name, expression, expected, case_sensitive))
 
@@ -81,6 +79,8 @@ def load_tests():
 
             if contents.get("case_insensitive") is True:
                 case_settings.append(False)
+
+            assert len(case_settings) > 0, "{test} is missing case_sensitive/case_insensitive".format(test=test_name)
 
             extract_tests(test_name, contents, case_settings)
 
