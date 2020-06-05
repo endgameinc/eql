@@ -10,7 +10,7 @@ from enum import Enum
 from .errors import EqlError
 from .signatures import SignatureMixin
 from .types import TypeHint, NodeInfo  # noqa: F401
-from .utils import to_unicode, is_string, is_number, ParserConfig
+from .utils import to_unicode, is_string, is_number, ParserConfig, fold_case
 
 __all__ = (
     # base classes
@@ -660,7 +660,7 @@ class InSet(Expression):
                 continue
             k = literal.value
             if isinstance(literal, String):
-                values.setdefault(k.lower(), literal)
+                values.setdefault(fold_case(k), literal)
             else:
                 values[k] = literal
         return values

@@ -1,6 +1,6 @@
 """Optimizer for the EQL syntax tree."""
 from .functions import get_function
-from .utils import is_string
+from .utils import fold_case
 from .walkers import Walker, DepthFirstWalker
 
 __all__ = (
@@ -66,13 +66,8 @@ class Optimizer(DepthFirstWalker):
             if lhs is None or rhs is None:
                 return Null()
 
-            # Check that the types match first
-            if not isinstance(node.right, type(node.left)):
-                return Boolean(node.comparator == Comparison.NE)
-
-            if isinstance(node.left, String):
-                lhs = lhs.lower()
-                rhs = rhs.lower()
+            lhs = fold_case(lhs)
+            rhs = fold_case(rhs)
 
             return Boolean(node.function(lhs, rhs))
 
@@ -107,9 +102,8 @@ class Optimizer(DepthFirstWalker):
 
         # check to see if a literal value is in the list of literal values
         if isinstance(node.expression, Literal):
-            value = node.expression.value
-            if is_string(value):
-                value = value.lower()
+            value = fold_case(node.expression.value)
+
             if value in node.get_literals():
                 return Boolean(True)
             container = dynamic
