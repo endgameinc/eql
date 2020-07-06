@@ -1,7 +1,5 @@
 [or]
 description = "Test that `or false` and `or true` are optimized correctly"
-case_insensitive = true
-case_sensitive = true
 
     [[or.optimizer.tests]]
     expression = "a == 1 or true"
@@ -29,8 +27,6 @@ case_sensitive = true
 
 [and]
 description = "Test that `and false` and `and true` are optimized correctly"
-case_insensitive = true
-case_sensitive = true
 
     [[and.optimizer.tests]]
     expression = "a == 1 and true"
@@ -78,8 +74,7 @@ case_sensitive = true
 
 [wildcard_syntax]
 description = 'Test that `x == "*"` converts to a wildcard function.'
-case_insensitive = true
-case_sensitive = true
+
 
     [[wildcard_syntax.equivalent.tests]]
     expression = 'field == "a*b*c"'

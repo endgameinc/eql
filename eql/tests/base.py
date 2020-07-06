@@ -60,10 +60,18 @@ class TestEngine(unittest.TestCase):
             queries = []
             for q in toml.load(f)["queries"]:
                 case_settings = []
-                if q.get("case_sensitive") is True:
+
+                if "case_sensitive" not in q and "case_insensitive" not in q:
+                    case_sensitive = True
+                    case_insensitive = True
+                else:
+                    case_sensitive = q.get("case_sensitive") is True
+                    case_insensitive = q.get("case_insensitive") is True
+
+                if case_sensitive:
                     case_settings.append(True)
 
-                if q.get("case_insensitive") is True:
+                if case_insensitive:
                     case_settings.append(False)
 
                 assert len(case_settings) > 0, q

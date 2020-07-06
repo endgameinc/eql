@@ -1,7 +1,5 @@
 [between]
 description = "Test the proper evaluation of the `between` function"
-case_sensitive = true
-case_insensitive = true
 
     [[between.fold.tests]]
     expression = 'between("welcome to the planet", null, "planet")'
@@ -62,8 +60,6 @@ case_insensitive = true
 
 [concat]
 description = "Test the `concat` function"
-case_sensitive = true
-case_insensitive = true
 
     [[concat.fold.tests]]
     expression = 'concat(null)'
@@ -96,8 +92,6 @@ case_insensitive = true
 
 [endswith]
 description = "Test the `endsWith` function with case matching"
-case_sensitive = true
-case_insensitive = true
 
     [[endswith.fold.tests]]
     expression = "endsWith('FooBarBaz', 'Baz')"
@@ -128,8 +122,6 @@ case_sensitive = true
 
 [indexof]
 description = "Test `indexOf()` with exact case specified"
-case_sensitive = true
-case_insensitive = true
 
     [[indexof.fold.tests]]
     expression = 'indexOf(null, "L")'
@@ -178,8 +170,6 @@ case_insensitive = true
 
 [length]
 description = "Test the folding of the `length` function."
-case_sensitive = true
-case_insensitive = true
 
     [[length.fold.tests]]
     expression = 'length(null)'
@@ -196,8 +186,6 @@ case_insensitive = true
 
 [match]
 description = "Test the `match` function"
-case_sensitive = true
-case_insensitive = true
 
     [match.verifier]
 
@@ -239,8 +227,6 @@ case_insensitive = true
 
 [number]
 description = "Test the `number` function"
-case_sensitive = true
-case_insensitive = true
 
     [number.verifier]
 
@@ -303,8 +289,6 @@ case_insensitive = true
 
 [startswith]
 description = "Test the `startsWith` function"
-case_sensitive = true
-case_insensitive = true
 
     [startswith.verifier]
         [[startswith.verifier.failures]]
@@ -381,8 +365,6 @@ case_insensitive = true
 
 [string]
 description = "Test the `string` function"
-case_sensitive = true
-case_insensitive = true
 
     [[string.fold.tests]]
     expression = "string(null)"
@@ -406,8 +388,6 @@ case_insensitive = true
 
 [substring]
 description = "Test the `substring` function when the case already matches"
-case_sensitive = true
-case_insensitive = true
 
     [[substring.fold.tests]]
     expression = "substring(null, 5)"
@@ -471,8 +451,6 @@ case_insensitive = true
 
 [wildcard]
 description = "Test that `wildcard` folds with correct case matches."
-case_sensitive = true
-case_insensitive = true
 
     [[wildcard.fold.tests]]
     expression = 'wildcard(null, "f*o*o*")'

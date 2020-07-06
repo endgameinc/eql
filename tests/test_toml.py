@@ -74,10 +74,18 @@ def load_tests():
         for test_name, contents in sorted(data.items()):
             test_name = "{file}:{test}".format(file=name, test=test_name)
             case_settings = []
-            if contents.get("case_sensitive") is True:
+
+            if "case_sensitive" not in contents and "case_insensitive" not in contents:
+                case_sensitive = True
+                case_insensitive = True
+            else:
+                case_sensitive = contents.get("case_sensitive") is True
+                case_insensitive = contents.get("case_insensitive") is True
+
+            if case_sensitive:
                 case_settings.append(True)
 
-            if contents.get("case_insensitive") is True:
+            if case_insensitive:
                 case_settings.append(False)
 
             assert len(case_settings) > 0, "{test} is missing case_sensitive/case_insensitive".format(test=test_name)

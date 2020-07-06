@@ -1,7 +1,5 @@
 [arithmetic]
 description = "Test that math integer and float operations fold as expected."
-case_sensitive = true
-case_insensitive = true
 
     [[arithmetic.fold.tests]]
     expression = "7 + 3"
@@ -74,8 +72,6 @@ case_insensitive = true
 
 [integer_comparison]
 description = "Check that numeric comparisons are folded."
-case_sensitive = true
-case_insensitive = true
 
     [[integer_comparison.fold.tests]]
     expression = "-3 < 4"
@@ -103,8 +99,6 @@ case_insensitive = true
 
 [float_comparison]
 description = "Check that numeric comparisons are folded."
-case_sensitive = true
-case_insensitive = true
 
     [[float_comparison.fold.tests]]
     expression = "3.0 < 4.0"
@@ -133,8 +127,6 @@ case_insensitive = true
 
 [int_float_comparison]
 description = "Check that numeric comparisons are folded."
-case_sensitive = true
-case_insensitive = true
 
     [[int_float_comparison.fold.tests]]
     expression = "-3 < 4.0"
@@ -163,8 +155,6 @@ case_insensitive = true
 
 [float_int_comparison]
 description = "Check that numeric comparisons are folded."
-case_sensitive = true
-case_insensitive = true
 
     [[float_int_comparison.fold.tests]]
     expression = "3.0 < 4"
@@ -193,8 +183,6 @@ case_insensitive = true
 
 [string_case_match_comparison]
 description = "Fold string comparisons"
-case_sensitive = true
-case_insensitive = true
 
     [[string_case_match_comparison.fold.tests]]
     expression = '"Foo" == "Foo"'
@@ -320,8 +308,6 @@ case_insensitive = true
 
 [arithmetic_comparison]
 description = "Fold comparisons of arithmetic expressions"
-case_sensitive = true
-case_insensitive = true
 
     [[arithmetic_comparison.fold.tests]]
     expression = '(1 * 2 + 3 * 4 + 10 / 2) == 19'
@@ -337,8 +323,6 @@ case_insensitive = true
 
 [in_set]
 description = "Fold constant check in set"
-case_sensitive = true
-case_insensitive = true
 
     [[in_set.fold.tests]]
     expression = "345 in (123, 345)"
@@ -395,8 +379,6 @@ case_insensitive = true
 
 [or]
 description = "Check that three-value boolean logic works for `or`."
-case_sensitive = true
-case_insensitive = true
 
     [[or.fold.tests]]
     expression = "true or false"
@@ -433,8 +415,6 @@ case_insensitive = true
 
 [and]
 description = "Check that three-value boolean logic works for `and`."
-case_sensitive = true
-case_insensitive = true
 
     [[and.fold.tests]]
     expression = "true and false"
@@ -471,8 +451,6 @@ case_insensitive = true
 
 [not]
 description = "Check that `not` negates `null` as null`"
-case_sensitive = true
-case_insensitive = true
 
     [[not.fold.tests]]
     expression = "not null"
@@ -489,8 +467,6 @@ case_insensitive = true
 
 [null_comparison]
 description = "Check that any literals compared to `null` fold as `null`."
-case_sensitive = true
-case_insensitive = true
 
     [[null_comparison.fold.tests]]
     expression = "null == null"
@@ -564,8 +540,6 @@ case_insensitive = true
 
 [complex]
 description = "Test recurisve folding for more complex expressions."
-case_sensitive = true
-case_insensitive = true
 
     [[complex.fold.tests]]
     expression = '(100 * 10) - ("hello":length())'
