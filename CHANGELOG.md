@@ -1,6 +1,14 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Version 0.9.3
+_Released 2020-07-07_
+
+### Added
+* Internal toggle to turn off case insensitivity
+* Additional tests to handle case sensitive and insensitive modes
+
+
 ## Version 0.9.2
 _Released 2020-05-29_
 
