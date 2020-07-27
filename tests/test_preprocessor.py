@@ -7,7 +7,6 @@ from eql.ast import *  # noqa: F403
 from eql.parser import *  # noqa: F403
 from eql.transpilers import TextEngine
 from eql.errors import EqlSemanticError
-from eql import EqlTypeMismatchError, Schema
 
 
 class TestPreProcessor(unittest.TestCase):
@@ -238,5 +237,5 @@ class TestPreProcessor(unittest.TestCase):
         with preprocessor:
             parse_query("foo where SELF(bar) == 1")
 
-            with self.assertRaises(EqlSemanticError):
+            with self.assertRaises(EqlTypeMismatchError):
                 parse_query("foo where SELF(bar) == 'baz'")
