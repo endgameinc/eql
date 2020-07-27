@@ -7,6 +7,7 @@ from eql.ast import *  # noqa: F403
 from eql.parser import *  # noqa: F403
 from eql.transpilers import TextEngine
 from eql.errors import EqlTypeMismatchError
+from eql.schema import Schema
 
 
 class TestPreProcessor(unittest.TestCase):
@@ -230,11 +231,9 @@ class TestPreProcessor(unittest.TestCase):
 
     def test_macro_expansion_hinting_bug(self):
         """Test bugfix for macro expansion."""
-        preprocessor = get_preprocessor("""
-        macro SELF(a) a
-        """)
+        preprocessor = get_preprocessor("macro SELF(a)   a")
 
-        with preprocessor:
+        with Schema({"foo": {"bar": "number"}}), preprocessor:
             parse_query("foo where SELF(bar) == 1")
 
             with self.assertRaises(EqlTypeMismatchError):
