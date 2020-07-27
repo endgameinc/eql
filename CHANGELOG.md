@@ -1,6 +1,13 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Version 0.9.4
+_Released 2020-07-27_
+
+### Fixed
+* Uncaught exception when macros return a field
+
+
 ## Version 0.9.3
 _Released 2020-07-07_
 

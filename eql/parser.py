@@ -719,7 +719,7 @@ class LarkToEQL(Interpreter):
             type_hint = TypeHint.Unknown
 
             if ast_node.base not in self._var_types:
-                ast_node, type_hint = self._update_field_info(node, ast_node)
+                type_hint = self._update_field_info(NodeInfo(ast_node, source=node)).type_info
 
         elif isinstance(ast_node, ast.FunctionCall):
             signature = self._function_lookup.get(ast_node.name)
