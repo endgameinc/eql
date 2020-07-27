@@ -6,7 +6,8 @@ from collections import OrderedDict
 from eql.ast import *  # noqa: F403
 from eql.parser import *  # noqa: F403
 from eql.transpilers import TextEngine
-from eql import EqlTypeMismatchError
+from eql.errors import EqlSemanticError
+from eql import EqlTypeMismatchError, Schema
 
 
 class TestPreProcessor(unittest.TestCase):
@@ -227,3 +228,15 @@ class TestPreProcessor(unittest.TestCase):
                 before = parse_expression(before)
             after = parse_expression(after)
             self.assertEqual(pp2.expand(before), after)
+
+    def test_macro_expansion_hinting_bug(self):
+        """Test bugfix for macro expansion."""
+        preprocessor = get_preprocessor("""
+        macro SELF(a) a
+        """)
+
+        with Schema({"foo": {"bar": "number"}}), preprocessor:
+            parse_query("foo where SELF(bar) == 1")
+
+            with self.assertRaises(EqlSemanticError):
+                parse_query("foo where SELF(bar) == 'baz'")
