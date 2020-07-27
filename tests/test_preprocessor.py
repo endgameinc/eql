@@ -6,7 +6,7 @@ from collections import OrderedDict
 from eql.ast import *  # noqa: F403
 from eql.parser import *  # noqa: F403
 from eql.transpilers import TextEngine
-from eql.errors import EqlSemanticError
+from eql.errors import EqlTypeMismatchError
 
 
 class TestPreProcessor(unittest.TestCase):
