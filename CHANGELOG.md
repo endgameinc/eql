@@ -5,7 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 _Released 2020-07-27_
 
 ### Fixed
-* Bug with preprocessor expansion when using a schema
+* Uncaught exception when macros return a field
 
 
 ## Version 0.9.3
