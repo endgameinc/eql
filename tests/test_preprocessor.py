@@ -235,7 +235,7 @@ class TestPreProcessor(unittest.TestCase):
         macro SELF(a) a
         """)
 
-        with Schema({"foo": {"bar": "number"}}), preprocessor:
+        with preprocessor:
             parse_query("foo where SELF(bar) == 1")
 
             with self.assertRaises(EqlSemanticError):
