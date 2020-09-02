@@ -73,7 +73,7 @@ Find network destinations that were first seen after May 5, 2018
       | filter timestamp_utc >= "2018-05-01"
 
 
-Find a process with an argument `a` that wrote files to a folder in `AppData`. Use `| filter` to only match sequences where the process event contained `rar` in the process_name or the file event had a file_name that ended with `.rar`.
+Find a process with an argument ``a`` that wrote files to a folder in ``AppData``. Use ``| filter`` to only match sequences where the process event contained ``rar`` in the process_name or the file event had a file_name that ended with ``.rar``.
 
   .. code-block:: eql
 
