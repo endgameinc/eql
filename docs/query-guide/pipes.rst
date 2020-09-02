@@ -74,7 +74,6 @@ Find network destinations that were first seen after May 5, 2018
 
 
 Find a process with an argument ``a`` that wrote files to a folder in ``AppData``. Use ``| filter`` to only match sequences where the process event contained ``rar`` in the process_name or the file event had a file_name that ended with ``.rar``.
-
   .. code-block:: eql
 
       sequence by unique_pid
