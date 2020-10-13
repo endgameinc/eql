@@ -37,25 +37,30 @@ expressions: expr ("," expr)* [","]
      | sum_expr "in" "(" expressions [","]? ")" -> in_set
      | sum_expr
 
+
 // Need to recover these tokens
 EQUALS: "==" | "="
-COMP_OP: "<=" | "<" | "!=" | ">=" | ">"
+COMP_OP: ":" | "<=" | "<" | "!=" | ">=" | ">"
 ?comp_op: EQUALS | COMP_OP
 MULT_OP:    "*" | "/" | "%"
 NOT_OP:     "not"
-
-method: ":" name "(" [expressions] ")"
-
 
 ?sum_expr: mul_expr (SIGN mul_expr)*
 ?mul_expr: named_subquery_test (MULT_OP named_subquery_test)*
 ?named_subquery_test: named_subquery
                     | method_chain
 named_subquery.2: name "of" subquery
-?method_chain: value (":" function_call)*
+?method_chain: value method*
 ?value: SIGN? function_call
       | SIGN? atom
-function_call.2: name "(" [expressions] ")"
+
+// hacky approach to work around this ambiguity introduced with the colon operator
+// x : length
+// x : length( )
+METHOD_START.3: ":" NAME "("
+method_name: METHOD_START
+method: method_name [expressions] ")"
+function_call: name "(" [expressions] ")"
 ?atom: single_atom
      |  "(" expr ")"
 ?signed_single_atom: SIGN? single_atom
@@ -73,10 +78,12 @@ literal: number
 null: "null"
 number: UNSIGNED_INTEGER
       | DECIMAL
-string: DQ_STRING
+string: RAW_TQ_STRING
+      | DQ_STRING
       | SQ_STRING
       | RAW_DQ_STRING
       | RAW_SQ_STRING
+
 
 // Check against keyword usage
 name: NAME
@@ -111,10 +118,11 @@ EXPONENT: /[Ee][-+]?\d+/
 DECIMAL: UNSIGNED_INTEGER? "." UNSIGNED_INTEGER+ EXPONENT?
        | UNSIGNED_INTEGER EXPONENT
 SIGN:           "+" | "-"
-DQ_STRING:      /"(\\[btnfr"'\\]|[^\r\n"\\])*"/
-SQ_STRING:      /'(\\[btnfr"'\\]|[^\r\n'\\])*'/
-RAW_DQ_STRING:  /\?"(\\\"|[^"\r\n])*"/
-RAW_SQ_STRING:  /\?'(\\\'|[^'\r\n])*'/
+DQ_STRING:        /"(\\[btnfr"'\\]|[^\r\n"\\])*"/
+SQ_STRING:        /'(\\[btnfr"'\\]|[^\r\n'\\])*'/
+RAW_DQ_STRING:    /\?"(\\\"|[^"\r\n])*"/
+RAW_SQ_STRING:    /\?'(\\\'|[^'\r\n])*'/
+RAW_TQ_STRING.2:  /"""[^\r\n]*?""""?"?/
 
 %import common.NEWLINE
 

@@ -55,6 +55,7 @@ strict_booleans = ParserConfig(implied_booleans=False)
 nullable_fields = ParserConfig(strict_fields=False)
 non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
+elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
 
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
@@ -132,6 +133,7 @@ class LarkToEQL(Interpreter):
         self._schema = Schema.current()
         self._ignore_missing = ParserConfig.read_stack("ignore_missing_fields", False)
         self._strict_fields = ParserConfig.read_stack("strict_fields", False)
+        self._elasticsearch_syntax = ParserConfig.read_stack("elasticsearch_syntax", False)
         self._allow_enum = ParserConfig.read_stack("enable_enum", False)
         self._count_keys = []
         self._pipe_schemas = []
@@ -178,12 +180,13 @@ class LarkToEQL(Interpreter):
         if isinstance(node, NodeInfo):
             node = node.source
 
-        for child in node.children:
-            if isinstance(child, Token):
-                params[child.type] = child.value
-            elif isinstance(child, KvTree):
-                # TODO: Recover the original string slice
-                params[child.data] = child
+        if isinstance(node, Tree):
+            for child in node.children:
+                if isinstance(child, Token):
+                    params[child.type] = child.value
+                elif isinstance(child, KvTree):
+                    # TODO: Recover the original string slice
+                    params[child.data] = child
 
         for k, value in params.items():
             if isinstance(value, list):
@@ -471,6 +474,15 @@ class LarkToEQL(Interpreter):
         value.source = node
         return value
 
+    def method_name(self, node):
+        """Check for illegal use of keyword."""
+        text = node["METHOD_START"].value[1:-1]
+
+        if text in keywords:
+            raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
+
+        return text
+
     def name(self, node):
         """Check for illegal use of keyword."""
         text = node["NAME"].value
@@ -494,12 +506,22 @@ class LarkToEQL(Interpreter):
     def string(self, node):
         value = node.children[0]
 
-        # If a 'raw' string is detected, then only unescape the quote character
-        if value.startswith('?'):
-            quote_char = value[1]
-            return value[2:-1].replace("\\" + quote_char, quote_char)
+        if self._elasticsearch_syntax:
+            if value.startswith("?") or value.startswith("'"):
+                raise self._error(node, 'Invalid string literal. Use " or """ based strings.', cls=EqlSyntaxError)
+            elif value.startswith('"""'):
+                return value[3:-3]
+            else:
+                return ast.String.unescape(value[1:-1])
         else:
-            return ast.String.unescape(value[1:-1])
+            if value.startswith('"""'):
+                raise self._error(node, 'Invalid string literal', cls=EqlSyntaxError)
+            elif value.startswith('?'):
+                # If a 'raw' string is detected, then only unescape the quote character
+                quote_char = value[1]
+                return value[2:-1].replace("\\" + quote_char, quote_char)
+            else:
+                return ast.String.unescape(value[1:-1])
 
     def base_field(self, node):
         """Get a base field."""
@@ -565,7 +587,25 @@ class LarkToEQL(Interpreter):
         """Callback function to walk the AST."""
         left, comp_op, right = self.visit_children(node)  # type: (NodeInfo, str, NodeInfo)
 
-        op = "==" if comp_op.type == 'EQUALS' else comp_op.value
+        op = comp_op.value
+
+        if self._elasticsearch_syntax:
+            if op == "=":
+                raise self._error(node.children[1], "Invalid syntax. Compare with == instead of =", cls=EqlSyntaxError)
+            elif op == ":":
+                # case-insensitive equality requires string types
+                op = "=="
+
+                if not left.validate_type(TypeHint.String):
+                    raise self._type_error(left, TypeHint.String)
+
+                if not right.validate_type(TypeHint.String):
+                    raise self._type_error(right, TypeHint.String)
+        else:
+            if op == ":":
+                raise self._error(node.children[1], "Unknown operator :", cls=EqlSyntaxError)
+            elif op == "=":
+                op = "=="
 
         accepted_types = TypeHint.primitives()
         error_message = "Invalid comparison of {expected_type} to {actual_type}"
@@ -601,7 +641,7 @@ class LarkToEQL(Interpreter):
         eql_node = ast.Comparison(left.node, op, right.node)
 
         # there is no special comparison operator for wildcards, just look for * in the string
-        if isinstance(right.node, ast.String) and '*' in right.node.value:
+        if not self._elasticsearch_syntax and isinstance(right.node, ast.String) and '*' in right.node.value:
             func_call = ast.FunctionCall('wildcard', [left.node, right.node])
 
             if op == ast.Comparison.EQ:
@@ -609,7 +649,7 @@ class LarkToEQL(Interpreter):
             elif op == ast.Comparison.NE:
                 eql_node = ~func_call
 
-        elif isinstance(left.node, ast.String) and '*' in left.node.value:
+        elif not self._elasticsearch_syntax and isinstance(left.node, ast.String) and '*' in left.node.value:
             func_call = ast.FunctionCall('wildcard', [right.node, left.node])
 
             if op == ast.Comparison.EQ:
@@ -730,7 +770,7 @@ class LarkToEQL(Interpreter):
 
     def function_call(self, node, prev_node=None, prev_arg=None):
         """Callback function to walk the AST."""
-        function_name = self.visit(node["name"])
+        function_name = self.visit(node["name"] or node["method_name"])
         args = []
         nodes = []
 
@@ -1125,7 +1165,10 @@ def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=
             tree = lark_parser.parse(text, start=start)
         except LarkError as e:
             # Remove the original exception from the traceback
-            exc = EqlSyntaxError("Invalid syntax", e.line - 1, e.column - 1, '\n'.join(walker.lines[e.line - 2:e.line]))
+            width = len(e.token) if hasattr(e, "token") else 1
+            exc = EqlSyntaxError("Invalid syntax",
+                                 line=e.line - 1, column=e.column - 1, width=width,
+                                 source='\n'.join(walker.lines[e.line - 2:e.line]))
             if cfg.read_stack("full_traceback", debugger_attached):
                 raise exc
 
