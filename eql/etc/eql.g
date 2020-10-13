@@ -56,7 +56,7 @@ named_subquery.2: name "of" subquery
 
 // hacky approach to work around this ambiguity introduced with the colon operator
 // x : length
-// x : length( )
+// x : length( ) not allowed, now requires `:length(` form
 METHOD_START.3: ":" NAME "("
 method_name: METHOD_START
 method: method_name [expressions] ")"
