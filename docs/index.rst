@@ -18,7 +18,8 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
    - All operators and functions are case-sensitive. For example, ``process_name == "cmd.exe"`` is different from ``process_name == "Cmd.exe"``.
    - Use ``:`` to perform case-insensitive equals. For example, ``process_name : "cmd.exe"`` is identical to ``process_name : "Cmd.exe"``.
    - The ``==`` and ``!=`` operators no longer expand wildcard characters. ``process_name == "cmd*.exe"`` will interpret``*`` as a literal asterisk, not a wildcard character.
-   - `=` can no longer be substituted for `==`
+   - ``==`` can no longer be substitutde for ``=``
+   - ``?"`` and ``?'`` are not used for raw strings. Instead, use the new ``"""..."""`` syntax
    - For case-sensitive wildcard matching, use the ``wildcard`` function
    
    For more details, browse the `limitations <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-limitations>`_ section of the EQL documentation in Elasticsearch.
