@@ -22,12 +22,6 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
    - For case-sensitive wildcard matching, use the ``wildcard`` function
    
    For more details, browse the `limitations <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-limitations>`_ section of the EQL documentation in Elasticsearch.
-   
-
-.. image:: _static/eql-whoami.jpg
-    :alt: what is EQL
-    :scale: 50%
-
 
 Getting Started
 ^^^^^^^^^^^^^^^^
