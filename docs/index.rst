@@ -15,14 +15,13 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
 .. note::
    This documentation is about EQL for Elastic Endgame. Several syntax changes were made to `bring Event Query Language to the Elastic Stack <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html>`_:
    
-   - All operators and functions are case-sensitive. For example, ``process_name == "cmd.exe"`` is different from ``process_name == "Cmd.exe"``.
-   - Use ``:`` to perform case-insensitive equals. For example, ``process_name : "cmd.exe"`` is identical to ``process_name : "Cmd.exe"``.
-   - The ``==`` and ``!=`` operators no longer expand wildcard characters. ``process_name == "cmd*.exe"`` will interpret ``*`` as a literal asterisk, not a wildcard character.
-   - ``==`` can no longer be substitutde for ``=``
-   - ``?"`` and ``?'`` are not used for raw strings. Instead, use the new ``"""..."""`` syntax
-   - For case-sensitive wildcard matching, use the ``wildcard`` function
+   - Most operators and functions are now case-sensitive. For example, ``process_name == "cmd.exe"`` is no longer equivalent to ``process_name == "Cmd.exe"``.
+   - For case-insensitive equality comparisons, use the ``:`` operator. For example, ``process_name : "cmd.exe"`` is equivalent to ``process_name : "Cmd.exe"``.
+   - The ``==`` and ``!=`` operators no longer expand wildcard characters. For example, ``process_name == "cmd*.exe"`` now interprets ``*`` as a literal asterisk, not a wildcard. For case-sensitive wildcard matching, use the ``wildcard`` function.
+   - ``=`` can no longer be substituted for the ``==`` operator.
+   - ``?"`` and ``?'`` no longer indicate raw strings. Use the ``"""..."""`` syntax instead.
    
-   For more details, browse the `limitations <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-limitations>`_ section of the EQL documentation in Elasticsearch.
+   For more details, see the `limitations <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-limitations>` section of the Elasticsearch EQL documentation.
 
 Getting Started
 ^^^^^^^^^^^^^^^^
