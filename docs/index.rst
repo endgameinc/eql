@@ -21,7 +21,7 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
    - ``=`` can no longer be substituted for the ``==`` operator.
    - ``?"`` and ``?'`` no longer indicate raw strings. Use the ``"""..."""`` syntax instead.
    
-   For more details, see the `limitations <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-limitations>` section of the Elasticsearch EQL documentation.
+   For more details, see the `limitations <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-limitations>`_ section of the Elasticsearch EQL documentation.
 
 Getting Started
 ^^^^^^^^^^^^^^^^
