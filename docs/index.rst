@@ -13,7 +13,7 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
 
 
 .. note::
-   This documentation is about EQL for Endgame. Several syntax changes were made to `bring Event Query Language to Elasticsearch <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html>`_:
+   This documentation is about EQL for Elastic Endgame. Several syntax changes were made to `bring Event Query Language to the Elastic Stack <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html>`_:
    
    - All operators and functions are case-sensitive. For example, ``process_name == "cmd.exe"`` is different from ``process_name == "Cmd.exe"``.
    - Use ``:`` to perform case-insensitive equals. For example, ``process_name : "cmd.exe"`` is identical to ``process_name : "Cmd.exe"``.
