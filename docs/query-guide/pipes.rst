@@ -72,6 +72,15 @@ Find network destinations that were first seen after May 5, 2018
       | unique destination_address, destination_port
       | filter timestamp_utc >= "2018-05-01"
 
+
+Find a process with an argument ``a`` that wrote files to a folder in ``AppData``. Use ``| filter`` to only match sequences where the process event contained ``rar`` in the process_name or the file event had a file_name that ended with ``.rar``.
+  .. code-block:: eql
+
+      sequence by unique_pid
+        [process where command_line == "* a *"]
+        [file where file_path == "*\\AppData\\*"]
+      | filter events[0].process_name == "*rar*" or events[1].file_name == "*.rar"
+
 ``unique_count``
 ----------------
 The ``unique_count`` pipe combines the filtering of `unique`_ with the stats from `count`_. For ``unique_count``,
