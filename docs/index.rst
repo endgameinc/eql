@@ -12,6 +12,17 @@ It supports field lookups, boolean logic, comparisons, wildcard matching, and fu
 EQL also has a preprocessor that can perform parse and translation time evaluation, allowing for easily sharable components between queries.
 
 
+.. note::
+   This documentation is about EQL for Endgame. Several syntax changes were made to `bring Event Query Language to Elasticsearch <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html>`_:
+   
+   - All operators and functions are case-sensitive. For example, ``process_name == "cmd.exe"`` is different from ``process_name == "Cmd.exe"``.
+   - Use ``:`` to perform case-insensitive equals. For example, ``process_name : "cmd.exe"`` is identical to ``process_name : "Cmd.exe"``.
+   - The ``==`` and ``!=`` operators no longer expand wildcard characters. ``process_name == "cmd*.exe"`` will interpret``*`` as a literal asterisk, not a wildcard character.
+   - For case-sensitive wildcard matching, use the ``wildcard`` function
+   
+   For more details, browse the `limitations <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-limitations>`_ section of the EQL documentation in Elasticsearch.
+   
+
 .. image:: _static/eql-whoami.jpg
     :alt: what is EQL
     :scale: 50%
