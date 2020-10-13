@@ -12,10 +12,17 @@ It supports field lookups, boolean logic, comparisons, wildcard matching, and fu
 EQL also has a preprocessor that can perform parse and translation time evaluation, allowing for easily sharable components between queries.
 
 
-.. image:: _static/eql-whoami.jpg
-    :alt: what is EQL
-    :scale: 50%
-
+.. note::
+   This documentation is about EQL for Elastic Endgame. Several syntax changes were made to `bring Event Query Language to the Elastic Stack <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html>`_:
+   
+   - Most operators and functions are now case-sensitive. For example, ``process_name == "cmd.exe"`` is no longer equivalent to ``process_name == "Cmd.exe"``.
+   - For case-insensitive equality comparisons, use the ``:`` operator. For example, ``process_name : "cmd.exe"`` is equivalent to ``process_name : "Cmd.exe"``.
+   - The ``==`` and ``!=`` operators no longer expand wildcard characters. For example, ``process_name == "cmd*.exe"`` now interprets ``*`` as a literal asterisk, not a wildcard. For case-sensitive wildcard matching, use the ``wildcard`` function.
+   - ``=`` can no longer be substituted for the ``==`` operator.
+   - ``'`` strings are no longer supported. Use `"""` or `"` to represent strings.
+   - ``?"`` and ``?'`` no longer indicate raw strings. Use the ``"""..."""`` syntax instead.
+   
+   For more details, see the `limitations <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-limitations>`_ section of the Elasticsearch EQL documentation.
 
 Getting Started
 ^^^^^^^^^^^^^^^^
@@ -30,7 +37,7 @@ If Python is configured and already in the PATH, then ``eql`` will be readily av
 .. code-block:: console
 
      $ eql --version
-     eql 0.8
+     eql 0.9
 
 From there, try a :download:`sample json file <_static/example.json>` and test it with EQL.
 
