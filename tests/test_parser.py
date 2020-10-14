@@ -535,4 +535,3 @@ class TestParser(unittest.TestCase):
 
             self.assertRaises(EqlSyntaxError, parse_query, 'process where process_name == """cmd.exe"""')
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name : \"cmd.exe\"")
-
