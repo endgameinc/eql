@@ -6,11 +6,12 @@ import sys
 import traceback
 import unittest
 
+from eql import Schema
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
-    extract_query_terms, keywords
+    extract_query_terms, keywords, elasticsearch_syntax
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -509,3 +510,36 @@ class TestParser(unittest.TestCase):
         # simple query with pipes
         simple_extracted = extract_query_terms(network_event + "| unique process_name, user_name\n\n| tail 10")
         self.assertListEqual(simple_extracted, [network_event.strip()])
+
+    def test_elasticsearch_flag_enabled(self):
+        """Check that removed Endgame syntax throws an error and new syntax does not."""
+        schema = Schema({"process": {"process_name": "string",  "pid": "number"}})
+
+        with elasticsearch_syntax, schema:
+            parse_query('process where process_name : "cmd.exe"')
+            parse_query('process where process_name : """cmd.exe"""')
+            parse_query('process where process_name : """""cmd.exe"""""')
+
+            # parser interprets this similar to:              process where process_name == length()
+            # so it will have an error, because length() has no arguments
+            self.assertRaises(EqlSemanticError, parse_query, "process where process_name :  length()")
+
+            self.assertRaises(EqlSemanticError, parse_query, "process where pid : 1")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name = \"cmd.exe\"")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == ?'cmd.exe'")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == ?\"cmd.exe\"")
+
+        with schema:
+            parse_query("process where process_name == 'cmd.exe'")
+            parse_query("process where process_name == ?'cmd.exe'")
+            parse_query("process where process_name == ?\"cmd.exe\"")
+
+            # parser interprets this similar to:              process where process_name == length()
+            # so it will have an error, because length() has no arguments
+            self.assertRaises(EqlSemanticError, parse_query, "process where process_name :  length()")
+
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where process_name == """cmd.exe"""')
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name : \"cmd.exe\"")
