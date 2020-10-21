@@ -520,6 +520,10 @@ class TestParser(unittest.TestCase):
             parse_query('process where process_name : """cmd.exe"""')
             parse_query('process where process_name : """""cmd.exe"""""')
 
+            # parser interprets this similar to:              process where process_name == length()
+            # so it will have an error, because length() has no arguments
+            self.assertRaises(EqlSemanticError, parse_query, "process where process_name :  length()")
+
             self.assertRaises(EqlSemanticError, parse_query, "process where pid : 1")
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name = \"cmd.exe\"")
@@ -532,6 +536,10 @@ class TestParser(unittest.TestCase):
             parse_query("process where process_name == 'cmd.exe'")
             parse_query("process where process_name == ?'cmd.exe'")
             parse_query("process where process_name == ?\"cmd.exe\"")
+
+            # parser interprets this similar to:              process where process_name == length()
+            # so it will have an error, because length() has no arguments
+            self.assertRaises(EqlSemanticError, parse_query, "process where process_name :  length()")
 
             self.assertRaises(EqlSyntaxError, parse_query, 'process where process_name == """cmd.exe"""')
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name : \"cmd.exe\"")
