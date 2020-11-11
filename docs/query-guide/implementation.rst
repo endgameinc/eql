@@ -73,7 +73,7 @@ are independently sequenced.
 
     {id:  9, event_type: "process", user_name: "root", process_name: "ifconfig"}
     // sequence [2, 4, 9] completes the sequence for root
-    // root still has [6] in state 1
+    // root still has [7] in state 1
 
     {id: 10, event_type: "process", user_name: "user", process_name: "ifconfig"}
     // sequence [6, 8, 10] completes the sequence for user
