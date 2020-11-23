@@ -1,8 +1,16 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+
+## Version 0.9.6
+_Released 2020-10-10_
+
+### Changed
+* Elasticsearch ilike `:` syntax to support lists and wildcards
+
+
 ## Version 0.9.5
-_Released TBD_
+_Released 2020-10-10_
 
 ### Added
 * Toggle to parse with Elasticsearch syntax
