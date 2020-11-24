@@ -35,12 +35,14 @@ expressions: expr ("," expr)* [","]
 ?term: sum_expr comp_op sum_expr -> comparison
      | sum_expr "not" "in" "(" expressions [","]? ")"  -> not_in_set
      | sum_expr "in" "(" expressions [","]? ")" -> in_set
+     | sum_expr ILIKE (literal | "(" literal ("," literal)* ")") -> ilike
      | sum_expr
 
 
 // Need to recover these tokens
 EQUALS: "==" | "="
-COMP_OP: ":" | "<=" | "<" | "!=" | ">=" | ">"
+ILIKE: ":"
+COMP_OP: "<=" | "<" | "!=" | ">=" | ">"
 ?comp_op: EQUALS | COMP_OP
 MULT_OP:    "*" | "/" | "%"
 NOT_OP:     "not"
