@@ -10,14 +10,13 @@ _Released 2020-11-24_
 
 
 ## Version 0.9.5
-_Released 2020-10-10_
+_Released 2020-10-20_
 
 ### Added
 * Toggle to parse with Elasticsearch syntax
 
 ### Changed
 * Parser rule for method syntax. No whitespace is allowed between the `:` and opening `(`
-
 
 ## Version 0.9.4
 _Released 2020-07-27_
