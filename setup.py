@@ -31,6 +31,7 @@ test_requires = [
     "toml~=0.10",
     "configparser<5.0; python_version<'3.4'",
     "more-itertools~=5.0; python_version<'3.4'",
+    "importlib-metadata<3.0; python_version<'3.4'",
     "zipp<1.0; python_version<'3.4'",
 ]
 etc_files = [os.path.relpath(fn, 'eql') for fn in glob.glob('eql/etc/*') if not fn.endswith('.py')]
