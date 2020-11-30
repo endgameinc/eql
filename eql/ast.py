@@ -7,7 +7,7 @@ from operator import lt, le, eq, ne, ge, gt
 from string import Template
 from enum import Enum
 
-from .errors import EqlError
+from .errors import EqlError, EqlCompileError
 from .signatures import SignatureMixin
 from .types import TypeHint, NodeInfo  # noqa: F401
 from .utils import to_unicode, is_string, is_number, ParserConfig, fold_case
@@ -1147,8 +1147,15 @@ class Macro(BaseMacro, EqlNode):
         lookup = dict(zip(self.parameters, arguments))
 
         def _walk_field(node):
-            if node.base in lookup and not node.path:
-                return lookup[node.base]
+            # type: (Field) -> Field
+            if node.base in lookup:
+                argument_field = lookup[node.base]
+                if node.path and not isinstance(argument_field, Field):
+                    raise EqlCompileError("Unable to expand macro {} on non-field type".format(argument_field))
+
+                # extend the attributes being retrieved
+                return Field(argument_field.base, list(argument_field.path) + list(node.path))
+
             return node
 
         walker = RecursiveWalker()
