@@ -583,29 +583,29 @@ class LarkToEQL(Interpreter):
         field = ast.Field(base, path)
         return self._update_field_info(NodeInfo(field, source=node))
 
+    def ilike(self, node):
+        """Callback function to walk the AST."""
+        if not self._elasticsearch_syntax:
+            raise self._error(node, message="Invalid syntax, try == or wildcard()", cls=EqlSyntaxError)
+
+        children = self.visit(node.child_trees)
+
+        for child in children:  # type: NodeInfo
+            if not child.validate_type(TypeHint.String):
+                raise self._type_error(child, TypeHint.String)
+
+        return NodeInfo(ast.FunctionCall("wildcard", [child.node for child in children], TypeHint.Boolean))
+
     def comparison(self, node):
         """Callback function to walk the AST."""
         left, comp_op, right = self.visit_children(node)  # type: (NodeInfo, str, NodeInfo)
 
         op = comp_op.value
 
-        if self._elasticsearch_syntax:
-            if op == "=":
+        if op == "=":
+            if self._elasticsearch_syntax:
                 raise self._error(node.children[1], "Invalid syntax. Compare with == instead of =", cls=EqlSyntaxError)
-            elif op == ":":
-                # case-insensitive equality requires string types
-                op = "=="
-
-                if not left.validate_type(TypeHint.String):
-                    raise self._type_error(left, TypeHint.String)
-
-                if not right.validate_type(TypeHint.String):
-                    raise self._type_error(right, TypeHint.String)
-        else:
-            if op == ":":
-                raise self._error(node.children[1], "Unknown operator :", cls=EqlSyntaxError)
-            elif op == "=":
-                op = "=="
+            op = "=="
 
         accepted_types = TypeHint.primitives()
         error_message = "Invalid comparison of {expected_type} to {actual_type}"
