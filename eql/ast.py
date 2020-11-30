@@ -1149,12 +1149,15 @@ class Macro(BaseMacro, EqlNode):
         def _walk_field(node):
             # type: (Field) -> Field
             if node.base in lookup:
-                argument_field = lookup[node.base]
-                if node.path and not isinstance(argument_field, Field):
-                    raise EqlCompileError("Unable to expand macro {} on non-field type".format(argument_field))
+                argument_value = lookup[node.base]
+                if node.path:
+                    if not isinstance(argument_value, Field):
+                        raise EqlCompileError("Unable to expand macro {} on non-field type".format(argument_value))
 
-                # extend the attributes being retrieved
-                return Field(argument_field.base, list(argument_field.path) + list(node.path))
+                    # extend the attributes being retrieved
+                    return Field(argument_value.base, list(argument_value.path) + list(node.path))
+
+                return argument_value
 
             return node
 
