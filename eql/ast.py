@@ -1152,7 +1152,7 @@ class Macro(BaseMacro, EqlNode):
                 argument_value = lookup[node.base]
                 if node.path:
                     if not isinstance(argument_value, Field):
-                        raise EqlCompileError("Unable to expand macro {} on non-field type".format(argument_value))
+                        raise EqlCompileError("Unable to expand {} on non-field type {}".format(argument_value, node.base))
 
                     # extend the attributes being retrieved
                     return Field(argument_value.base, list(argument_value.path) + list(node.path))
