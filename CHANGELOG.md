@@ -2,7 +2,7 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Version 0.9.7
-_Released 2020-11-30_
+_Released 2020-12-01_
 
 ### Added
 * Support for extending attributes within macros
