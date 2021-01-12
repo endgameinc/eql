@@ -114,8 +114,8 @@ class TestParseOptimizations(unittest.TestCase):
         optimized = parse_expression('wildcard(name, "foo*", "*bar")')
         self.assertEqual(wildcard_or, optimized, "Failed to combine OR with matching adjacent wildcard() calls")
         
-        wildcard_or = parse_expression('match(name, "fo[o]) or match(name, "ba[r]?)')
-        optimized = parse_expression('match(name, "fo[o]", "ba[r]?)")')
+        wildcard_or = parse_expression('match(name, "fo[o]") or match(name, "ba[r]?")')
+        optimized = parse_expression('match(name, "fo[o]", "ba[r]?")')
         self.assertEqual(wildcard_or, optimized, "Failed to combine OR with matching adjacent match() calls")
 
         # this isn't necessary as a test, but is worth keeping so the behavior is well defined
