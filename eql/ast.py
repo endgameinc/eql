@@ -492,6 +492,16 @@ class FunctionCall(Expression):
 
         return super(FunctionCall, self).render()
 
+    def __or__(self, other):
+        """Optimize OR comparisons between matching variadic binary functions."""
+        if isinstance(other, FunctionCall) and \
+                self.name in ("wildcard", "match", "matchLite") and other.name == self.name:
+            # wildcard(x, ABC...) or wildcard(x, DEF...) ==> wildcard(x, ABC..., DEF...)
+            if self.arguments[0] == other.arguments[0]:
+                return FunctionCall(self.name, self.arguments + other.arguments[1:])
+
+        return super(FunctionCall, self).__or__(other)
+
 
 class NamedSubquery(Expression):
     """Named of queries perform a subquery with a specific type and returns true if the current event is related.

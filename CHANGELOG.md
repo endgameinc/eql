@@ -1,6 +1,13 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.8
+_Released 2021-01-12_
+
+### Added
+* Optimization to combine adjacent `wildcard()` calls over the same field
+
+
 ## Version 0.9.7
 _Released 2020-12-01_
 

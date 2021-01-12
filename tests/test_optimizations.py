@@ -108,6 +108,21 @@ class TestParseOptimizations(unittest.TestCase):
         optimized = parse_expression('name in ("a", "b")')
         self.assertEqual(set_and_not, optimized, "Failed to subtract specific value from set")
 
+    def test_wildcard_or(self):
+        """Test that wildcard calls over the same field are combined when adjacent."""
+        wildcard_or = parse_expression('name == "foo*" or name == "*bar"')
+        optimized = parse_expression('wildcard(name, "foo*", "*bar")')
+        self.assertEqual(wildcard_or, optimized, "Failed to combine OR with matching adjacent wildcard() calls")
+
+        # this isn't necessary as a test, but is worth keeping so the behavior is well defined
+        wildcard_or = parse_expression('name == "foo*" or other_field == "bar" or name == "*baz"')
+        optimized = parse_expression('wildcard(name, "foo*") or other_field == "bar" or wildcard(name, "*baz")')
+        self.assertEqual(wildcard_or, optimized, "Combined nonadjacent matching adjacent wildcard() calls")
+
+        wildcard_or = parse_expression('name == "foo*" or title == "*bar"')
+        optimized = parse_expression('wildcard(name, "foo*") or wildcard(title, "*bar")')
+        self.assertEqual(wildcard_or, optimized, "Shouldn't have combined wildcards of different fields")
+
     def test_static_value_optimizations(self):
         """Test parser optimizations for comparing static values."""
         expected_true = [
