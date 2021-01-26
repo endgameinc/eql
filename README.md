@@ -8,7 +8,7 @@
 ![What is EQL?](docs/_static/eql-whoami.jpg)
 Browse a [library of EQL analytics](https://eqllib.readthedocs.io)
 
-## Now in Elasticseach!
+## Now in Elasticsearch!
 
 Since Endgame [joined forced with Elastic](https://www.elastic.co/blog/endgame-joins-forces-with-elastic), EQL is now natively integrated in Elasticsearch! See the Elasticsearch [EQL documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html) for more information. Also, please note that we have made a few changes to EQL in Elasticsearch to accomodate non-security users. Those are best summarized [here](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-unsupported-syntax).
 
