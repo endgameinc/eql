@@ -440,8 +440,8 @@ class LeftStrip(FunctionSignature):
     """Strip leading whitespace from a string."""
 
     name = "lstrip"
-    argument_types = [STRING]
-    return_value = STRING
+    argument_types = [TypeHint.String]
+    return_value = TypeHint.String 
     minimum_args = 1
 
     @classmethod
@@ -548,8 +548,8 @@ class RightStrip(FunctionSignature):
     """Strip trailing whitespace from a string."""
 
     name = "rstrip"
-    argument_types = [STRING]
-    return_value = STRING
+    argument_types = [TypeHint.String]
+    return_value = TypeHint.String 
     minimum_args = 1
 
     @classmethod
@@ -608,8 +608,8 @@ class Strip(FunctionSignature):
     """Strip leading & trailing whitespace from a string."""
 
     name = "strip"
-    argument_types = [STRING]
-    return_value = STRING
+    argument_types = [TypeHint.String]
+    return_value = TypeHint.String 
     minimum_args = 1
 
     @classmethod
