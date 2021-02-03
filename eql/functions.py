@@ -441,7 +441,7 @@ class LeftStrip(FunctionSignature):
 
     name = "lstrip"
     argument_types = [TypeHint.String]
-    return_value = TypeHint.String 
+    return_value = TypeHint.String
     minimum_args = 1
 
     @classmethod
@@ -549,7 +549,7 @@ class RightStrip(FunctionSignature):
 
     name = "rstrip"
     argument_types = [TypeHint.String]
-    return_value = TypeHint.String 
+    return_value = TypeHint.String
     minimum_args = 1
 
     @classmethod
@@ -609,7 +609,7 @@ class Strip(FunctionSignature):
 
     name = "strip"
     argument_types = [TypeHint.String]
-    return_value = TypeHint.String 
+    return_value = TypeHint.String
     minimum_args = 1
 
     @classmethod
