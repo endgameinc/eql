@@ -5,6 +5,7 @@ from collections import defaultdict
 
 from eql import *  # noqa: F403
 from eql.ast import *  # noqa: F403
+from eql.engine import Scope
 from eql.parser import ignore_missing_functions
 from eql.schema import EVENT_TYPE_GENERIC
 from eql.tests.base import TestEngine
@@ -82,13 +83,11 @@ class TestPythonEngine(TestEngine):
             'join [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
             'sequence [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
             'sequence by pid [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=125s [process where process_name == "*" ] [file where file_path == "*"]',
             'sequence by pid with maxspan=2s [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2sec [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2seconds [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence with maxspan=2.5m [process where x == x] by pid [file where file_path == "*"] by ppid',
-            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
-            'sequence by pid with maxspan=1.0075d [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence with maxspan=5m [process where x == x] by pid [file where file_path == "*"] by ppid',
+            'sequence by pid with maxspan=3h [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=1d [process where process_name == "*"] [file where file_path == "*"]',
             'process where descendant of [process where process_name == "lsass.exe"] and process_name == "cmd.exe"',
             'dns where pid == 100 | head 100 | tail 50 | unique pid',
             'network where pid == 100 | unique command_line | count',
@@ -355,6 +354,7 @@ class TestPythonEngine(TestEngine):
         return x
 
     @staticmethod
+    @PythonEngine.null_checked
     def _custom_reverse(x):
         return x[::-1]
 
@@ -494,3 +494,19 @@ class TestPythonEngine(TestEngine):
         output = self.get_output(queries=[parse_query(query)], config=config, events=events)
         event_ids = [event.data['unique_pid'] for event in output]
         self.validate_results(event_ids, ['host1-1003'], "Relationships failed due to pid collision")
+
+    def test_backticks(self):
+        """Check that backtick fields are indexing into events."""
+        def evaluate(expr, event):
+            engine = PythonEngine()
+            cb = engine.convert(parse_expression(expr))
+            scope = Scope([Event.from_data(event)], None)
+            return cb(scope)
+
+        self.assertIsNone(evaluate("a.b", {}))
+        self.assertEqual(evaluate("a.b", {"a": {"b": 1}}), 1)
+
+        self.assertIsNone(evaluate("`a.b`", {}))
+        self.assertEqual(evaluate("`a.b`", {"a.b": 1}), 1)
+        self.assertEqual(evaluate("a.`b.c`[0]", {"a": {"b.c": [1]}}), 1)
+        self.assertEqual(evaluate("`!@#$%^&*().`", {"!@#$%^&*().": 1}), 1)

@@ -11,7 +11,7 @@ from .pipes import *  # noqa: F403
 from .transpilers import BaseEngine, BaseTranspiler
 from .events import Event, AnalyticOutput
 from .schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC
-from .utils import is_string, is_array, is_number, get_type_converter
+from .utils import is_string, is_array, is_number, get_type_converter, fold_case
 
 PIPE_EOF = object()
 
@@ -121,6 +121,47 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         else:
             return output_results
 
+    @classmethod
+    def null_checked(cls, f):
+        """Helper decorator for checking null values."""
+        @functools.wraps(f)
+        def decorated(*args):
+            # null can only be compared with IsNull/IsNotNull
+            if any(arg is None for arg in args):
+                return
+
+            return f(*args)
+
+        return decorated
+
+    @classmethod
+    def check_types(cls, f):
+        """Helper decorator for performing type checks before evaluating comparisons."""
+        @functools.wraps(f)
+        def decorated(a, b):
+            if a is None or b is None:
+                return
+
+            if is_string(a) and is_string(b) or \
+                    is_number(a) and is_number(b) or \
+                    type(a) == type(b):
+                return f(a, b)
+
+        return decorated
+
+    @classmethod
+    def lowercase(cls, f, always=True):
+        """Decorator function for lowercasing values to perform case-insensitive comparisons."""
+        @functools.wraps(f)
+        def decorated(a, b):
+            if is_string(a) and is_string(b):
+                return f(fold_case(a), fold_case(b))
+
+            if not always:
+                return f(a, b)
+
+        return decorated
+
     def convert(self, node, *args, **kwargs):
         """Convert an eql AST to a python callback function.
 
@@ -133,9 +174,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         piped = kwargs.pop("piped", False)
         scoped = kwargs.pop("scoped", False)
         method = self.get_node_method(node, "_convert_")
-
-        if not method:
-            raise EqlCompileError(u"Unable to convert {}".format(node))
 
         cb = method(node, *args, **kwargs)
 
@@ -157,7 +195,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
     @classmethod
     def _remove_case(cls, key):
         if is_string(key):
-            return key.lower()
+            return fold_case(key)
         elif is_array(key):
             return tuple(cls._remove_case(k) for k in key)
         else:
@@ -229,7 +267,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         get_value = self.convert(node.term)
 
         def negate(scope):  # type: (Scope) -> bool
-            return not get_value(scope)
+            value = get_value(scope)
+            if value is not None:
+                return not value
 
         return negate
 
@@ -374,63 +414,40 @@ class PythonEngine(BaseEngine, BaseTranspiler):
             values = set()
             for item in node.container:
                 value = item.value
-                if is_string(value):
-                    values.add(value.lower())
-                else:
-                    values.add(value)
+                values.add(fold_case(value))
 
             get_value = self.convert(node.expression)
 
             def callback(scope):  # type: (Scope) -> bool
                 check_value = get_value(scope)
-                if is_string(check_value):
-                    check_value = check_value.lower()
-                return check_value in values
+                if check_value is None:
+                    return
+
+                return fold_case(check_value) in values
 
             return callback
 
         else:
             return self.convert(node.synonym)
 
+    def _convert_is_null(self, node):  # type: (IsNull) -> callable
+        get_value = self.convert(node.expr)
+        return lambda x: get_value(x) is None
+
+    def _convert_is_not_null(self, node):  # type: (IsNotNull) -> callable
+        get_value = self.convert(node.expr)
+        return lambda x: get_value(x) is not None
+
     def _convert_comparison(self, node):  # type: (Comparison) -> callable
         get_left = self.convert(node.left)
         get_right = self.convert(node.right)
 
-        def types_match(x, y):
-            return (
-                    type(x) == type(y) or
-                    is_string(x) and is_string(y) or
-                    is_number(x) and is_number(y)
-            )
-
-        def equals(x, y):
-            if not types_match(x, y):
-                return False
-            elif is_string(x):
-                return x.lower() == y.lower()
-            else:
-                return x == y
-
-        # Create different comparison functions so that this if statement doesn't need to be evaluated every time
-        if node.comparator == Comparison.EQ:
-            compare = equals
-        elif node.comparator == Comparison.NE:
-            def compare(x, y):
-                return not equals(x, y)
-        elif node.comparator == Comparison.LT:
-            def compare(x, y):
-                return types_match(x, y) and x < y
-        elif node.comparator == Comparison.LE:
-            def compare(x, y):
-                return types_match(x, y) and x <= y
-        elif node.comparator == Comparison.GT:
-            def compare(x, y):
-                return types_match(x, y) and x > y
-        elif node.comparator == Comparison.GE:
-            def compare(x, y):
-                return types_match(x, y) and x >= y
+        # if left and right could be strings, then we should normalize case
+        possible_string_types = FunctionCall, String, Field
+        if isinstance(node.left, possible_string_types) and isinstance(node.right, possible_string_types):
+            compare = self.check_types(self.lowercase(node.function, always=False))
         else:
-            raise EqlCompileError("Unknown comparator {}".format(node.comparator))
+            compare = self.check_types(node.function)
 
         def callback(scope):  # type: (Scope) -> bool
             left = get_left(scope)
@@ -442,19 +459,54 @@ class PythonEngine(BaseEngine, BaseTranspiler):
     def _convert_math_operation(self, node):  # type: (MathOperation) -> callable
         return self.convert(node.to_function_call())
 
-    def _convert_and(self, node):  # type: (CompoundTerm) -> callable
+    @staticmethod
+    def to_bool_or_null(obj):  # type: (object) -> bool
+        """Helper function for aggregating boolean logic."""
+        if obj is not None:
+            return bool(obj)
+
+    def _convert_and(self, node):  # type: (And) -> callable
         get_terms = [self.convert(term) for term in node.terms]
+        first = get_terms[0]
+        rest = get_terms[1:]
 
         def and_terms(scope):  # type: (Scope) -> bool
-            return all(get_term(scope) for get_term in get_terms)
+            aggregate = self.to_bool_or_null(first(scope))
+
+            if aggregate is False:
+                return False
+
+            for term in rest:
+                value = self.to_bool_or_null(term(scope))
+                if value is False:
+                    return False
+                elif value is None:
+                    aggregate = None
+
+            return aggregate
 
         return and_terms
 
-    def _convert_or(self, node):  # type: (CompoundTerm) -> callable
+    def _convert_or(self, node):  # type: (Or) -> callable
         get_terms = [self.convert(term) for term in node.terms]
+        first = get_terms[0]
+        rest = get_terms[1:]
 
         def or_terms(scope):  # type: (Scope) -> bool
-            return any(get_term(scope) for get_term in get_terms)
+            aggregate = self.to_bool_or_null(first(scope))
+
+            if aggregate is True:
+                return True
+
+            for term in rest:
+                value = self.to_bool_or_null(term(scope))
+
+                if value is True:
+                    return True
+                elif value is None:
+                    aggregate = None
+
+            return aggregate
 
         return or_terms
 
@@ -925,16 +977,13 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                         sequence.append(event)
                         next_pipe(sequence)
 
-    def _convert_time_range(self, node):
-        return int(node.delta.total_seconds() * self.time_unit)
-
     def _convert_sequence(self, node, next_pipe):  # type: (Sequence, callable) -> callable
         # Two lookups can help avoid unnecessary calls
         size = len(node.queries)
         lookups = [{} for _ in range(size)]  # type: list[dict[object, list[Event]]]
 
-        if 'maxspan' in node.params.kv:
-            max_span = self.convert(node.params.kv['maxspan'])
+        if node.max_span is not None:
+            max_span = self.convert_time_range(node.max_span)
             event_types = set(q.query.event_type for q in node.queries)
 
             @self.event_callback(*event_types)

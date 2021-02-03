@@ -6,7 +6,8 @@ from collections import OrderedDict
 from eql.ast import *  # noqa: F403
 from eql.parser import *  # noqa: F403
 from eql.transpilers import TextEngine
-from eql import EqlTypeMismatchError
+from eql.errors import EqlTypeMismatchError, EqlCompileError
+from eql.schema import Schema
 
 
 class TestPreProcessor(unittest.TestCase):
@@ -88,7 +89,7 @@ class TestPreProcessor(unittest.TestCase):
             parse_query("process where true | filter CONSTANT()")
 
             # unique requires a dynamic type, but there are no fields in CONSTANT
-            with self.assertRaisesRegexp(EqlTypeMismatchError, "Expected dynamic boolean/number/string"):
+            with self.assertRaisesRegex(EqlTypeMismatchError, "Expected dynamic number not literal number to unique"):
                 parse_query("process where true | unique CONSTANT()")
 
     def test_macro_expansion(self):
@@ -163,10 +164,10 @@ class TestPreProcessor(unittest.TestCase):
                 self.assertEqual(actual.render(), expected.render(), error_msg)
 
             query = parse_expression("DESCENDANT_OF_PROC()")
-            self.assertRaisesRegexp(ValueError, "Macro .+ expected \d+ arguments .*", engine.expand, query)
+            self.assertRaisesRegex(ValueError, r"Macro .+ expected \d+ arguments .*", engine.expand, query)
 
             query = parse_expression("DESCENDANT_OF_PROC(1,2,3)")
-            self.assertRaisesRegexp(ValueError, "Macro .+ expected \d+ arguments .*", engine.expand, query)
+            self.assertRaisesRegex(ValueError, r"Macro .+ expected \d+ arguments .*", engine.expand, query)
 
     def test_custom_macro(self):
         """Test python custom macro expansion."""
@@ -190,7 +191,7 @@ class TestPreProcessor(unittest.TestCase):
         with ignore_missing_functions:
             example = parse_query('process where LENGTH("abc", "def")')
 
-        self.assertRaisesRegexp(ValueError, "too many values to unpack", engine.expand, example)
+        self.assertRaisesRegex(ValueError, "too many values to unpack", engine.expand, example)
 
     def test_load_definitions_from_file(self):
         """Test loading definitions from a file."""
@@ -227,3 +228,44 @@ class TestPreProcessor(unittest.TestCase):
                 before = parse_expression(before)
             after = parse_expression(after)
             self.assertEqual(pp2.expand(before), after)
+
+    def test_macro_expansion_hinting_bug(self):
+        """Test bugfix for macro expansion."""
+        preprocessor = get_preprocessor("macro SELF(a)   a")
+
+        with Schema({"foo": {"bar": "number"}}), preprocessor:
+            parse_query("foo where SELF(bar) == 1")
+
+            with self.assertRaises(EqlTypeMismatchError):
+                parse_query("foo where SELF(bar) == 'baz'")
+
+    def test_append_attribute(self):
+        """Test that macros can expand attributes."""
+        preprocessor = get_preprocessor("""
+            macro NAME(dictfield)   dictfield.name
+            macro ZERO(arrayfield)  arrayfield[0]
+
+            macro ZNAME(objarray)   objarray[0].name
+            macro NAMEZ(arrayobj)   arrayobj.name[0]
+            macro ZNAME2(objarray)  NAME(ZERO(objarray))
+            macro NAMEZ2(arrayobj)  ZERO(NAME(arrayobj))
+        """)
+
+        with preprocessor:
+            self.assertEqual(parse_expression("NAME(foo)"), parse_expression("foo.name"))
+            self.assertEqual(parse_expression("ZERO(foo)"), parse_expression("foo[0]"))
+            self.assertEqual(parse_expression("ZNAME(foo)"), parse_expression("foo[0].name"))
+            self.assertEqual(parse_expression("ZNAME2(foo)"), parse_expression("foo[0].name"))
+
+            self.assertEqual(parse_expression("NAME(foo.bar.baz)"), parse_expression("foo.bar.baz.name"))
+            self.assertEqual(parse_expression("ZERO(foo.bar.baz)"), parse_expression("foo.bar.baz[0]"))
+            self.assertEqual(parse_expression("ZNAME(foo.bar.baz)"), parse_expression("foo.bar.baz[0].name"))
+            self.assertEqual(parse_expression("ZNAME2(foo.bar.baz)"), parse_expression("foo.bar.baz[0].name"))
+
+            self.assertEqual(parse_expression("NAMEZ(foo)"), parse_expression("foo.name[0]"))
+            self.assertEqual(parse_expression("NAMEZ2(foo)"), parse_expression("foo.name[0]"))
+
+            # confirm that this doesn't work for non-field types
+            self.assertRaises(EqlCompileError, parse_expression, "NAMEZ(1)")
+            self.assertRaises(EqlCompileError, parse_expression, "NAMEZ(false)")
+            self.assertRaises(EqlCompileError, parse_expression, "NAMEZ2('string')")

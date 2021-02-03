@@ -12,8 +12,8 @@ SPHINXBUILD ?= $(VENV_BIN)/sphinx-build
 $(VENV):
 	pip install virtualenv
 	virtualenv $(VENV)
-	$(PIP) install -q -r requirements.txt
 	$(PIP) install setuptools -U
+	$(PIP) setup.py install
 
 
 .PHONY: clean
@@ -24,7 +24,7 @@ clean:
 
 .PHONY: testdeps
 testdeps:
-	$(PIP) install -r requirements_test.txt
+	$(PIP) install eql[test]
 
 .PHONY: pytest
 pytest: $(VENV) testdeps

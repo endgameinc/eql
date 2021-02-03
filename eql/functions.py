@@ -5,15 +5,18 @@ import struct
 
 from .signatures import SignatureMixin
 from .errors import EqlError
-from .types import (
-    STRING, NUMBER, BOOLEAN, VARIABLE, ARRAY, literal, PRIMITIVES, EXPRESSION, PRIMITIVE_ARRAY, is_literal, is_dynamic
-)
-from .utils import is_string, to_unicode, is_number
+from .types import TypeHint
+from .utils import is_string, to_unicode, is_number, fold_case, is_insensitive
 
 
 _registry = {}
-REGEX_FLAGS = re.IGNORECASE | re.UNICODE | re.DOTALL
+REGEX_FLAGS = re.UNICODE | re.DOTALL
 MAX_IP = 0xffffffff
+
+
+def regex_flags():
+    """Helper function to properly cased regex flags."""
+    return (REGEX_FLAGS | re.IGNORECASE) if is_insensitive() else REGEX_FLAGS
 
 
 def register(func):
@@ -34,7 +37,8 @@ class FunctionSignature(SignatureMixin):
     """Helper class for declaring function signatures."""
 
     name = str()
-    return_value = BOOLEAN
+    return_value = TypeHint.Unknown
+    sometimes_null = False
 
     @classmethod
     def get_callback(cls, *arguments):
@@ -75,8 +79,8 @@ class DynamicFunctionSignature(FunctionSignature):
 class MathFunctionSignature(FunctionSignature):
     """Base signature for math functions."""
 
-    argument_types = [NUMBER, NUMBER]
-    return_value = NUMBER
+    argument_types = [TypeHint.Numeric, TypeHint.Numeric]
+    return_value = TypeHint.Numeric
     operator = None
 
     @classmethod
@@ -105,22 +109,20 @@ class ArrayContains(FunctionSignature):
     """Check if ``value`` is a member of the array ``some_array``."""
 
     name = "arrayContains"
-    argument_types = [PRIMITIVE_ARRAY, PRIMITIVES]
-    return_value = BOOLEAN
-    additional_types = PRIMITIVES
+    argument_types = [TypeHint.Array, TypeHint.primitives()]
+    return_value = TypeHint.Boolean
+    additional_types = TypeHint.primitives()
 
     @classmethod
     def run(cls, array, *value):
         """Search an array for a literal value."""
-        values = [v.lower() if is_string(v) else v for v in value]
+        values = [fold_case(v) for v in value]
 
         if array is not None:
             for v in array:
-                if is_string(v) and v.lower() in values:
+                if fold_case(v) in values:
                     return True
-                elif v in values:
-                    return True
-        return False
+            return False
 
 
 @register
@@ -128,8 +130,8 @@ class ArrayCount(DynamicFunctionSignature):
     """Search for matches to a dynamic expression in an array."""
 
     name = "arrayCount"
-    argument_types = [ARRAY, VARIABLE, EXPRESSION]
-    return_value = NUMBER
+    argument_types = [TypeHint.Array, TypeHint.Variable, TypeHint.Boolean]
+    return_value = TypeHint.Numeric
 
 
 @register
@@ -137,8 +139,8 @@ class ArraySearch(DynamicFunctionSignature):
     """Search for matches to a dynamic expression in an array."""
 
     name = "arraySearch"
-    argument_types = [ARRAY, VARIABLE, EXPRESSION]
-    return_value = BOOLEAN
+    argument_types = [TypeHint.Array, TypeHint.Variable, TypeHint.Boolean]
+    return_value = TypeHint.Boolean
 
 
 @register
@@ -146,37 +148,26 @@ class Between(FunctionSignature):
     """Return a substring that's between two other substrings."""
 
     name = "between"
-    argument_types = [STRING, STRING, STRING, literal(BOOLEAN), literal(BOOLEAN)]
+    argument_types = [TypeHint.String, TypeHint.String, TypeHint.String, TypeHint.Boolean]
     minimum_args = 3
-    return_value = STRING
+    return_value = TypeHint.String
+    sometimes_null = True
 
     @classmethod
-    def run(cls, source_string, first, second, greedy=False, case_sensitive=False):
+    def run(cls, source_string, first, second, greedy=False):
         """Return the substring between two other ones."""
-        if is_string(source_string) and is_string(first) and is_string(second) and first and second:
-            match_string = source_string
+        if is_string(source_string) and is_string(first) and is_string(second):
+            match_string = fold_case(source_string)
+            first = fold_case(first)
+            second = fold_case(second)
 
-            if not case_sensitive:
-                match_string = match_string.lower()
-                first = first.lower()
-                second = second.lower()
+            try:
+                start_pos = match_string.index(first) + len(first)
+                end_pos = match_string.rindex(second, start_pos) if greedy else match_string.index(second, start_pos)
+                return source_string[start_pos:end_pos]
 
-            before, first_match, remaining = match_string.partition(first)
-            if not first_match:
-                return ""
-
-            start_pos = len(before) + len(first_match)
-
-            if greedy:
-                between, second_match, _ = remaining.rpartition(second)
-            else:
-                between, second_match, _ = remaining.partition(second)
-
-            if not second_match:
-                return ""
-
-            end_pos = start_pos + len(between)
-            return source_string[start_pos:end_pos]
+            except ValueError:
+                return
 
 
 @register
@@ -184,14 +175,14 @@ class CidrMatch(FunctionSignature):
     """Math an IP address against a list of IPv4 subnets in CIDR notation."""
 
     name = "cidrMatch"
-    argument_types = [STRING, literal(STRING)]
-    additional_types = literal(STRING)
-    return_value = BOOLEAN
+    argument_types = [TypeHint.String, TypeHint.String.require_literal()]
+    additional_types = TypeHint.String.require_literal()
+    return_value = TypeHint.Boolean
 
-    octet_re = r'(25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])'
+    octet_re = r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])'
     ip_re = r'\.'.join([octet_re, octet_re, octet_re, octet_re])
     ip_compiled = re.compile(r'^{}$'.format(ip_re))
-    cidr_compiled = re.compile(r'^{}/(3[0-2]|2[0-9]|1[0-9]|[0-9])$'.format(ip_re))
+    cidr_compiled = re.compile(r'^{}/(?:3[0-2]|2[0-9]|1[0-9]|[0-9])$'.format(ip_re))
 
     # store it in native representation, then recover it in network order
     masks = [struct.unpack(">L", struct.pack(">L", MAX_IP & ~(MAX_IP >> b)))[0] for b in range(33)]
@@ -276,9 +267,9 @@ class CidrMatch(FunctionSignature):
             if len(hundreds_matches) == 1:
                 combos.append("{:s}{:s}".format(h_digit, hundreds_matches[0]))
             elif len(hundreds_matches) > 1:
-                combos.append("{:s}({:s})".format(h_digit, "|".join(hundreds_matches)))
+                combos.append("{:s}(?:{:s})".format(h_digit, "|".join(hundreds_matches)))
 
-        return "({})".format("|".join(combos))
+        return "(?:{})".format("|".join(combos))
 
     @classmethod
     def make_cidr_regex(cls, cidr):
@@ -315,7 +306,7 @@ class CidrMatch(FunctionSignature):
         return callback
 
     @classmethod
-    def run(cls, ip_address, cidr_matches):
+    def run(cls, ip_address, *cidr_matches):
         """Compare an IP address against a list of cidr blocks."""
         if is_string(ip_address) and cls.ip_compiled.match(ip_address):
             ip_integer, _ = cls.to_mask(ip_address + "/32")
@@ -329,33 +320,34 @@ class CidrMatch(FunctionSignature):
         return False
 
     @classmethod
-    def validate(cls, arguments, type_hints=None):
+    def validate(cls, arguments):
         """Validate the calling convention and change the argument order if necessary."""
         # used to have just two arguments and the pattern was on the left and expression on the right
-        error_position, _, _ = super(CidrMatch, cls).validate(arguments, type_hints)
+        error_position = super(CidrMatch, cls).validate(arguments)
 
         if error_position is not None:
-            return error_position, arguments, type_hints
+            return error_position
 
         # create a copy of the array that we can modify
         arguments = arguments[:]
 
         for pos, argument in enumerate(arguments[1:], 1):
-            argument = arguments[pos] = String(argument.value.strip())
+            # overwrite the original node
+            text = argument.node.value.strip()
 
-            if not cls.cidr_compiled.match(argument.value):
-                return pos, arguments, type_hints
+            if not cls.cidr_compiled.match(argument.node.value):
+                return pos
 
-            # Since it does match, we should also rewrite the string
-            ip_address, size = argument.value.split("/")
-            subnet_integer, _ = cls.to_mask(argument.value)
+            # Since it does match, we should also rewrite the string to align to the base of the subnet
+            ip_address, size = text.split("/")
+            subnet_integer, _ = cls.to_mask(text)
             subnet_bytes = struct.pack(">L", subnet_integer)
             subnet_base = socket.inet_ntoa(subnet_bytes)
 
             # overwrite the original argument so it becomes the subnet
-            argument.value = "{}/{}".format(subnet_base, size)
+            argument.node = String("{}/{}".format(subnet_base, size))
 
-        return None, arguments, type_hints
+        return None
 
 
 @register
@@ -363,15 +355,16 @@ class Concat(FunctionSignature):
     """Concatenate multiple values as strings."""
 
     name = "concat"
-    additional_types = PRIMITIVES
+    additional_types = TypeHint.primitives()
     minimum_args = 1
-    return_value = STRING
+    return_value = TypeHint.String
 
     @classmethod
     def run(cls, *arguments):
         """Concatenate multiple values as strings."""
-        output = [to_unicode(arg) for arg in arguments]
-        return "".join(output)
+        if all(arg is not None for arg in arguments):
+            output = [ToString.run(arg) for arg in arguments]
+            return "".join(output)
 
 
 @register
@@ -384,7 +377,9 @@ class Divide(MathFunctionSignature):
     def run(cls, x, y):
         """Divide numeric values."""
         if is_number(x) and is_number(y) and y != 0:
-            return float(x) / float(y)
+            if isinstance(x, float) or isinstance(y, float):
+                return float(x) / float(y)
+            return x // y
 
 
 @register
@@ -392,14 +387,14 @@ class EndsWith(FunctionSignature):
     """Check if a string ends with a substring."""
 
     name = "endsWith"
-    argument_types = [STRING, STRING]
-    return_value = BOOLEAN
+    argument_types = [TypeHint.String, TypeHint.String]
+    return_value = TypeHint.Boolean
 
     @classmethod
     def run(cls, source, substring):
         """Check if a string ends with a substring."""
         if is_string(source) and is_string(substring):
-            return source.lower().endswith(substring.lower())
+            return fold_case(source).endswith(fold_case(substring))
 
 
 @register
@@ -407,8 +402,9 @@ class IndexOf(FunctionSignature):
     """Check the start position of a substring."""
 
     name = "indexOf"
-    argument_types = [STRING, STRING, NUMBER]
-    return_value = NUMBER
+    argument_types = [TypeHint.String, TypeHint.String, TypeHint.Numeric]
+    return_value = TypeHint.Numeric
+    sometimes_null = True
     minimum_args = 2
 
     @classmethod
@@ -418,8 +414,8 @@ class IndexOf(FunctionSignature):
             start = 0
 
         if is_string(source) and is_string(substring):
-            source = source.lower()
-            substring = substring.lower()
+            source = fold_case(source)
+            substring = fold_case(substring)
             if substring in source[start:]:
                 return source.index(substring, start)
 
@@ -429,15 +425,14 @@ class Length(FunctionSignature):
     """Get the length of an array or string."""
 
     name = "length"
-    argument_types = [(STRING, ARRAY)]
-    return_value = NUMBER
+    argument_types = [(TypeHint.String, TypeHint.Array)]
+    return_value = TypeHint.Numeric
 
     @classmethod
     def run(cls, array):
         """Get the length of an array or string."""
         if is_string(array) or isinstance(array, (dict, list, tuple)):
             return len(array)
-        return 0
 
 
 @register
@@ -465,9 +460,9 @@ class Match(FunctionSignature):
     """Perform regular expression matching on a string."""
 
     name = "match"
-    argument_types = [STRING, literal(STRING)]
-    return_value = BOOLEAN
-    additional_types = literal(STRING)
+    argument_types = [TypeHint.String, TypeHint.String.require_literal()]
+    return_value = TypeHint.Boolean
+    additional_types = TypeHint.String.require_literal()
 
     @classmethod
     def join_regex(cls, *regex):
@@ -478,21 +473,31 @@ class Match(FunctionSignature):
     def get_callback(cls, source_ast, *regex_literals):
         """Get a callback function that uses the compiled regex."""
         regs = [reg.value for reg in regex_literals]
-        compiled = re.compile("|".join(regs), REGEX_FLAGS)
+        compiled = re.compile("|".join(regs), regex_flags())
 
         def callback(source, *_):
-            return is_string(source) and compiled.match(source) is not None
+            if is_string(source):
+                return compiled.match(source) is not None
 
         return callback
 
     @classmethod
-    def validate(cls, arguments, type_hints=None):
+    def validate(cls, arguments):
         """Validate the calling convention and change the argument order if necessary."""
-        # used to have just two arguments and the pattern was on the left and expression on the right
-        if len(arguments) == 2 and type_hints and is_literal(type_hints[0]) and is_dynamic(type_hints[1]):
-            arguments = list(reversed(arguments))
-            type_hints = list(reversed(type_hints))
-        return super(Match, cls).validate(arguments, type_hints)
+        if len(arguments) == 2 and isinstance(arguments[0].node, String) and not isinstance(arguments[1].node, String):
+            # used to have just two arguments and the pattern was on the left and expression on the right
+            arguments[0], arguments[1] = arguments[1], arguments[0]
+
+        pos = super(Match, cls).validate(arguments)
+
+        if pos is not None:
+            return pos
+
+        for pos, argument in enumerate(arguments[1:], 1):
+            try:
+                re.compile(argument.node.value, regex_flags())
+            except re.error:
+                return pos
 
     @classmethod
     def run(cls, source, *matches):
@@ -501,7 +506,7 @@ class Match(FunctionSignature):
             source = source.decode("utf-8", "ignore")
 
         if is_string(source):
-            match = re.match("|".join(matches), source, REGEX_FLAGS)
+            match = re.match("|".join(matches), source, regex_flags())
             return match is not None
 
 
@@ -559,12 +564,12 @@ class RightStrip(FunctionSignature):
 
 
 @register
-class Safe(FunctionSignature):
+class Safe(DynamicFunctionSignature):
     """Evaluate an expression and suppress exceptions."""
 
     name = "safe"
-    argument_types = [EXPRESSION]
-    return_value = EXPRESSION
+    argument_types = [TypeHint.Unknown]
+    return_value = TypeHint.Unknown
 
 
 @register
@@ -572,14 +577,14 @@ class StartsWith(FunctionSignature):
     """Check if a string starts with a substring."""
 
     name = "startsWith"
-    argument_types = [STRING, STRING]
-    return_value = BOOLEAN
+    argument_types = [TypeHint.String, TypeHint.String]
+    return_value = TypeHint.Boolean
 
     @classmethod
     def run(cls, source, substring):
         """Check if a string ends with a substring."""
         if is_string(source) and is_string(substring):
-            return source.lower().startswith(substring.lower())
+            return fold_case(source).startswith(fold_case(substring))
 
 
 @register
@@ -587,14 +592,14 @@ class StringContains(FunctionSignature):
     """Check if a string is a substring of another."""
 
     name = "stringContains"
-    argument_types = [STRING, STRING]
-    return_value = BOOLEAN
+    argument_types = [TypeHint.String, TypeHint.String]
+    return_value = TypeHint.Boolean
 
     @classmethod
     def run(cls, source, substring):
         """Check if a string is a substring of another."""
         if is_string(source) and is_string(substring):
-            return substring.lower() in source.lower()
+            return fold_case(substring) in fold_case(source)
         return False
 
 
@@ -623,9 +628,9 @@ class Substring(FunctionSignature):
     """Extract a substring."""
 
     name = "substring"
-    argument_types = [STRING, NUMBER, NUMBER]
-    return_value = STRING
-    minimum_args = 1
+    argument_types = [TypeHint.String, TypeHint.Numeric, TypeHint.Numeric]
+    return_value = TypeHint.String
+    minimum_args = 2
 
     @classmethod
     def run(cls, a, start=None, end=None):
@@ -652,24 +657,21 @@ class ToNumber(FunctionSignature):
     """Convert a string to a number."""
 
     name = "number"
-    argument_types = [(STRING, NUMBER), NUMBER]
-    return_value = NUMBER
+    argument_types = [TypeHint.String, TypeHint.Numeric]
     minimum_args = 1
+    return_value = TypeHint.Numeric
+    sometimes_null = True
 
     @classmethod
-    def run(cls, source, base=10):
+    def run(cls, source, base=None):
         """Convert a string to a number."""
-        if source is None:
-            return 0
-        elif is_number(source):
-            return source
-        elif is_string(source):
-            if source.isdigit():
-                return int(source, base)
-            elif source.startswith("0x"):
-                return int(source[2:], 16)
-            elif len(source.split(".")) == 2:
+        if is_string(source):
+            if len(source.split(".")) == 2 and base in (None, 10):
                 return float(source)
+            elif source.startswith("0x") and base in (None, 16):
+                return int(source[2:], 16)
+            elif source.lstrip("-+").isdigit():
+                return int(source, base or 10)
 
 
 @register
@@ -677,13 +679,17 @@ class ToString(FunctionSignature):
     """Convert a value to a string."""
 
     name = "string"
-    argument_types = [PRIMITIVES]
-    return_value = STRING
+    argument_types = [TypeHint.primitives()]
+    return_value = TypeHint.String
 
     @classmethod
     def run(cls, source):
         """"Convert a value to a string."""
-        return to_unicode(source)
+        if source is not None:
+            if isinstance(source, bool):
+                return "true" if source else "false"
+
+            return to_unicode(source)
 
 
 @register
@@ -691,9 +697,9 @@ class Wildcard(FunctionSignature):
     """Perform glob matching on a string."""
 
     name = "wildcard"
-    argument_types = [STRING, literal(STRING)]
-    return_value = BOOLEAN
-    additional_types = literal(STRING)
+    argument_types = [TypeHint.String, TypeHint.String.require_literal()]
+    return_value = TypeHint.Boolean
+    additional_types = TypeHint.String.require_literal()
 
     @classmethod
     def to_regex(cls, *wildcards):
@@ -703,7 +709,7 @@ class Wildcard(FunctionSignature):
         tail = "$"
 
         for wildcard in wildcards:
-            pieces = [re.escape(p) for p in wildcard.lower().split('*')]
+            pieces = [re.escape(p) for p in fold_case(wildcard).split('*')]
             regex = head + '.*?'.join(pieces) + tail
 
             tail_skip = '.*?$'
@@ -719,10 +725,11 @@ class Wildcard(FunctionSignature):
         """Get a callback function that uses the compiled regex."""
         wc_values = [wc.value for wc in wildcard_literals]
         pattern = cls.to_regex(*wc_values)
-        compiled = re.compile(pattern, REGEX_FLAGS)
+        compiled = re.compile(pattern, regex_flags())
 
         def callback(source, *_):
-            return is_string(source) and compiled.match(source) is not None
+            if is_string(source):
+                return compiled.match(source) is not None
 
         return callback
 
@@ -736,9 +743,10 @@ class Wildcard(FunctionSignature):
     @classmethod
     def run(cls, source, *wildcards):
         """Compare a string against a list of wildcards."""
-        pattern = cls.to_regex(*wildcards)
-        compiled = re.compile(pattern, REGEX_FLAGS)
-        return is_string(source) and compiled.match(source) is not None
+        if is_string(source):
+            pattern = cls.to_regex(*wildcards)
+            compiled = re.compile(pattern, regex_flags())
+            return compiled.match(source) is not None
 
 
 # circular dependency

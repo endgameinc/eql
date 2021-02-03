@@ -11,7 +11,7 @@ from eql import types
 class TestFunctions(unittest.TestCase):
     """Direct tests for EQL functions."""
 
-    def test_mutli_line_functions(self):
+    def test_multi_line_functions(self):
         """Test wildcard and match functions."""
         sources = [
             "this is a single line comment",
@@ -24,7 +24,7 @@ class TestFunctions(unittest.TestCase):
         for source in sources:
             self.assertTrue(Match.run(source, ".*comment"))
             # \n newlines must match on \n \s etc. but won't match on " "
-            self.assertTrue(Match.run(source, ".*this\sis\s.*comment"))
+            self.assertTrue(Match.run(source, r".*this\sis\s.*comment"))
             self.assertTrue(Match.run(source, "t.+a.+c.+"))
             self.assertFalse(Match.run(source, "MiSsInG"))
 
@@ -36,33 +36,29 @@ class TestFunctions(unittest.TestCase):
 
     def test_cidr_match_validation(self):
         """Check that invalid CIDR addresses are detected."""
-        hints = [
-            types.dynamic(types.STRING),
-            types.literal(types.STRING),
-            types.literal(types.STRING),
-            types.literal(types.STRING),
-        ]
         arguments = [
             Field("ip"),
             String("10.0.0.0/8"),
             String("b"),
             String("192.168.1.0/24"),
         ]
-        position, _, _ = CidrMatch.validate(arguments, hints)
-        self.assertEquals(position, 2)
+        info = [types.NodeInfo(arg, types.TypeHint.String) for arg in arguments]
+
+        position = CidrMatch.validate(info)
+        self.assertEqual(position, 2)
 
         # test that missing / causes failure
-        arguments[2].value = "55.55.55.0"
-        position, _, _ = CidrMatch.validate(arguments, hints)
-        self.assertEquals(position, 2)
+        info[2].node.value = "55.55.55.0"
+        position = CidrMatch.validate(info)
+        self.assertEqual(position, 2)
 
         # test for invalid ip
-        arguments[2].value = "55.55.256.0/24"
-        position, _, _ = CidrMatch.validate(arguments, hints)
-        self.assertEquals(position, 2)
+        info[2].node.value = "55.55.256.0/24"
+        position = CidrMatch.validate(info)
+        self.assertEqual(position, 2)
 
-        arguments[2].value = "55.55.55.0/24"
-        position, _, _ = CidrMatch.validate(arguments, hints)
+        info[2].node.value = "55.55.55.0/24"
+        position = CidrMatch.validate(info)
         self.assertIsNone(position)
 
     def test_cidr_match_rewrite(self):
@@ -73,33 +69,33 @@ class TestFunctions(unittest.TestCase):
             String("172.169.18.19/31"),
             String("192.168.1.25/24"),
         ]
-        hints = [
-            types.dynamic(types.STRING),
-            types.literal(types.STRING),
-            types.literal(types.STRING),
-            types.literal(types.STRING),
-        ]
+        info = [types.NodeInfo(arg, types.TypeHint.String) for arg in arguments]
 
-        position, new_arguments, type_hints = CidrMatch.validate(arguments, hints)
-        self.assertEquals(position, None)
+        position = CidrMatch.validate(info)
+        self.assertEqual(position, None)
 
-        # check that the original wasn't modified
+        new_arguments = [arg.node for arg in info]
+
+        # check that the original were only modified to round the values
+        self.assertIsNot(arguments[0], new_arguments[1])
+        self.assertIsNot(arguments[1], new_arguments[1])
         self.assertIsNot(arguments[2], new_arguments[2])
 
         # and that the values were set to the base of the subnet
-        self.assertEquals(new_arguments[2].value, "172.169.18.18/31")
-        self.assertEquals(new_arguments[3].value, "192.168.1.0/24")
+        self.assertEqual(new_arguments[2].value, "172.169.18.18/31")
+        self.assertEqual(new_arguments[3].value, "192.168.1.0/24")
 
         # test that /0 is working
-        arguments[2] = String("1.2.3.4/0")
-        position, new_arguments, type_hints = CidrMatch.validate(arguments, hints)
-
+        info[2].node = String("1.2.3.4/0")
+        position = CidrMatch.validate(info)
+        new_arguments = [arg.node for arg in info]
+        self.assertIsNone(position)
         self.assertIsNot(arguments[2], new_arguments[2])
 
         # and /32
-        self.assertEquals(new_arguments[2].value, "0.0.0.0/0")
-        arguments[2] = String("12.34.45.56/32")
-        position, new_arguments, type_hints = CidrMatch.validate(arguments, hints)
+        self.assertEqual(new_arguments[2].value, "0.0.0.0/0")
+        info[2].node = String("12.34.45.56/32")
+        position = CidrMatch.validate(info)
 
         self.assertIsNone(position)
 
@@ -135,11 +131,13 @@ class TestFunctions(unittest.TestCase):
             start, end = min(start, end), max(start, end)
 
             # now build the regex and check that each one matches
-            regex = re.compile("^(" + CidrMatch.make_octet_re(start, end) + ")$")
+            regex = re.compile("^(?:" + CidrMatch.make_octet_re(start, end) + ")$")
+            self.assertEqual(regex.groups, 0)
+
             for num in range(500):
                 should_match = start <= num <= end
                 did_match = regex.match(str(num)) is not None
-                self.assertEquals(should_match, did_match)
+                self.assertEqual(should_match, did_match)
 
     def test_cidr_regex(self):
         """Test that octet regex are correctly matching the range."""
@@ -160,7 +158,9 @@ class TestFunctions(unittest.TestCase):
 
             pattern = CidrMatch.make_cidr_regex(cidr_mask)
 
-            regex = re.compile("^({})$".format(pattern))
+            regex = re.compile("^(?:{})$".format(pattern))
+            self.assertEqual(regex.groups, 0)
+
             min_ip, max_ip = CidrMatch.to_range(cidr_mask)
 
             # randomly pick IPs that *are* in the range
@@ -177,4 +177,4 @@ class TestFunctions(unittest.TestCase):
                 rand_ip = "{:d}.{:d}.{:d}.{:d}".format(*rand_addr)
 
                 rv = regex.match(rand_ip) is not None
-                self.assertEquals(rv, in_subnet)
+                self.assertEqual(rv, in_subnet)

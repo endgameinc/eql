@@ -1,9 +1,13 @@
 """Test case."""
 import unittest
+import itertools
 
+from eql.ast import Field, Null, FunctionCall
 from eql.errors import EqlTypeMismatchError
-from eql.parser import parse_expression
-from eql.types import *  # noqa
+from eql.parser import parse_expression, implied_booleans
+from eql.types import TypeFoldCheck, TypeHint, NodeInfo
+
+from . import utils
 
 
 class TestTypeSystem(unittest.TestCase):
@@ -11,99 +15,109 @@ class TestTypeSystem(unittest.TestCase):
 
     def test_specifier_checks(self):
         """Test that specifiers are properly compared."""
-        expected = [
-            # Full truth table
-            (DYNAMIC_SPECIFIER, NO_SPECIFIER, False),
-            (DYNAMIC_SPECIFIER, LITERAL_SPECIFIER, False),
-            (DYNAMIC_SPECIFIER, DYNAMIC_SPECIFIER, True),
+        dynamic = TypeFoldCheck(TypeHint.Unknown, False)
+        literal = TypeFoldCheck(TypeHint.Unknown, True)
+        either = TypeHint.Unknown
 
-            (LITERAL_SPECIFIER, NO_SPECIFIER, False),
-            (LITERAL_SPECIFIER, LITERAL_SPECIFIER, True),
-            (LITERAL_SPECIFIER, DYNAMIC_SPECIFIER, False),
+        dynamic_node = NodeInfo(Field("a"), TypeHint.Numeric)
+        self.assertTrue(dynamic_node.validate_literal(dynamic))
+        self.assertFalse(dynamic_node.validate_literal(literal))
+        self.assertTrue(dynamic_node.validate_literal(either))
 
-            (NO_SPECIFIER, DYNAMIC_SPECIFIER, True),
-            (NO_SPECIFIER, LITERAL_SPECIFIER, True),
-        ]
+        literal_node = NodeInfo(Null(), TypeHint.Numeric)
+        self.assertFalse(literal_node.validate_literal(dynamic))
+        self.assertTrue(literal_node.validate_literal(literal))
+        self.assertTrue(literal_node.validate_literal(either))
 
-        for spec1, spec2, rv in expected:
-            self.assertEqual(check_specifiers(spec1, spec2), rv, "specifier {} x {} != {}".format(spec1, spec2, rv))
+        unfolded = NodeInfo(FunctionCall("length", [Null()]), TypeHint.Numeric)
+        self.assertFalse(unfolded.validate_literal(dynamic))
+        self.assertFalse(unfolded.validate_literal(literal))
+        self.assertTrue(unfolded.validate_literal(either))
 
     def test_type_checks(self):
         """Test that types are properly compared."""
         tests = [
-            (BASE_STRING, BASE_STRING, True),
-            (BASE_STRING, BASE_BOOLEAN, False),
-            (BASE_NUMBER, BASE_STRING, False),
+            (TypeHint.String, TypeHint.String, True),
+            (TypeHint.String, TypeHint.Boolean, False),
+            (TypeHint.Numeric, TypeHint.String, False),
 
             # anything could potentially be null
-            (BASE_NULL, BASE_NUMBER, False),
-            (BASE_STRING, BASE_NULL, False),
-            (BASE_NULL, BASE_NULL, True),
+            (TypeHint.Null, TypeHint.Numeric, True),
+            (TypeHint.String, TypeHint.Null, True),
+            (TypeHint.Null, TypeHint.Null, True),
 
             # test out unions
-            (BASE_STRING, (BASE_NUMBER, BASE_NULL), False),
-            ((BASE_STRING, (BASE_NUMBER, (BASE_STRING, BASE_BOOLEAN))), BASE_NULL, False),
-            ((BASE_STRING, (BASE_NUMBER, (BASE_STRING, BASE_BOOLEAN))), BASE_BOOLEAN, True),
-            (BASE_ALL, BASE_STRING, True),
-            (BASE_STRING, BASE_STRING, True),
-            (BASE_PRIMITIVES, BASE_STRING, True),
-            ((BASE_NUMBER, BASE_STRING), BASE_BOOLEAN, False),
-            ((BASE_NUMBER, (BASE_PRIMITIVES, ), BASE_BOOLEAN), BASE_BOOLEAN, True)
+            (TypeHint.String, (TypeHint.Numeric, TypeHint.Null), True),
+            (TypeHint.String, TypeHint.primitives(), True),
         ]
 
         for hint1, hint2, expected in tests:
-            output = check_types(hint1, hint2)
-            self.assertEqual(output, expected, "hint {} x {} != {}".format(hint1, hint2, expected))
+            output = NodeInfo(None, hint1).validate_type(hint2)
+            self.assertEqual(output, expected, "hint {}.validate({}) != {}".format(hint1, hint2, expected))
 
-    def test_parse_type_matches(self):
-        """Check that improperly compared types are raising errors."""
-        expected_type_match = [
-            '1 or 2',
-            'abc == null or def == null',
-            "false or 1",
-            "1 or 'abcdefg'",
-            "false or 'string-false'",
-            "port == 80 or command_line == 'defghi'",
-            "(port != null or command_line != null)",
-            "(process_path or process_name) == '*net.exe'",
-            "'hello' < 'hELLO'",
-            "1 < 2",
-            "(data and data.alert_details and data.alert_details.process_path) == 'net.exe'",
+    def test_type_match_comparisons(self):
+        """Test that all valid non-null type comparisons."""
+        comparables = [
+            [utils.random_bool],
+            [utils.random_int, utils.random_float],
+            [utils.random_string]
         ]
 
-        for expression in expected_type_match:
-            parse_expression(expression)
+        for row in comparables:
+            for left_getter, right_getter in itertools.product(row, repeat=2):
+                lv = left_getter()
+                rv = right_getter()
+                left = utils.unfold(lv)
+                right = utils.unfold(rv)
 
-    def test_parse_type_mismatches(self):
-        """Check that improperly compared types are raising errors."""
-        expected_type_mismatch = [
-            '1 == "*"',
-            'false = 1',
-            '100 = "a"',
-            '100 != "*abcdef*"',
-            '100 in ("string1", "string2")',
-            'true != 100',
-            '100 != "abc"',
-            '"some string" == null',
-            'true < false',
-            'true > "abc"',
-            'field < true',
-            'true <= 6',
-            "'hello' > 500",
-            # no longer invalid
-            # "concat(1, 2, null)",
+                def parse_op(op):
+                    parse_expression("{} {} {}".format(left, op, right))
 
-            # check for return types
-            'true == length(abc)',
-            '"true" == length(abc)',
+                parse_op("==")
+                parse_op("!=")
 
-            # check for mixed sets
-            "'rundll' in (1, 2, 3, abc.def[100], 'RUNDLL', false)",
-            "not 'rundll' in (1, 2, 3, '100', 'nothing', false)",
-        ]
+                for op in ("<", "<=", ">=", ">"):
+                    if isinstance(lv, bool):
+                        # booleans can't be compared with inequalities
+                        with self.assertRaises(EqlTypeMismatchError):
+                            parse_op(op)
+                    else:
+                        parse_op(op)
 
-        for expression in expected_type_mismatch:
-            self.assertRaises(EqlTypeMismatchError, parse_expression, expression)
+    def test_type_mismatch_comparisons(self):
+        """Check that improperly compared types raise mismatch errors."""
+        comparables = {
+            (float, int),
+            (int, float),
+            (bool, bool),
+            (str, str),
+        }
+
+        get_values = [utils.random_bool, utils.random_int, utils.random_float, utils.random_string]
+
+        for lhs_getter, rhs_getter in itertools.product(get_values, repeat=2):
+            lv = lhs_getter()
+            rv = rhs_getter()
+
+            # skip over types that we know will match
+            if type(lv) == type(rv) or (type(lv), type(rv)) in comparables:
+                continue
+
+            left = utils.unfold(lv)
+            right = utils.unfold(rv)
+
+            for comparison in ["==", "!=", "<", "<=", ">=", ">"]:
+                with self.assertRaises(EqlTypeMismatchError):
+                    parse_expression("{left} {comp} {right}".format(left=left, comp=comparison, right=right))
+
+    def test_parse_implied_booleans(self):
+        """Test that parsing with implicit boolean casting works as expected."""
+        with implied_booleans:
+            for num_bools in range(2, 10):
+                values = [utils.unfold(utils.random_value()) for _ in range(num_bools)]
+
+                parse_expression(" and ".join(values))
+                parse_expression(" or ".join(values))
 
     def test_invalid_function_signature(self):
         """Check that function signatures are correct."""

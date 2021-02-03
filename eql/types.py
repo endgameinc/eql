@@ -1,213 +1,133 @@
 """EQL type system."""
-
-BASE_STRING = "string"
-BASE_NUMBER = "number"
-BASE_BOOLEAN = "boolean"
-BASE_NULL = "null"
-BASE_STRICT_PRIMITIVES = BASE_STRING, BASE_NUMBER, BASE_BOOLEAN
-BASE_PRIMITIVES = BASE_STRING, BASE_NUMBER, BASE_BOOLEAN, BASE_NULL
-
-VARIABLE = "variable"
-
-LITERAL_SPECIFIER = "literal"
-DYNAMIC_SPECIFIER = "dynamic"
-NO_SPECIFIER = "none"
-SPECIFIERS = (LITERAL_SPECIFIER, DYNAMIC_SPECIFIER, NO_SPECIFIER)
-
-STRING = NO_SPECIFIER, BASE_STRING
-NUMBER = NO_SPECIFIER, BASE_NUMBER
-BOOLEAN = NO_SPECIFIER, BASE_BOOLEAN
-NULL = NO_SPECIFIER, BASE_NULL
-PRIMITIVES = NO_SPECIFIER, BASE_PRIMITIVES
+from enum import Enum
 
 
-class Array(tuple):
-    """Array of nested types."""
+class TypeHint(Enum):
+    """Enum of all primitive types supported by EQL."""
 
-    def __repr__(self):
-        """Representation string of the object."""
-        return type(self).__name__ + tuple.__repr__(self)
+    Array = "array"
+    Boolean = "boolean"
+    Numeric = "number"
+    Null = "null"
+    Object = "object"
+    String = "string"
+    Unknown = "mixed"
+    Variable = "variable"
 
+    @classmethod
+    def primitives(cls):
+        """Get all primitive types."""
+        return TypeHint.Boolean, TypeHint.Numeric, TypeHint.Null, TypeHint.String
 
-class Nested(tuple):
-    """Schema of nested types."""
+    def is_primitive(self):
+        """Check if a type is a primitive."""
+        return self in self.primitives()
 
-    def subschema(self, name):
-        """Get the subschema, given a subfield."""
-        for (key, value) in self:
-            if name == key:
-                return value
+    def require_literal(self):
+        """Match the type hint, but additionally require an unfolded literal."""
+        return TypeFoldCheck(self, True)
 
-        if not self:
-            return BASE_ALL
-
-    def __repr__(self):
-        """Representation string of the object."""
-        return type(self).__name__ + tuple.__repr__(self)
-
-
-def split(type_hint):
-    """Split the specifier from the type hint."""
-    if isinstance(type_hint, tuple) and len(type_hint) == 2:
-        if type_hint[0] in SPECIFIERS:
-            return type_hint
-
-    # Create one if it's not present
-    return NO_SPECIFIER, type_hint
+    def require_dynamic(self):
+        """Match the type hint, and require that it doesn't fold to a literal."""
+        return TypeFoldCheck(self, False)
 
 
-def get_specifier(type_hint):
-    """Get only the specifier from a type hint."""
-    spec, _ = split(type_hint)
-    return spec
+class TypeFoldCheck(object):
+    """Type check with additional folding constraints."""
+
+    def __init__(self, type_info, require_literal):
+        """Capture node information for an AST.
+
+        :param TypeHint type_info: The type information.
+        :param bool require_literal: True if the expected value must be literal
+        """
+        self.type_info = type_info
+        self.require_literal = require_literal
+
+    def __eq__(self, other):
+        """Compare two TypeFoldCheck."""
+        return type(self) == type(other) and vars(self) == vars(other)
+
+    def __ne__(self, other):
+        """Compare two TypeFoldCheck."""
+        return not (self == other)
 
 
-def get_type(type_hint):
-    """Get only the type portion of the type hint."""
-    _, hint = split(type_hint)
-    return hint
+class NodeInfo(object):
+    """Class for holding full type and schema information for an expression."""
 
+    def __init__(self, node, type_info=None, nullable=True, schema=None, source=None):
+        """Capture node information for an AST.
 
-def dynamic(type_hint=None):
-    """Make a type hint dynamic."""
-    if type_hint is None:
-        return DYNAMIC_SPECIFIER, BASE_ALL
-    return DYNAMIC_SPECIFIER, get_type(type_hint)
+        :param ast.EqlNode node: The EQL node in the tree.
+        :param TypeHint type_info: The type information.
+        :param bool nullable: Whether the current type can be compared to null
+        :param object schema: Schema information for composite values.
+        :param object source: Parse tree information for node.
+        """
+        self.node = node
+        self.type_info = type_info or TypeHint.Unknown
+        self.nullable = nullable or type_info in (TypeHint.Null, TypeHint.Unknown)
+        self.schema = schema
+        self.source = source
 
+    def validate(self, expected):
+        """Validate the type and the literal/dynamic requirements."""
+        if expected is None:
+            return False
 
-def literal(type_hint=None):
-    """Make a type hint literal."""
-    if type_hint is None:
-        return LITERAL_SPECIFIER, BASE_ALL
-    return LITERAL_SPECIFIER, get_type(type_hint)
+        if isinstance(expected, tuple):
+            return any(self.validate(o) for o in expected)
 
+        return self.validate_type(expected) and self.validate_literal(expected)
 
-def clear(type_hint=None):
-    """Make a type hint literal."""
-    if type_hint is None:
-        return NO_SPECIFIER, BASE_ALL
-    return NO_SPECIFIER, get_type(type_hint)
+    def validate_type(self, expected):
+        """Validate that a type hint matches its requirement.
 
+        :param TypeFoldCheck|TypeHint|NodeInfo expected:
+        """
+        if expected is None:
+            return False
+        elif isinstance(expected, tuple):
+            return any(self.validate_type(o) for o in expected)
+        elif isinstance(expected, NodeInfo):
+            other_type = expected.type_info
+            other_nullable = expected.nullable
+        elif isinstance(expected, TypeHint):
+            other_type = expected
+            other_nullable = True
+        elif isinstance(expected, TypeFoldCheck):
+            other_type = expected.type_info
+            other_nullable = True
+        else:
+            raise TypeError("Expected one of {}, got {}", (NodeInfo, TypeHint, TypeFoldCheck), expected)
 
-# Create a union of all of the full types
-ARRAY = NO_SPECIFIER, Array()
-PRIMITIVE_ARRAY = NO_SPECIFIER, Array(BASE_PRIMITIVES)
-BASE_ALL = (BASE_STRING, BASE_NUMBER, BASE_BOOLEAN, BASE_NULL, Array(), Nested())
-EXPRESSION = NO_SPECIFIER, BASE_ALL
+        if self.type_info == TypeHint.Null:
+            return other_nullable
 
+        if other_type == TypeHint.Null:
+            return self.nullable
 
-def union_specifiers(*specifiers):
-    """Union multiple hints together."""
-    if DYNAMIC_SPECIFIER in specifiers:
-        return DYNAMIC_SPECIFIER
+        return self.type_info == other_type or TypeHint.Unknown in (self.type_info, other_type)
 
-    # literals can't be unioned with other literals
-    return NO_SPECIFIER
+    def validate_literal(self, expected):
+        """Check if a node matches the literal/dynamic requirements."""
+        from .ast import Literal
 
+        if expected is None:
+            return True
+        elif isinstance(expected, TypeFoldCheck):
+            if expected.require_literal:
+                return isinstance(self.node, Literal)
+            else:
+                return not isinstance(self.node.optimize(recursive=True), Literal)
 
-def _flatten(v):
-    if is_union(v):
-        for v1 in v:
-            for v2 in _flatten(v1):
-                yield v2
-    else:
-        yield v
-
-
-def union_types(*base_hints):
-    """Union multiple type hints together."""
-    base_hints = tuple(set(v for v in _flatten(base_hints)))
-
-    if len(base_hints) == 1:
-        return base_hints[0]
-    return base_hints
-
-
-def intersect_types(*base_hints):
-    """Intersect multiple type hints together."""
-    base_hints = tuple(set(v for v in _flatten(base_hints)))
-
-    if len(base_hints) == 1:
-        return base_hints[0]
-    return base_hints
-
-
-def union(*type_hints):
-    """Union multiple hints together."""
-    specifiers, base_hints = zip(*map(split, type_hints))
-    return union_specifiers(*specifiers), union_types(*base_hints)
-
-
-def is_union(type_hint):
-    """Determine if a type hint is a union of multiple types."""
-    return isinstance(type_hint, tuple) and not isinstance(type_hint, (Array, Nested))
-
-
-def is_dynamic(type_hint):
-    """Check if a type hint is dynamic."""
-    return get_specifier(type_hint) == DYNAMIC_SPECIFIER
-
-
-def is_literal(type_hint):
-    """Check if a type hint is dynamic."""
-    return get_specifier(type_hint) == LITERAL_SPECIFIER
-
-
-def check_specifiers(expected_specifier, actual_specifier):
-    """Check that specifiers are satisfied."""
-    if expected_specifier == NO_SPECIFIER:
-        return True
-    return expected_specifier == actual_specifier
-
-
-def check_full_hint(expected_hint, actual_hint):
-    """Check that specifiers and types match."""
-    expected_spec, expected_type = split(expected_hint)
-    actual_spec, actual_type = split(actual_hint)
-    return check_specifiers(expected_spec, actual_spec) and check_types(expected_type, actual_type)
-
-
-def check_types(expected_type, actual_type):
-    """Asymmetric check if a type can be matched against another."""
-    expected_type = get_type(expected_type)
-    actual_type = get_type(actual_type)
-    status = _check_types(expected_type, actual_type)
-
-    return status
-
-
-def _check_types(expected_type, actual_type):
-    if expected_type is BASE_ALL or actual_type is BASE_ALL:
         return True
 
-    if is_union(expected_type):
-        return any(_check_types(exp, actual_type) for exp in expected_type)
+    def __eq__(self, other):
+        """Compare two NodeInfo."""
+        return type(self) == type(other) and vars(self) == vars(other)
 
-    if is_union(actual_type):
-        return any(_check_types(expected_type, act) for act in actual_type)
-
-    # For two arrays, check that there is an intersection between the two
-    if isinstance(expected_type, Array):
-        if not isinstance(actual_type, Array):
-            return False
-        elif len(expected_type) == 0 or len(actual_type) == 0:
-            return True
-        return _check_types(union_types(*expected_type), union_types(*actual_type))
-
-    if isinstance(expected_type, Nested):
-        if not isinstance(actual_type, Nested):
-            return False
-        elif len(expected_type) == 0 or len(actual_type) == 0:
-            return True
-
-        keys1, _ = zip(*expected_type)
-        keys2, _ = zip(*actual_type)
-        matching_keys = set(keys1) ^ set(keys2)
-
-        # If any of the schemas intersect, then they can be compared
-        for key in matching_keys:
-            if _check_types(expected_type.subschema(key), actual_type.subschema(key)):
-                return True
-        return False
-
-    return expected_type == actual_type
+    def __ne__(self, other):
+        """Compare two NodeInfo."""
+        return not (self == other)

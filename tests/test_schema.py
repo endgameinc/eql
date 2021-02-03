@@ -3,9 +3,15 @@ import unittest
 
 from eql.events import Event
 from eql.errors import EqlSchemaError, EqlTypeMismatchError
-from eql.parser import parse_query, strict_field_schema, allow_enum_fields
-from eql.schema import Schema, MIXED_TYPES as MIXED
-from eql.types import BASE_STRING as STR, BASE_NUMBER as NUM, BASE_BOOLEAN as BOOL
+from eql.parser import parse_query, strict_booleans, non_nullable_fields, allow_enum_fields
+from eql.schema import Schema
+from eql.types import TypeHint
+
+
+STR = TypeHint.String.value
+NUM = TypeHint.Numeric.value
+BOOL = TypeHint.Boolean.value
+MIXED = TypeHint.Unknown.value
 
 
 class TestSchemaValidation(unittest.TestCase):
@@ -69,28 +75,29 @@ class TestSchemaValidation(unittest.TestCase):
                 self.assertRaises(EqlSchemaError, parse_query, query)
 
     def test_valid_schema_fields(self):
-        """Test that schema errors are being raised separately."""
+        """Test that schema errors are never raised for valid schema usage."""
         valid = [
-            'process where process_name == "test" and command_line == "test" and not pid',
+            'process where process_name == "test" and command_line == "test" and pid > 0',
             'file where file_path == "abc" and data == 1',
             'file where file_path == "abc" and data == "fdata.exe"',
-            'file where file_path == "abc" and not data',
-            'file where file_path == "abc" and length(data) | filter file_path == "abc"',
+            'file where file_path == "abc" and data != null',
+            'file where file_path == "abc" and length(data) > 0 | filter file_path == "abc"',
             'sequence [file where pid=1] [process where pid=2] | filter events[0].file_name = events[1].process_name',
-            'sequence by pid [file where 1] [process where 1] | filter events[0].file_name = events[1].process_name',
-            'join by pid [file where 1] [process where 1] | filter events[0].file_name = events[1].process_name',
+            'sequence by pid [file where true] [process where true] ' +
+            '| filter events[0].file_name = events[1].process_name',
+            'join by pid [file where true] [process where true] | filter events[0].file_name = events[1].process_name',
 
-            'join [file where 1] by pid [process where 1] by pid until [complex where 0] by nested.num'
+            'join [file where true] by pid [process where true] by pid until [complex where false] by nested.num'
             '| filter events[0].file_name = events[1].process_name',
 
-            'complex where string_arr[3]',
+            'complex where string_arr[3] != null',
             'complex where wideopen.a.b[0].def == 1',
-            'complex where nested.arr',
+            'complex where length(nested.arr) > 0',
             'complex where nested.arr[0] == 1',
             'complex where nested.double_nested.nn == 5',
-            'complex where nested.double_nested.triplenest',
+            'complex where nested.double_nested.triplenest != null',
             'complex where nested.double_nested.triplenest.m == 5',
-            'complex where nested.  double_nested.triplenest.b',
+            'complex where nested.  double_nested.triplenest.b != null',
         ]
 
         with Schema(self.schema):
@@ -102,7 +109,7 @@ class TestSchemaValidation(unittest.TestCase):
         with Schema(self.schema), allow_enum_fields:
             actual = parse_query("process where process_name.bash")
             expected = parse_query("process where process_name == 'bash'")
-            self.assertEquals(actual, expected)
+            self.assertEqual(actual, expected)
 
     def test_schema_enum_disabled(self):
         """Test that enum errors are raised when not explicitly enabled."""
@@ -118,10 +125,10 @@ class TestSchemaValidation(unittest.TestCase):
             'process where wideopen.a.b.c',
             'any where invalid_field',
             'complex where nested.  double_nested.b',
-            'file where file_path == "abc" and length(data) | unique missing_field == "abc"',
+            'file where file_path == "abc" and data != null | unique missing_field == "abc"',
             'sequence [file where pid=1] [process where pid=2] | filter events[0].file_name = events[1].bad',
 
-            'sequence [file where 1] by pid [process where 1] by pid until [complex where 0] by pid'
+            'sequence [file where 1=1] by pid [process where 1=1] by pid until [complex where false] by pid'
             '| unique events[0].file_name = events[1].process_name',
         ]
         with Schema(self.schema):
@@ -164,13 +171,24 @@ class TestSchemaValidation(unittest.TestCase):
         queries = [
             "process where command_line != null",
             "process where elevated != null",
-            # explicit boolean checking
-            "process where process_name and command_line",
-            "process where 1 and 2",
-            "process where command_line",
+            "process where pid != null",
+            "process where pid > null",
+
+            # constants also aren't comparable to null
+            "process where 5 > null",
+            "process where 5 != null",
+
+            "process where (pid == 0 or process_name == 'foo') == null",
+
+            "process where indexOf(null, null)",
+
+            "process where (process_name in ('net.exe')) != null",
+            "process where (pid > 0) != null",
+            "process where (pid > 0) != null",
+            "process where substring(process_name, 1) == null",
         ]
 
-        with strict_field_schema, Schema(self.schema):
+        with strict_booleans, non_nullable_fields, Schema(self.schema):
             for query in queries:
                 self.assertRaises(EqlTypeMismatchError, parse_query, query)
 
@@ -180,9 +198,15 @@ class TestSchemaValidation(unittest.TestCase):
             "process where command_line != 'abc.exe'",
             "process where elevated != true",
             "process where not elevated",
+
+            # functions that may return null, even with non-null inputs can be compared
+            "process where indexOf(process_name, 'foo') != null",
+
+            # since indexOf can be passed into other functions, any can be null
+            "process where substring(process_name, indexOf(process_name, 'foo')) == null",
         ]
 
-        with strict_field_schema, Schema(self.schema):
+        with strict_booleans, non_nullable_fields, Schema(self.schema):
             for query in queries:
                 parse_query(query)
 
@@ -191,7 +215,7 @@ class TestSchemaValidation(unittest.TestCase):
         queries = [
             "process where true | count | filter key == 'total' and percent < 0.5 and count > 0",
             "process where true | unique_count process_name | filter count > 5 and process_name == '*.exe'",
-            "sequence[file where 1][process where 1] | unique_count events[0].process_name" +
+            "sequence[file where true][process where true] | unique_count events[0].process_name" +
             " | filter count > 5 and events[1].elevated",
         ]
 
@@ -205,13 +229,13 @@ class TestSchemaValidation(unittest.TestCase):
             "process where true | count | filter key == 'total' and percent < 0.5 and count > 0 and elevated",
             "process where true | unique_count process_name | filter key == '*.abc'" +
             " and count > 5 and process_name == '*.exe'",
-            "sequence[file where 1][process where 1] | unique_count events[0].process_name" +
+            "sequence[file where true][process where true] " +
+            " | unique_count events[0].process_name" +
             " | filter count > 5 and events[0].elevated",
         ]
 
         with Schema(self.schema):
             for query in queries:
-                print(query)
                 self.assertRaises(EqlSchemaError, parse_query, query)
 
     def test_merge_schema(self):

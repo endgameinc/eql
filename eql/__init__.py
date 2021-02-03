@@ -29,6 +29,7 @@ from .loader import (
     save_analytic,
     save_analytics,
 )
+from .optimizer import Optimizer
 from .parser import (
     allow_enum_fields,
     get_preprocessor,
@@ -41,7 +42,6 @@ from .parser import (
     parse_field,
     parse_literal,
     parse_query,
-    strict_field_schema,
     extract_query_terms,
 )
 from .schema import Schema
@@ -66,7 +66,7 @@ from .walkers import (
     Walker,
 )
 
-__version__ = '0.8.0'
+__version__ = '0.9.8'
 __all__ = (
     "__version__",
     "AnalyticOutput",
@@ -83,6 +83,7 @@ __all__ = (
     "EqlTypeMismatchError",
     "Event",
     "NodeMethods",
+    "Optimizer",
     "ParserConfig",
     "PythonEngine",
     "RecursiveWalker",
@@ -121,5 +122,4 @@ __all__ = (
     "save_analytic",
     "save_analytics",
     "save_dump",
-    "strict_field_schema",
 )

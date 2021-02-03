@@ -1,0 +1,109 @@
+[or]
+description = "Test that `or false` and `or true` are optimized correctly"
+
+    [[or.optimizer.tests]]
+    expression = "a == 1 or true"
+    optimized = "true"
+
+    [[or.optimizer.tests]]
+    expression = "true or a == 1"
+    optimized = "true"
+
+    [[or.optimizer.tests]]
+    expression = "false or a == 1"
+    optimized = "a == 1"
+
+    [[or.optimizer.tests]]
+    expression = "a == 1 or false"
+    optimized = "a == 1"
+
+    [[or.optimizer.tests]]
+    expression = "a or b or true or c"
+    optimized = "true"
+
+    [[or.optimizer.tests]]
+    expression = "a or b or false or c"
+    optimized = "a or b or c"
+
+[and]
+description = "Test that `and false` and `and true` are optimized correctly"
+
+    [[and.optimizer.tests]]
+    expression = "a == 1 and true"
+    optimized = "a == 1"
+
+    [[and.optimizer.tests]]
+    expression = "true and a == 1"
+    optimized = "a == 1"
+
+    [[and.optimizer.tests]]
+    expression = "false and a == 1"
+    optimized = "false"
+
+    [[and.optimizer.tests]]
+    expression = "a == 1 and false"
+    optimized = "false"
+
+    [[or.optimizer.tests]]
+    expression = "a and b and false and c"
+    optimized = "false"
+
+    [[or.optimizer.tests]]
+    expression = "a and b and true and c"
+    optimized = "a and b and c"
+
+#[equals_boolean]
+#description = "Test that comparison to booleans are optimized away"
+#
+#    [[equals_boolean.optimizer.tests]]
+#    expression = "(a == 1) == true"
+#    optimized = "a == 1"
+#
+#    [[equals_boolean.optimizer.tests]]
+#    expression = "(a == 1) != true"
+#    optimized = "not (a == 1)"
+#
+#    [[equals_boolean.optimizer.tests]]
+#    expression = "(a == 1) == false"
+#    optimized = "not (a == 1)"
+#
+#    [[equals_boolean.optimizer.tests]]
+#    expression = "(a == 1) != false"
+#    optimized = "(a == 1)"
+
+
+[wildcard_syntax]
+description = 'Test that `x == "*"` converts to a wildcard function.'
+
+
+    [[wildcard_syntax.equivalent.tests]]
+    expression = 'field == "a*b*c"'
+    alternate = 'wildcard(field, "a*b*c")'
+
+    [[wildcard_syntax.equivalent.tests]]
+    expression = 'field != "a*b*c"'
+    alternate = 'not wildcard(field, "a*b*c")'
+
+    [[wildcard_syntax.equivalent.tests]]
+    expression = '"a*b" == field'
+    alternate = 'wildcard(field, "a*b")'
+
+    [[wildcard_syntax.equivalent.tests]]
+    expression = '"a*b" != field'
+    alternate = 'not wildcard(field, "a*b")'
+
+    [[wildcard_syntax.equivalent.tests]]
+    expression = '"a*b" == concat(field, "foo")'
+    alternate = 'wildcard(concat(field, "foo"), "a*b")'
+
+    [[wildcard_syntax.equivalent.tests]]
+    expression = '"a*b" != concat(field, "foo")'
+    alternate = 'not wildcard(concat(field, "foo"), "a*b")'
+
+    [[wildcard_syntax.equivalent.tests]]
+    expression = 'concat(field, "hello", "world") == "foo*bar"'
+    alternate = 'wildcard(concat(field, "hello", "world"), "foo*bar")'
+
+    [[wildcard_syntax.equivalent.tests]]
+    expression = 'concat(field, "hello", "world") != "foo*bar"'
+    alternate = 'not wildcard(concat(field, "hello", "world"), "foo*bar")'

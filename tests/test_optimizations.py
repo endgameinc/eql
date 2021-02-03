@@ -2,7 +2,7 @@
 import unittest
 
 from eql.ast import *  # noqa: F403
-from eql.parser import parse_expression
+from eql.parser import parse_expression, skip_optimizations
 
 
 class TestParseOptimizations(unittest.TestCase):
@@ -101,12 +101,31 @@ class TestParseOptimizations(unittest.TestCase):
 
         comp_and_set = parse_expression('name == "b" and name in ("a", "b")')
         optimized = parse_expression('name == "b"')
-        self.assertEqual(comp_and_set, optimized, "Failed to AND a comparisong with a matching set")
+        self.assertEqual(comp_and_set, optimized, "Failed to AND a comparison with a matching set")
 
         # test that values can be subtracted individually from sets
         set_and_not = parse_expression('name in ("a", "b", "c") and name != "c"')
         optimized = parse_expression('name in ("a", "b")')
         self.assertEqual(set_and_not, optimized, "Failed to subtract specific value from set")
+
+    def test_wildcard_or(self):
+        """Test that wildcard calls over the same field are combined when adjacent."""
+        wildcard_or = parse_expression('name == "foo*" or name == "*bar"')
+        optimized = parse_expression('wildcard(name, "foo*", "*bar")')
+        self.assertEqual(wildcard_or, optimized, "Failed to combine OR with matching adjacent wildcard() calls")
+
+        wildcard_or = parse_expression('match(name, "fo[o]") or match(name, "ba[r]?")')
+        optimized = parse_expression('match(name, "fo[o]", "ba[r]?")')
+        self.assertEqual(wildcard_or, optimized, "Failed to combine OR with matching adjacent match() calls")
+
+        # this isn't necessary as a test, but is worth keeping so the behavior is well defined
+        wildcard_or = parse_expression('name == "foo*" or other_field == "bar" or name == "*baz"')
+        optimized = parse_expression('wildcard(name, "foo*") or other_field == "bar" or wildcard(name, "*baz")')
+        self.assertEqual(wildcard_or, optimized, "Combined nonadjacent matching adjacent wildcard() calls")
+
+        wildcard_or = parse_expression('name == "foo*" or title == "*bar"')
+        optimized = parse_expression('wildcard(name, "foo*") or wildcard(title, "*bar")')
+        self.assertEqual(wildcard_or, optimized, "Shouldn't have combined wildcards of different fields")
 
     def test_static_value_optimizations(self):
         """Test parser optimizations for comparing static values."""
@@ -152,6 +171,7 @@ class TestParseOptimizations(unittest.TestCase):
             '1 +- length(a) == 1 - length(a)',
             '100:concat():length() == 3',
             '995 == (100 * 10):subtract("hello":length())',
+            'cidrMatch("192.168.13.5", "192.168.0.0/16")',
         ]
 
         expected_false = [
@@ -163,6 +183,7 @@ class TestParseOptimizations(unittest.TestCase):
             '"ABC*DEF" == " ABC    DEF    "',
             '"abc" > "def"',
             '"abc" != "abc"',
+            'cidrMatch("1.2.3.4", "192.168.0.0/16")',
             # check that these aren't left to right
             '1 * 2 + 3 * 4 + 10 / 2 == 15',
         ]
@@ -176,3 +197,9 @@ class TestParseOptimizations(unittest.TestCase):
             ast = parse_expression(expression)
             self.assertIsInstance(ast, Boolean, 'Failed to optimize {}'.format(expression))
             self.assertFalse(ast.value, 'Parser did not evaluate {} as false'.format(expression))
+
+    def test_unoptimized(self):
+        """Test that optimization can be turned off."""
+        with skip_optimizations:
+            self.assertEqual(parse_expression("1 + 2"), MathOperation(Number(1), "+", Number(2)))
+            self.assertEqual(parse_expression("1 + 2"), MathOperation(Number(1), "+", Number(2)))

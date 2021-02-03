@@ -1,15 +1,17 @@
 """Test case."""
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
 import datetime
 import sys
 import traceback
 import unittest
-from collections import OrderedDict  # noqa: F403
 
+from eql import Schema
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
-    extract_query_terms
+    extract_query_terms, keywords, elasticsearch_syntax
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -42,11 +44,18 @@ class TestParser(unittest.TestCase):
             'abc and def',
             '(1==abc) and def',
             '1 * 2 + 3 * 4 + 10 / 2',
-            'abc == (1 and 2)',
-            'abc == (def and 2)',
+
+            # opt-in with eql.parser.implied_booleans
+            # 'abc == (1 and 2)',
+            # 'abc == (def and 2)',
+
             'abc == (def and def)',
             'abc == (def and ghi)',
             '"\\b\\t\\r\\n\\f\\\\\\"\\\'"',
+            '1 - -2',
+            '1 + -2',
+            '1 * (-2)',
+            '3 * -length(file_path)',
         ]
 
         for query in valid:
@@ -54,10 +63,10 @@ class TestParser(unittest.TestCase):
 
     def test_parse_field(self):
         """Test that fields are parsed correctly."""
-        self.assertEquals(parse_field("process_name  "), Field("process_name"))
-        self.assertEquals(parse_field("TRUE  "), Field("TRUE"))
-        self.assertEquals(parse_field("  data[0]"), Field("data", [0]))
-        self.assertEquals(parse_field("data[0].nested.name"), Field("data", [0, "nested", "name"]))
+        self.assertEqual(parse_field("process_name  "), Field("process_name"))
+        self.assertEqual(parse_field("TRUE  "), Field("TRUE"))
+        self.assertEqual(parse_field("  data[0]"), Field("data", [0]))
+        self.assertEqual(parse_field("data[0].nested.name"), Field("data", [0, "nested", "name"]))
 
         self.assertRaises(EqlParseError, parse_field, "  ")
         self.assertRaises(EqlParseError, parse_field, "100.5")
@@ -67,12 +76,12 @@ class TestParser(unittest.TestCase):
 
     def test_parse_literal(self):
         """Test that fields are parsed correctly."""
-        self.assertEquals(parse_literal("true"), Boolean(True))
-        self.assertEquals(parse_literal("null"), Null())
-        self.assertEquals(parse_literal("  100.5  "), Number(100.5))
-        self.assertEquals(parse_literal("true"), Boolean(True))
-        self.assertEquals(parse_literal("'C:\\\\windows\\\\system32\\\\cmd.exe'"),
-                          String("C:\\windows\\system32\\cmd.exe"))
+        self.assertEqual(parse_literal("true"), Boolean(True))
+        self.assertEqual(parse_literal("null"), Null())
+        self.assertEqual(parse_literal("  100.5  "), Number(100.5))
+        self.assertEqual(parse_literal("true"), Boolean(True))
+        self.assertEqual(parse_literal("'C:\\\\windows\\\\system32\\\\cmd.exe'"),
+                         String("C:\\windows\\system32\\cmd.exe"))
 
         self.assertRaises(EqlParseError, parse_field, "and")
         self.assertRaises(EqlParseError, parse_literal, "process_name")
@@ -160,10 +169,13 @@ class TestParser(unittest.TestCase):
             'image_load where not x > y',
             'process where _leadingUnderscore == 100',
             'network where 1 * 2 + 3 * 4 + 10 / 2 == 2 + 12 + 5',
-            'file where 1 - -2',
-            'file where 1 + (-2)',
-            'file where 1 * (-2)',
-            'file where 3 * -length(file_path)',
+
+            # now requires eql.parser.implied_booleans
+            # 'file where (1 - -2)',
+            # 'file where 1 + (-2)',
+            # 'file where 1 * (-2)',
+            # 'file where 3 * -length(file_path)',
+
             'network where a * b + c * d + e / f == g + h + i',
             'network where a * (b + c * d) + e / f == g + h + i',
             'process where pid == 4 or pid == 5 or pid == 6 or pid == 7 or pid == 8',
@@ -177,14 +189,10 @@ class TestParser(unittest.TestCase):
             'join [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
             'sequence [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
             'sequence by pid [process where process_name == "*"] [file where file_path == "*"]',
-            'sequence by pid with maxspan=200 [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2s [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2sec [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2seconds [process where process_name == "*" ] [file where file_path == "*"]',
-            'sequence with maxspan=2.5m [process where x == x] by pid [file where file_path == "*"] by ppid',
-            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
-            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
-            'sequence by pid with maxspan=1.0075d [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=200ms [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=1s [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2h [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=3d [process where process_name == "*"] [file where file_path == "*"]',
             'dns where pid == 100 | head 100 | tail 50 | unique pid',
             'network where pid == 100 | unique command_line | count',
             'security where user_domain == "endgame" | count user_name a b | tail 5',
@@ -213,15 +221,12 @@ class TestParser(unittest.TestCase):
             # multiple by values
             'sequence by field1  [file where true] by f1 [process where true] by f1',
             'sequence by a,b,c,d [file where true] by f1,f2 [process where true] by f1,f2',
-            'sequence [file where 1] by f1,f2 [process where 1] by f1,f2 until [process where 1] by f1,f2',
-            'sequence by f [file where true] by a,b [process where true] by c,d until [process where 1] by e,f',
+            'sequence [file where 1=1] by f1,f2 [process where 1=1] by f1,f2 until [process where 1=1] by f1,f2',
+            'sequence by f [file where true] by a,b [process where true] by c,d until [process where 1=1] by e,f',
             # sequence with named params
             'sequence by unique_pid [process where true] [file where true] fork',
             'sequence by unique_pid [process where true] [file where true] fork=true',
-            'sequence by unique_pid [process where true] [file where true] fork=1',
             'sequence by unique_pid [process where true] [file where true] fork=false',
-            'sequence by unique_pid [process where true] [file where true] fork=0 [network where true]',
-            'sequence by unique_pid [process where true] [file where true] fork=0',
         ]
 
         datetime.datetime.now()
@@ -247,7 +252,7 @@ class TestParser(unittest.TestCase):
 
             except (EqlSyntaxError, EqlSemanticError):
                 ex_type, ex, tb = sys.exc_info()
-                traceback.print_exc(ex)
+                traceback.print_exc()
                 traceback.print_tb(tb)
                 self.fail("Unable to parse query #{}: {}".format(i, text))
 
@@ -297,9 +302,55 @@ class TestParser(unittest.TestCase):
             'sequence [process where 1] [network where 1] fork fork',
             'process where descendant of [file where true] bad=param',
             '| filter true'
+
+            # forks updated to stictly take true/false (true if not defined)
+            'sequence by unique_pid [process where true] [file where true] fork=1',
+            'sequence by unique_pid [process where true] [file where true] fork=0 [network where true]',
+            'sequence by unique_pid [process where true] [file where true] fork=0',
+
+            # time units made stricter, and floating points removed
+            'sequence by pid with maxspan=2sec [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=200 [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2seconds [process where process_name == "*" ] [file where file_path == "*"]',
+            'sequence with maxspan=2.5m [process where x == x] by pid [file where file_path == "*"] by ppid',
+            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
+            'sequence by pid with maxspan=1.0075d [process where process_name == "*"] [file where file_path == "*"]',
         ]
         for query in invalid:
             self.assertRaises(EqlParseError, parse_query, query)
+
+    def test_backtick_fields(self):
+        """Test that backticks are accepted with fields."""
+        def parse_to(text, path):
+            node = parse_expression(text)
+            self.assertIsInstance(node, Field)
+            self.assertEqual(node.full_path, path)
+
+            # now render back as text and parse again
+            node2 = parse_expression(node.render())
+            self.assertEqual(node2, node)
+
+        parse_to("`foo-bar-baz`", ["foo-bar-baz"])
+        parse_to("`foo bar baz`", ["foo bar baz"])
+        parse_to("`foo.bar.baz`", ["foo.bar.baz"])
+        parse_to("`foo`.`bar-baz`", ["foo", "bar-baz"])
+        parse_to("`foo.bar-baz`", ["foo.bar-baz"])
+        parse_to("`💩`", ["💩"])
+
+        parse_to("`foo`[0]", ["foo", 0])
+        parse_to("`foo`[0].`bar`", ["foo", 0, "bar"])
+
+        # keywords
+        for keyword in keywords:
+            parse_to("`{keyword}`".format(keyword=keyword), [keyword])
+            parse_to("prefix.`{keyword}`".format(keyword=keyword), ["prefix", keyword])
+            parse_to("`{keyword}`[0].suffix".format(keyword=keyword), [keyword, 0, "suffix"])
+
+    def test_backtick_split_lines(self):
+        """Confirm that backticks can't be split across lines."""
+        with self.assertRaises(EqlSyntaxError):
+            parse_expression("`abc \n def`")
 
     def test_query_events(self):
         """Test that event queries work with events[n].* syntax in pipes."""
@@ -356,6 +407,26 @@ class TestParser(unittest.TestCase):
         macro = parse_definitions("macro test() pid = 4 and ppid = 0")
         self.assertEqual(commented, macro)
 
+    def test_float_time_unit(self):
+        """Test that error messages are raised and formatted when time units are missing."""
+        def error(query, message):
+            with self.assertRaises(EqlSemanticError) as exc:
+                parse_query(query)
+
+            self.assertEqual(exc.exception.error_msg, message)
+
+        error("sequence with maxspan=0.150s [foo where true] [bar where true]",
+              "Only integer values allowed for maxspan. Did you mean 150ms?")
+
+        error("sequence with maxspan=1.6h [foo where true] [bar where true]",
+              "Only integer values allowed for maxspan.\nTry a more precise time unit: ms, s, m.")
+
+        error("sequence with maxspan=0.5ms [foo where true] [bar where true]",
+              "Only integer values allowed for maxspan.")
+
+        error("sequence with maxspan=0.5zz [foo where true] [bar where true]",
+              "Only integer values allowed for maxspan.")
+
     def test_invalid_comments(self):
         """Test that invalid/overlapping comments fail."""
         query_text = "process where /* something */ else */ true"
@@ -368,11 +439,19 @@ class TestParser(unittest.TestCase):
         query_text = "process where // true"
         self.assertRaises(EqlParseError, parse_query, query_text)
 
+    def test_invalid_time_unit(self):
+        """Test that error messages are raised and formatted when time units are missing."""
+        with self.assertRaisesRegex(EqlSemanticError, "Unknown time unit. Recognized units are: ms, s, m, h, d."):
+            parse_query("sequence with maxspan=150 zz [foo where true] [bar where true]")
+
+        with self.assertRaisesRegex(EqlSemanticError, "Unknown time unit. Recognized units are: ms, s, m, h, d."):
+            parse_query("sequence with maxspan=150 hours [foo where true] [bar where true]")
+
     def test_method_syntax(self):
         """Test correct parsing and rendering of methods."""
         parse1 = parse_expression("(a and b):concat():length()")
-        parse2 = parse_expression("a and b:concat():length()")
-        self.assertNotEquals(parse1, parse2)
+        parse2 = parse_expression("a and b:concat():length() > 0")
+        self.assertNotEqual(parse1, parse2)
 
         class Unmethodize(DepthFirstWalker):
             """Strip out the method metadata, so its rendered directly as a node."""
@@ -384,9 +463,14 @@ class TestParser(unittest.TestCase):
         without_method = Unmethodize().walk(parse1)
         expected = parse_expression("length(concat(a and b))")
 
-        self.assertEquals(parse1, parse_expression("(a and b):concat():length()"))
+        self.assertEqual(parse1, parse_expression("(a and b):concat():length()"))
         self.assertIsNot(parse1, without_method)
-        self.assertEquals(without_method, expected)
+        self.assertEqual(without_method, expected)
+
+    def test_missing_time_unit(self):
+        """Test that error messages are raised and formatted when time units are missing."""
+        with self.assertRaisesRegex(EqlSemanticError, "Missing time unit. Did you mean 150s?"):
+            parse_query("sequence with maxspan=150 [foo where true] [bar where true]")
 
     def test_term_extraction(self):
         """Test that EQL terms are correctly extracted."""
@@ -426,3 +510,36 @@ class TestParser(unittest.TestCase):
         # simple query with pipes
         simple_extracted = extract_query_terms(network_event + "| unique process_name, user_name\n\n| tail 10")
         self.assertListEqual(simple_extracted, [network_event.strip()])
+
+    def test_elasticsearch_flag_enabled(self):
+        """Check that removed Endgame syntax throws an error and new syntax does not."""
+        schema = Schema({"process": {"process_name": "string",  "pid": "number"}})
+
+        with elasticsearch_syntax, schema:
+            parse_query('process where process_name : "cmd.exe"')
+            parse_query('process where process_name : """cmd.exe"""')
+            parse_query('process where process_name : """""cmd.exe"""""')
+
+            parse_query('process where process_name : ("cmd*.exe", "foo*.exe")')
+            parse_query('process where process_name : ("cmd*.exe", """foo*.exe""")')
+
+            # invalid syntax, because the right side should be a string literal or list of literals
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name :  length()")
+
+            self.assertRaises(EqlSemanticError, parse_query, "process where pid : 1")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name = \"cmd.exe\"")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == ?'cmd.exe'")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == ?\"cmd.exe\"")
+
+        with schema:
+            parse_query("process where process_name == 'cmd.exe'")
+            parse_query("process where process_name == ?'cmd.exe'")
+            parse_query("process where process_name == ?\"cmd.exe\"")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name :  length()")
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where process_name == """cmd.exe"""')
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name : \"cmd.exe\"")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name : (\"cmd.exe\")")

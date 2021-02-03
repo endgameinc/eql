@@ -2,7 +2,10 @@
 import re
 from collections import defaultdict, deque
 from contextlib import contextmanager
+
+from .ast import TimeUnit
 from .schema import Schema
+from .types import NodeInfo, TypeHint
 from .utils import is_string, to_unicode
 
 
@@ -110,7 +113,7 @@ class Walker(object):
         self.in_pipes = False
 
         incoming_schema = [Schema({event_type: {}}) for event_type in self.output_event_types]
-        output_schemas = node.output_schemas(node.arguments, None, incoming_schema)
+        output_schemas = node.output_schemas([NodeInfo(a, TypeHint.Unknown) for a in node.arguments], incoming_schema)
         self.output_event_types = [next(iter(s.schema.keys())) for s in output_schemas]
 
     def _walk_default(self, node, *args, **kwargs):
@@ -140,15 +143,6 @@ class Walker(object):
         self._method_cache[prefix][node_cls] = method
         return method
 
-    def _walk_list(self, nodes, *args, **kwargs):
-        return [self.walk(n, *args, **kwargs) for n in nodes]
-
-    def _walk_tuple(self, nodes, *args, **kwargs):
-        return tuple(self.walk(n, *args, **kwargs) for n in nodes)
-
-    def _walk_dict(self, nodes, *args, **kwargs):
-        return dict({self.walk(k, *args, **kwargs): self.walk(v, *args, **kwargs) for k, v in nodes.items()})
-
     @property
     def active_node(self):
         """Get the active context."""
@@ -177,8 +171,24 @@ class Walker(object):
             if callable(exit_method):
                 exit_method(node)
 
+    def autowalk(self, node, *args, **kwargs):
+        """Automatically walk built-in containers."""
+        with self.set_context(node):
+            if isinstance(node, list):
+                return [self.walk(n, *args, **kwargs) for n in node]
+
+            if isinstance(node, tuple):
+                return tuple(self.walk(n, *args, **kwargs) for n in node)
+
+            if isinstance(node, dict):
+                return dict({self.walk(k, *args, **kwargs): self.walk(v, *args, **kwargs) for k, v in node.items()})
+
     def walk(self, node, *args, **kwargs):
         """Walk the syntax tree top-down."""
+        rv = self.autowalk(node, *args, **kwargs)
+        if rv is not None:
+            return rv
+
         method = self.get_node_method(node, "_walk_")
         if callable(method):
             with self.set_context(node):
@@ -190,8 +200,8 @@ class RecursiveWalker(Walker):
 
     def _walk_base_node(self, node, *args, **kwargs):  # type: (BaseNode) -> BaseNode
         cls = type(node)
-        slots = [self.walk(v, *args, **kwargs) for k, v in node.iter_slots()]
-        return cls(*slots).optimize()
+        slots = self.walk([v for k, v in node.iter_slots()], *args, **kwargs)
+        return cls(*slots)
 
     def copy_node(self, node):
         """Create a copy of a node."""
@@ -203,7 +213,12 @@ class DepthFirstWalker(Walker):
 
     def walk(self, node, *args, **kwargs):
         """Walk the syntax tree top-down."""
+        rv = self.autowalk(node, *args, **kwargs)
+        if rv is not None:
+            return rv
+
         method = self.get_node_method(node, "_walk_")
+
         if callable(method):
             with self.set_context(node):
                 if isinstance(node, BaseNode):
@@ -229,6 +244,18 @@ class ConfigurableWalker(RecursiveWalker):
         if self.get_config('schema', None) is not None:
             self._schema = Schema(**self.get_config('schema'))
         super(ConfigurableWalker, self).__init__()
+
+    def convert_time_range(self, node):  # type: (eql.ast.TimeRange) -> (int|float)
+        """Convert a time range to a timestamp delta."""
+        tick_rate = TimeUnit.Seconds.as_milliseconds()
+        node_ms = node.as_milliseconds() // tick_rate
+
+        if not isinstance(self.time_unit, float) and self.time_unit > tick_rate and self.time_unit % tick_rate == 0:
+            # strictly use integer math if we can safely divide the engine's rate by TimeUnits
+            return self.time_unit * node_ms
+        else:
+            # if it doesn't evenly divide, resort to floating point math
+            return float(self.time_unit) * node_ms
 
     @property
     def schema(self):

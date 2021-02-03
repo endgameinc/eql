@@ -18,13 +18,13 @@ pipes: pipe+
 pipe: "|" name [single_atom single_atom+ | expressions]
 
 join_values.2: "by" expressions
-?with_params.2: "with" named_params
-kv: name [EQUALS (time_range | atom)]
-time_range: number name
-named_params: kv ("," kv)*
-subquery_by: subquery named_params? join_values?
-subquery: "[" event_query "]"
+?with_params.2: "with" "maxspan" EQUALS time_range
+time_range: number name?
 
+
+subquery_by: subquery fork_param? join_values?
+subquery: "[" event_query "]"
+fork_param: "fork" (EQUALS boolean)?
 
 // Expressions
 expressions: expr ("," expr)* [","]
@@ -35,52 +35,77 @@ expressions: expr ("," expr)* [","]
 ?term: sum_expr comp_op sum_expr -> comparison
      | sum_expr "not" "in" "(" expressions [","]? ")"  -> not_in_set
      | sum_expr "in" "(" expressions [","]? ")" -> in_set
+     | sum_expr ILIKE (literal | "(" literal ("," literal)* ")") -> ilike
      | sum_expr
+
 
 // Need to recover these tokens
 EQUALS: "==" | "="
+ILIKE: ":"
 COMP_OP: "<=" | "<" | "!=" | ">=" | ">"
 ?comp_op: EQUALS | COMP_OP
 MULT_OP:    "*" | "/" | "%"
 NOT_OP:     "not"
-
-method: ":" name "(" [expressions] ")"
-
 
 ?sum_expr: mul_expr (SIGN mul_expr)*
 ?mul_expr: named_subquery_test (MULT_OP named_subquery_test)*
 ?named_subquery_test: named_subquery
                     | method_chain
 named_subquery.2: name "of" subquery
-?method_chain: value (":" function_call)*
+?method_chain: value method*
 ?value: SIGN? function_call
       | SIGN? atom
-function_call.2: name "(" [expressions] ")"
+
+// hacky approach to work around this ambiguity introduced with the colon operator
+// x : length
+// x : length( ) not allowed, now requires `:length(` form
+METHOD_START.3: ":" NAME "("
+method_name: METHOD_START
+method: method_name [expressions] ")"
+function_call: name "(" [expressions] ")"
 ?atom: single_atom
      |  "(" expr ")"
 ?signed_single_atom: SIGN? single_atom
 ?single_atom: literal
             | field
             | base_field
-base_field: name
+base_field: name | escaped_name
 field: FIELD
 literal: number
+       | boolean
+       | null
        | string
+!boolean: "true"
+        | "false"
+null: "null"
 number: UNSIGNED_INTEGER
       | DECIMAL
-string: DQ_STRING
+string: RAW_TQ_STRING
+      | DQ_STRING
       | SQ_STRING
       | RAW_DQ_STRING
       | RAW_SQ_STRING
 
+
 // Check against keyword usage
 name: NAME
+escaped_name: ESCAPED_NAME
 
 // Tokens
-// make this a token to avoid ambiguity, and make more rigid on whitespace
+// pin the first "." or "[" to resolve token ambiguities
 // sequence by pid [1] [true] looks identical to:
 // sequence by pid[1] [true]
-FIELD: NAME ("." WHITESPACE* NAME | "[" WHITESPACE* UNSIGNED_INTEGER WHITESPACE* "]")+
+FIELD: FIELD_IDENT (ATTR | INDEX)+
+ATTR: "." WHITESPACE? FIELD_IDENT
+INDEX: "[" WHITESPACE? UNSIGNED_INTEGER WHITESPACE? "]"
+FIELD_IDENT: NAME | ESCAPED_NAME
+
+// create a non-conflicting helper rule to deconstruct
+field_parts: field_ident ("." field_ident | "[" array_index "]")+
+!array_index: UNSIGNED_INTEGER
+!field_ident: NAME | ESCAPED_NAME
+
+
 LCASE_LETTER: "a".."z"
 UCASE_LETTER: "A".."Z"
 DIGIT: "0".."9"
@@ -88,16 +113,18 @@ DIGIT: "0".."9"
 LETTER: UCASE_LETTER | LCASE_LETTER
 WORD: LETTER+
 
+ESCAPED_NAME: "`" /[^`\r\n]+/ "`"
 NAME: ("_"|LETTER) ("_"|LETTER|DIGIT)*
 UNSIGNED_INTEGER: /[0-9]+/
 EXPONENT: /[Ee][-+]?\d+/
 DECIMAL: UNSIGNED_INTEGER? "." UNSIGNED_INTEGER+ EXPONENT?
        | UNSIGNED_INTEGER EXPONENT
 SIGN:           "+" | "-"
-DQ_STRING:      /"(\\[btnfr"'\\]|[^\r\n"\\])*"/
-SQ_STRING:      /'(\\[btnfr"'\\]|[^\r\n'\\])*'/
-RAW_DQ_STRING:  /\?"(\\\"|[^"\r\n])*"/
-RAW_SQ_STRING:  /\?'(\\\'|[^'\r\n])*'/
+DQ_STRING:        /"(\\[btnfr"'\\]|[^\r\n"\\])*"/
+SQ_STRING:        /'(\\[btnfr"'\\]|[^\r\n'\\])*'/
+RAW_DQ_STRING:    /\?"(\\\"|[^"\r\n])*"/
+RAW_SQ_STRING:    /\?'(\\\'|[^'\r\n])*'/
+RAW_TQ_STRING.2:  /"""[^\r\n]*?""""?"?/
 
 %import common.NEWLINE
 

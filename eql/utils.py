@@ -8,6 +8,7 @@ import sys
 import threading
 
 PLUGIN_PREFIX = "eql_"
+CASE_INSENSITIVE = True
 _loaded_plugins = False
 
 # Python2 and Python3 compatible type checking
@@ -52,6 +53,18 @@ def is_number(n):
 def is_array(a):
     """Check if a number is array-like."""
     return isinstance(a, (list, tuple))
+
+
+def is_insensitive():
+    """Check if insensitivity is enabled."""
+    return CASE_INSENSITIVE
+
+
+def fold_case(s):
+    """Helper function for normalizing case for strings."""
+    if is_insensitive() and is_string(s):
+        return s.lower()
+    return s
 
 
 def str_presenter(dumper, data):
@@ -230,7 +243,7 @@ def is_stateful(query):
         query = query.query
 
     elif not isinstance(query, ast.EqlNode):
-        raise TypeError("unsupported type {} to is_stateful. Expected {}".format(type(query), ast.EqlNode))
+        raise TypeError("unsupported type {} to eql.utils.is_stateful. Expected {}".format(type(query), ast.EqlNode))
 
     stateful_nodes = (
         ast.SubqueryBy,  # join/sequence
@@ -243,6 +256,30 @@ def is_stateful(query):
     return any(isinstance(node, stateful_nodes) for node in query)
 
 
+def get_query_type(query):
+    """Get the type of a query (sequence/join/event).
+
+    :param ast.PipedQuery|ast.Analytic query: The parsed query AST to analyze
+    :rtype: str
+    """
+    from . import ast  # noqa: E402
+
+    if isinstance(query, ast.EqlAnalytic):
+        query = query.query
+
+    elif not isinstance(query, ast.PipedQuery):
+        raise TypeError("unsupported type {} to eql.utils.get_query_type. Expected {}".format(type(query), ast.EqlNode))
+
+    if isinstance(query.first, ast.Sequence):
+        return "sequence"
+    elif isinstance(query.first, ast.Join):
+        return "join"
+    elif isinstance(query.first, ast.EventQuery):
+        return "event"
+    else:
+        raise TypeError("Unknown query type: {}".format(type(query.first)))
+
+
 def match_kv(condition):
     """Take a list of key value pairs and generate an EQL expression.
 
@@ -251,7 +288,7 @@ def match_kv(condition):
     """
     # Resolve circular dependency for match_kv
     from . import ast  # noqa: E402
-    from .parser import parse_expression
+    from .parser import parse_field
 
     if not isinstance(condition, dict):
         raise TypeError("unsupported type {} to match_kv. Expected {}".format(type(condition), ast.EqlNode))
@@ -262,9 +299,7 @@ def match_kv(condition):
         if not isinstance(field_match, (list, tuple)):
             field_match = [field_match]
 
-        field_node = parse_expression(field_text)
-        if not isinstance(field_node, ast.Field):
-            raise TypeError("expected Field as key to dictionary, got {}".format(type(field_node).__name__))
+        field_node = parse_field(field_text)
 
         exact = []
         wildcards = []
@@ -281,6 +316,40 @@ def match_kv(condition):
         and_node &= match_node
 
     return and_node
+
+
+def uses_ancestry(query):
+    """Determine if a query requires process ancestry tracking.
+
+    :param ast.PipedQuery|ast.Analytic query: The parsed query AST to analyze
+    :rtype: bool
+    """
+    from . import ast  # noqa: E402
+
+    if isinstance(query, ast.EqlAnalytic):
+        query = query.query
+
+    elif not isinstance(query, ast.EqlNode):
+        raise TypeError("unsupported type {} to eql.utils.uses_ancestry. Expected {}".format(type(query), ast.EqlNode))
+
+    return any(isinstance(node, ast.NamedSubquery) for node in query)
+
+
+def get_required_event_types(query):
+    """Get a set of all event types required for the query.
+
+    :param ast.PipedQuery|ast.Analytic query: The parsed query AST to analyze
+    :rtype: set[str]
+    """
+    from . import ast  # noqa: E402
+
+    if isinstance(query, ast.EqlAnalytic):
+        query = query.query
+
+    elif not isinstance(query, ast.EqlNode):
+        raise TypeError("unsupported type {} to eql.utils.uses_ancestry. Expected {}".format(type(query), ast.EqlNode))
+
+    return set(node.event_type for node in query if isinstance(node, ast.EventQuery))
 
 
 def get_output_types(query):

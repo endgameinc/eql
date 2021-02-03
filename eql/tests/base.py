@@ -27,16 +27,17 @@ class TestEngine(unittest.TestCase):
     __events = None
 
     @classmethod
-    def get_analytic(cls, query_text):
+    def get_analytic(cls, query_text, is_case_sensitive=None):
         """Get a cached EQL analytic."""
+        cache_key = (query_text, is_case_sensitive)
         with cls.schema:
-            if query_text not in cls.query_cache:
+            if cache_key not in cls.query_cache:
                 analytic_info = {
                     'metadata': {'id': 'query-{:d}'.format(len(cls.query_cache)), 'name': query_text},
                     'query': query_text
                 }
-                cls.query_cache[query_text] = parse_analytic(analytic_info)
-        return cls.query_cache[query_text]
+                cls.query_cache[cache_key] = parse_analytic(analytic_info)
+        return cls.query_cache[cache_key]
 
     @classmethod
     def get_events(cls):
@@ -53,22 +54,42 @@ class TestEngine(unittest.TestCase):
         return True
 
     @classmethod
-    def get_example_queries(cls):
+    def get_example_queries(cls, match_case_sensitive=False):
         """Get example queries with their expected outputs."""
         with open(cls.queries_file, "r") as f:
             queries = []
             for q in toml.load(f)["queries"]:
-                analytic = cls.get_analytic(q['query'])
-                analytic.metadata['_info'] = q.copy()
-                q['analytic'] = analytic
-                queries.append(q)
+                case_settings = []
+
+                if "case_sensitive" not in q and "case_insensitive" not in q:
+                    case_sensitive = True
+                    case_insensitive = True
+                else:
+                    case_sensitive = q.get("case_sensitive") is True
+                    case_insensitive = q.get("case_insensitive") is True
+
+                if case_sensitive:
+                    case_settings.append(True)
+
+                if case_insensitive:
+                    case_settings.append(False)
+
+                assert len(case_settings) > 0, q
+
+                for cs in case_settings:
+                    analytic = cls.get_analytic(q['query'], cs)
+                    analytic.metadata['_info'] = q.copy()
+                    q['analytic'] = analytic
+
+                    if cs == match_case_sensitive:
+                        queries.append(q)
 
             return list(filter(cls.filter_queries, queries))
 
     @classmethod
-    def get_example_analytics(cls):
+    def get_example_analytics(cls, match_case_sensitive=False):
         """Get a list of example analytics from test queries."""
-        return [q["analytic"] for q in cls.get_example_queries()]
+        return [q["analytic"] for q in cls.get_example_queries(match_case_sensitive=match_case_sensitive)]
 
     def validate_results(self, actual, expected, query=None):
         """Validate that a list of results matches."""

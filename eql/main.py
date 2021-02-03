@@ -10,7 +10,7 @@ from .build import render_engine
 from .engine import PythonEngine
 from .errors import EqlError
 from .loader import load_analytics, save_analytics
-from .parser import parse_query
+from .parser import parse_query, parse_expression
 from .transpilers import TextEngine
 from .utils import load_dump, stream_stdin_events, stream_file_events
 from .walkers import ConfigurableWalker
@@ -77,6 +77,17 @@ def query(args):
     engine.finalize()
 
 
+def optimize_expression(args):
+    """Entry point for testing the optimizer."""
+    try:
+        parsed = parse_expression(args.expression)
+    except EqlError as e:
+        print(e)
+        sys.exit(2)
+
+    print(parsed)
+
+
 def shell_main(args):
     """Entry point for the EQL shell."""
     from .shell import EqlShell
@@ -107,6 +118,10 @@ def main(args=None):
     build_parser.add_argument('output_file', help='Output analytics engine file')
     build_parser.add_argument('--engine_type', help='Engine type. Autodetected from output extension if not provided')
     build_parser.add_argument('--analytics-only', action='store_true', help='Skips core engine when building target')
+
+    query_parser = subparsers.add_parser('optimize', help='Optimize an EQL expression')
+    query_parser.set_defaults(func=optimize_expression)
+    query_parser.add_argument('expression', help='EQL expression to optimize')
 
     query_parser = subparsers.add_parser('query', help='Run an EQL query over stdin or a data file')
     query_parser.set_defaults(func=query)
