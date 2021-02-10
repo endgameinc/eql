@@ -33,15 +33,20 @@ expressions: expr ("," expr)* [","]
 ?and_expr: not_expr ("and" not_expr)*
 ?not_expr.3: NOT_OP* term
 ?term: sum_expr comp_op sum_expr -> comparison
-     | sum_expr "not" "in" "(" expressions [","]? ")"  -> not_in_set
-     | sum_expr "in" "(" expressions [","]? ")" -> in_set
-     | sum_expr ILIKE (literal | "(" literal ("," literal)* ")") -> ilike
+     | sum_expr "not" IN "(" expressions [","]? ")"  -> not_in_set
+     | sum_expr IN "(" expressions [","]? ")" -> in_set
+     | sum_expr STRING_PREDICATE (literal | "(" literal ("," literal)* ")") -> string_predicate
      | sum_expr
 
 
 // Need to recover these tokens
+IN.3: "in~" | "in"
 EQUALS: "==" | "="
-ILIKE: ":"
+STRING_PREDICATE.3:  ":"
+                  |  "like~"
+                  |  "regex~"
+                  |  "like"
+                  |  "regex"
 COMP_OP: "<=" | "<" | "!=" | ">=" | ">"
 ?comp_op: EQUALS | COMP_OP
 MULT_OP:    "*" | "/" | "%"
@@ -62,7 +67,7 @@ named_subquery.2: name "of" subquery
 METHOD_START.3: ":" NAME "("
 method_name: METHOD_START
 method: method_name [expressions] ")"
-function_call: name "(" [expressions] ")"
+function_call: (INSENSITIVE_NAME | NAME) "(" [expressions] ")"
 ?atom: single_atom
      |  "(" expr ")"
 ?signed_single_atom: SIGN? single_atom
@@ -114,6 +119,7 @@ LETTER: UCASE_LETTER | LCASE_LETTER
 WORD: LETTER+
 
 ESCAPED_NAME: "`" /[^`\r\n]+/ "`"
+INSENSITIVE_NAME.2: ("_"|LETTER) ("_"|LETTER|DIGIT)* "~"
 NAME: ("_"|LETTER) ("_"|LETTER|DIGIT)*
 UNSIGNED_INTEGER: /[0-9]+/
 EXPONENT: /[Ee][-+]?\d+/
