@@ -610,7 +610,7 @@ class LarkToEQL(Interpreter):
             if not child.validate_type(TypeHint.String):
                 raise self._type_error(child, TypeHint.String)
 
-        return NodeInfo(ast.FunctionCall(function_name, [child.node for child in children], TypeHint.Boolean))
+        return NodeInfo(ast.FunctionCall(function_name, [child.node for child in children]), TypeHint.Boolean)
 
     def comparison(self, node):
         """Callback function to walk the AST."""
