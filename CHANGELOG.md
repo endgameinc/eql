@@ -1,6 +1,14 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.9
+_Released 2021-02-10_
+
+### Added
+* Elasticsearch `like`/ `like~` syntax
+* Elasticsearch `regex` / `regex~` syntax
+* Elasticsearch insensitive function syntax `function~(...)`
+
 # Version 0.9.8
 _Released 2021-01-14_
 
@@ -18,7 +26,7 @@ _Released 2020-12-01_
 _Released 2020-11-24_
 
 ### Changed
-* Elasticsearch ilike `:` syntax to support lists and wildcards
+* Elasticsearch insensitive wildcard `:` syntax to support lists and wildcards
 
 
 ## Version 0.9.5
