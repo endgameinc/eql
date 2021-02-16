@@ -13,7 +13,9 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
 
 
 .. note::
-   This documentation is about EQL for Elastic Endgame. Several syntax changes were made to `bring Event Query Language to the Elastic Stack <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html>`_:
+   This documentation is about EQL for Elastic Endgame. Several syntax changes were made in Elasticsearch to `bring Event Query Language to the Elastic Stack <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html>`_. The existing Python EQL implementation remains unchanged, but please keep the below differences in mind when switching between the two different versions of EQL.
+   
+   In the Elastic Stack:
    
    - Most operators and functions are now case-sensitive. For example, ``process_name == "cmd.exe"`` is no longer equivalent to ``process_name == "Cmd.exe"``.
    - For case-insensitive equality comparisons, use the ``:`` operator. For example, ``process_name : "cmd.exe"`` is equivalent to ``process_name : "Cmd.exe"``.
