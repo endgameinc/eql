@@ -21,7 +21,7 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
    - Functions are now case-sensitive. To use the case-insensitive variant, use ``~``, such as ``endsWith~(process_name, ".exe")`.
    - For case-insensitive equality comparisons, use the ``:`` operator. For example, ``process_name : "cmd.exe"`` is equivalent to ``process_name : "Cmd.exe"``.
    - For case-insensitive wildcard comparisons, use the ``:`` operator. Both ``*`` and ``?`` are recognized wildcard characters. (7.11+)
-   - The ``==`` and ``!=`` operators no longer expand wildcard characters. For example, ``process_name == "cmd*.exe"`` now interprets ``*`` as a literal asterisk, not a wildcard
+   - The ``==`` and ``!=`` operators no longer expand wildcard characters. For example, ``process_name == "cmd*.exe"`` now interprets ``*`` as a literal asterisk, not a wildcard.
    - For wildcard matching, use the ``like`` keyword when case-sensitive, and ``like~`` when case-insensitive. The ``:`` operator is equivalent to ``like~``.  (7.12+)
    - For regular expression matching, use ``regex`` or ``regex~``. (7.12+)
    - ``=`` can no longer be substituted for the ``==`` operator.
