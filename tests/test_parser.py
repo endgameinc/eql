@@ -511,7 +511,7 @@ class TestParser(unittest.TestCase):
         simple_extracted = extract_query_terms(network_event + "| unique process_name, user_name\n\n| tail 10")
         self.assertListEqual(simple_extracted, [network_event.strip()])
 
-    def test_elasticsearch_flag_enabled(self):
+    def test_elasticsearch_flag(self):
         """Check that removed Endgame syntax throws an error and new syntax does not."""
         schema = Schema({"process": {"process_name": "string",  "pid": "number"}})
 
@@ -523,13 +523,28 @@ class TestParser(unittest.TestCase):
             parse_query('process where process_name : ("cmd*.exe", "foo*.exe")')
             parse_query('process where process_name : ("cmd*.exe", """foo*.exe""")')
 
+            parse_query('process where process_name in~ ("cmd.exe", """foo.exe""")')
+            parse_query('process where process_name in ("cmd.exe", """foo.exe""")')
+
+            parse_query('process where process_name like ("cmd*.exe", """foo*.exe""")')
+            parse_query('process where process_name like~ ("cmd*.exe", """foo*.exe""")')
+
+            parse_query('process where process_name regex ("cmd*.exe", """foo*.exe""")')
+            parse_query('process where process_name regex~ ("""cmd.*\\.exe""", """foo.*\\.exe""")')
+
+            parse_query("process where startsWith(process_name, \"cmd.exe\")")
+            parse_query("process where startsWith~(process_name, \"cmd.exe\")")
+
             # invalid syntax, because the right side should be a string literal or list of literals
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name :  length()")
 
             self.assertRaises(EqlSemanticError, parse_query, "process where pid : 1")
+            self.assertRaises(EqlSemanticError, parse_query, "process where pid like 1")
+            self.assertRaises(EqlSemanticError, parse_query, "process where pid regex 1")
+            self.assertRaises(EqlSemanticError, parse_query, "process where pid like~ 1")
+            self.assertRaises(EqlSemanticError, parse_query, "process where pid regex~ 1")
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name = \"cmd.exe\"")
-
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == ?'cmd.exe'")
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == ?\"cmd.exe\"")
@@ -538,8 +553,28 @@ class TestParser(unittest.TestCase):
             parse_query("process where process_name == 'cmd.exe'")
             parse_query("process where process_name == ?'cmd.exe'")
             parse_query("process where process_name == ?\"cmd.exe\"")
+            parse_query("process where startsWith(process_name, \"cmd.exe\")")
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name :  length()")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name like  length()")
             self.assertRaises(EqlSyntaxError, parse_query, 'process where process_name == """cmd.exe"""')
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name : \"cmd.exe\"")
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name : (\"cmd.exe\")")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name :  length()")
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where process_name == """cmd.exe"""')
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name in~ (\"cmd.exe\")")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name like \"cmd.exe\"")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name like (\"cmd.exe\")")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name like~ \"cmd.exe\"")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name like~ (\"cmd.exe\")")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name regex~ (\"cmd.exe\")")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name regex \"cmd.exe\"")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name regex (\"cmd.exe\")")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name regex~ \"cmd.exe\"")
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name regex~ (\"cmd.exe\")")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where startsWith~(process_name, \"cmd.exe\")")

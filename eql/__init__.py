@@ -66,7 +66,7 @@ from .walkers import (
     Walker,
 )
 
-__version__ = '0.9.8'
+__version__ = '0.9.9'
 __all__ = (
     "__version__",
     "AnalyticOutput",
