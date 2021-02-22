@@ -2,7 +2,7 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 # Version 0.9.9
-_Released 2021-02-10_
+_Released 2021-02-22_
 
 ### Added
 * Elasticsearch `like`/ `like~` syntax
