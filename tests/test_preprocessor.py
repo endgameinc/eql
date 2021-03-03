@@ -6,7 +6,7 @@ from collections import OrderedDict
 from eql.ast import *  # noqa: F403
 from eql.parser import *  # noqa: F403
 from eql.transpilers import TextEngine
-from eql.errors import EqlTypeMismatchError
+from eql.errors import EqlTypeMismatchError, EqlCompileError
 from eql.schema import Schema
 
 
@@ -238,3 +238,34 @@ class TestPreProcessor(unittest.TestCase):
 
             with self.assertRaises(EqlTypeMismatchError):
                 parse_query("foo where SELF(bar) == 'baz'")
+
+    def test_append_attribute(self):
+        """Test that macros can expand attributes."""
+        preprocessor = get_preprocessor("""
+            macro NAME(dictfield)   dictfield.name
+            macro ZERO(arrayfield)  arrayfield[0]
+
+            macro ZNAME(objarray)   objarray[0].name
+            macro NAMEZ(arrayobj)   arrayobj.name[0]
+            macro ZNAME2(objarray)  NAME(ZERO(objarray))
+            macro NAMEZ2(arrayobj)  ZERO(NAME(arrayobj))
+        """)
+
+        with preprocessor:
+            self.assertEqual(parse_expression("NAME(foo)"), parse_expression("foo.name"))
+            self.assertEqual(parse_expression("ZERO(foo)"), parse_expression("foo[0]"))
+            self.assertEqual(parse_expression("ZNAME(foo)"), parse_expression("foo[0].name"))
+            self.assertEqual(parse_expression("ZNAME2(foo)"), parse_expression("foo[0].name"))
+
+            self.assertEqual(parse_expression("NAME(foo.bar.baz)"), parse_expression("foo.bar.baz.name"))
+            self.assertEqual(parse_expression("ZERO(foo.bar.baz)"), parse_expression("foo.bar.baz[0]"))
+            self.assertEqual(parse_expression("ZNAME(foo.bar.baz)"), parse_expression("foo.bar.baz[0].name"))
+            self.assertEqual(parse_expression("ZNAME2(foo.bar.baz)"), parse_expression("foo.bar.baz[0].name"))
+
+            self.assertEqual(parse_expression("NAMEZ(foo)"), parse_expression("foo.name[0]"))
+            self.assertEqual(parse_expression("NAMEZ2(foo)"), parse_expression("foo.name[0]"))
+
+            # confirm that this doesn't work for non-field types
+            self.assertRaises(EqlCompileError, parse_expression, "NAMEZ(1)")
+            self.assertRaises(EqlCompileError, parse_expression, "NAMEZ(false)")
+            self.assertRaises(EqlCompileError, parse_expression, "NAMEZ2('string')")

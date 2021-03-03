@@ -485,8 +485,12 @@ class LarkToEQL(Interpreter):
 
     def name(self, node):
         """Check for illegal use of keyword."""
-        text = node["NAME"].value
-        if text in keywords:
+        if isinstance(node, KvTree):
+            text = node.children[0].value
+        else:
+            text = str(node)
+
+        if text.rstrip("~") in keywords:
             raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
 
         return text
@@ -583,10 +587,22 @@ class LarkToEQL(Interpreter):
         field = ast.Field(base, path)
         return self._update_field_info(NodeInfo(field, source=node))
 
-    def ilike(self, node):
+    def string_predicate(self, node):
         """Callback function to walk the AST."""
+        predicate = node["STRING_PREDICATE"]
+        if predicate == ":":
+            function_name = "wildcard"
+        elif predicate in ("like", "like~"):
+            function_name = "wildcard"
+        elif predicate in ("regex", "regex~"):
+            function_name = "match"
+        else:
+            raise self._error(node, message="Invalid syntax", cls=EqlSyntaxError)
+
         if not self._elasticsearch_syntax:
-            raise self._error(node, message="Invalid syntax, try == or wildcard()", cls=EqlSyntaxError)
+            args = ", ".join(self.text[n.meta.start_pos:n.meta.end_pos] for n in node.child_trees)
+            raise self._error(node, "Invalid syntax. Try: {function_name}({args})", cls=EqlSyntaxError,
+                              function_name=function_name, args=args)
 
         children = self.visit(node.child_trees)
 
@@ -594,7 +610,7 @@ class LarkToEQL(Interpreter):
             if not child.validate_type(TypeHint.String):
                 raise self._type_error(child, TypeHint.String)
 
-        return NodeInfo(ast.FunctionCall("wildcard", [child.node for child in children], TypeHint.Boolean))
+        return NodeInfo(ast.FunctionCall(function_name, [child.node for child in children]), TypeHint.Boolean)
 
     def comparison(self, node):
         """Callback function to walk the AST."""
@@ -641,21 +657,22 @@ class LarkToEQL(Interpreter):
         eql_node = ast.Comparison(left.node, op, right.node)
 
         # there is no special comparison operator for wildcards, just look for * in the string
-        if not self._elasticsearch_syntax and isinstance(right.node, ast.String) and '*' in right.node.value:
-            func_call = ast.FunctionCall('wildcard', [left.node, right.node])
+        if not self._elasticsearch_syntax:
+            if isinstance(right.node, ast.String) and '*' in right.node.value:
+                func_call = ast.FunctionCall('wildcard', [left.node, right.node])
 
-            if op == ast.Comparison.EQ:
-                eql_node = func_call
-            elif op == ast.Comparison.NE:
-                eql_node = ~func_call
+                if op == ast.Comparison.EQ:
+                    eql_node = func_call
+                elif op == ast.Comparison.NE:
+                    eql_node = ~func_call
 
-        elif not self._elasticsearch_syntax and isinstance(left.node, ast.String) and '*' in left.node.value:
-            func_call = ast.FunctionCall('wildcard', [right.node, left.node])
+            elif isinstance(left.node, ast.String) and '*' in left.node.value:
+                func_call = ast.FunctionCall('wildcard', [right.node, left.node])
 
-            if op == ast.Comparison.EQ:
-                eql_node = func_call
-            elif op == ast.Comparison.NE:
-                eql_node = ~func_call
+                if op == ast.Comparison.EQ:
+                    eql_node = func_call
+                elif op == ast.Comparison.NE:
+                    eql_node = ~func_call
 
         return NodeInfo(eql_node, TypeHint.Boolean, nullable=left.nullable or right.nullable, source=node)
 
@@ -727,7 +744,11 @@ class LarkToEQL(Interpreter):
 
     def in_set(self, node):
         """Callback function to walk the AST."""
-        outer, container = self.visit_children(node)  # type: (NodeInfo, list[NodeInfo])
+        if not self._elasticsearch_syntax and node.get("IN") == "in~":
+            raise self._error(node, message="Invalid syntax. Explicit case-insensitivity is not supported.",
+                              cls=EqlSyntaxError)
+
+        outer, container = self.visit(node.child_trees)  # type: (NodeInfo, list[NodeInfo])
 
         if not outer.validate_type(TypeHint.primitives()):
             # can't compare non-primitives to sets
@@ -770,9 +791,23 @@ class LarkToEQL(Interpreter):
 
     def function_call(self, node, prev_node=None, prev_arg=None):
         """Callback function to walk the AST."""
-        function_name = self.visit(node["name"] or node["method_name"])
+        if node.data == "method":
+            name_node = node["method_name"]
+            function_name = self.method_name(name_node)
+        else:
+            name_node = node.children[0]
+            function_name = self.name(name_node)
+
         args = []
         nodes = []
+
+        if function_name.endswith("~"):
+            # remove the trailing ~ and use the existing AST
+            function_name = function_name.rstrip("~")
+
+            if not self._elasticsearch_syntax:
+                raise self._error(node, "Invalid syntax. Explicit case-insensitivity is not supported",
+                                  cls=EqlSyntaxError)
 
         non_method_arguments = node["expressions"].children if node["expressions"] else []
 
@@ -840,7 +875,7 @@ class LarkToEQL(Interpreter):
             return NodeInfo(expr, signature.return_value, nullable=nullable, source=node)
 
         elif self._check_functions:
-            raise self._error(node["name"], "Unknown function {NAME}")
+            raise self._error(name_node, "Unknown function {function_name}", function_name=function_name)
         else:
             args = []
 

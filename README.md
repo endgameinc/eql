@@ -1,6 +1,5 @@
 # Event Query Language
 [![PyPI](https://img.shields.io/pypi/v/eql.svg)](https://pypi.python.org/pypi/eql)
-[![Gitter](https://badges.gitter.im/eventquerylang/community.svg)](https://gitter.im/eventquerylang/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 [![Documentation](https://readthedocs.org/projects/eql/badge/?version=latest)](https://eql.readthedocs.io/en/latest/?badge=latest)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
@@ -8,6 +7,10 @@
 
 ![What is EQL?](docs/_static/eql-whoami.jpg)
 Browse a [library of EQL analytics](https://eqllib.readthedocs.io)
+
+## Now in Elasticsearch!
+
+Since Endgame [joined forced with Elastic](https://www.elastic.co/blog/endgame-joins-forces-with-elastic), EQL is now natively integrated in Elasticsearch! See the Elasticsearch [EQL documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html) for more information. Also, please note that we have made a few changes to EQL in Elasticsearch to accomodate non-security users. Those are best summarized [here](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-unsupported-syntax).
 
 # Getting Started
 

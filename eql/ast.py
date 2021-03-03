@@ -7,7 +7,7 @@ from operator import lt, le, eq, ne, ge, gt
 from string import Template
 from enum import Enum
 
-from .errors import EqlError
+from .errors import EqlError, EqlCompileError
 from .signatures import SignatureMixin
 from .types import TypeHint, NodeInfo  # noqa: F401
 from .utils import to_unicode, is_string, is_number, ParserConfig, fold_case
@@ -491,6 +491,16 @@ class FunctionCall(Expression):
                 return alternate_render
 
         return super(FunctionCall, self).render()
+
+    def __or__(self, other):
+        """Optimize OR comparisons between matching variadic binary functions."""
+        if isinstance(other, FunctionCall) and \
+                self.name in ("wildcard", "match", "matchLite") and other.name == self.name:
+            # wildcard(x, ABC...) or wildcard(x, DEF...) ==> wildcard(x, ABC..., DEF...)
+            if self.arguments[0] == other.arguments[0]:
+                return FunctionCall(self.name, self.arguments + other.arguments[1:])
+
+        return super(FunctionCall, self).__or__(other)
 
 
 class NamedSubquery(Expression):
@@ -1147,8 +1157,18 @@ class Macro(BaseMacro, EqlNode):
         lookup = dict(zip(self.parameters, arguments))
 
         def _walk_field(node):
-            if node.base in lookup and not node.path:
-                return lookup[node.base]
+            # type: (Field) -> Field
+            if node.base in lookup:
+                argument_value = lookup[node.base]
+                if node.path:
+                    if not isinstance(argument_value, Field):
+                        raise EqlCompileError("Invalid expansion: {} ({}={})".format(node, node.base, argument_value))
+
+                    # extend the attributes being retrieved
+                    return Field(argument_value.base, list(argument_value.path) + list(node.path))
+
+                return argument_value
+
             return node
 
         walker = RecursiveWalker()
