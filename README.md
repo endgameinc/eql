@@ -1,5 +1,6 @@
 # Event Query Language
 [![PyPI](https://img.shields.io/pypi/v/eql.svg)](https://pypi.python.org/pypi/eql)
+[![Build](https://github.com/endgameinc/eql/actions/workflows/pythonpackage.yml/badge.svg)](https://github.com/endgameinc/eql/actions/workflows/pythonpackage.yml)
 [![Documentation](https://readthedocs.org/projects/eql/badge/?version=latest)](https://eql.readthedocs.io/en/latest/?badge=latest)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
