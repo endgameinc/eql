@@ -187,6 +187,9 @@ math, string manipulation or more sophisticated expressions to be expressed.
 
     Returns ``x - y``
 
+    .. versionchanged:: 0.8
+        Added ``-`` operator directly.
+
 .. function:: wildcard(value, wildcard [, ... ])
 
     Compare a value to a list of wildcards. Returns true if any of them match.
