@@ -170,7 +170,7 @@ math, string manipulation or more sophisticated expressions to be expressed.
 
 .. function:: substring(source, start [, end])
 
-    Extracts a substring between from another string between ``start`` and ``end``.
+    Extracts a substring from another string between ``start`` and ``end``.
     Like other EQL functions, ``start`` and ``end`` are zero-indexed positions in the string.
     Behavior is similar to Python's `string slicing`_ (``source[start:end]``), and negative offsets are supported.
 
