@@ -21,7 +21,7 @@ install_requires = [
 
 test_requires = [
     "mock~=1.3.0",
-    "pytest=3.8.2",
+    "pytest~=3.8.2",
     "pytest-cov==2.4",
     "flake8==2.5.1",
     "pep257==0.7.0",
@@ -30,6 +30,7 @@ test_requires = [
     "PyYAML",
     "toml~=0.10",
     "configparser<5.0; python_version<'3.4'",
+    "contextlib2~=0.6.0"
     "more-itertools~=5.0; python_version<'3.4'",
     "importlib-metadata<3.0; python_version<'3.4'",
     "zipp<1.0; python_version<'3.4'",
