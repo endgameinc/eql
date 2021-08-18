@@ -43,7 +43,7 @@ __all__ = (
 )
 
 
-debugger_attached = 'pydevd' in sys.modules
+full_tracebacks = 'pydevd' in sys.modules
 
 NON_SPACE_WS = re.compile(r"[^\S ]+")
 
@@ -1216,7 +1216,7 @@ def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=
             exc = EqlSyntaxError("Invalid syntax",
                                  line=e.line - 1, column=e.column - 1, width=width,
                                  source='\n'.join(walker.lines[e.line - 2:e.line]))
-            if cfg.read_stack("full_traceback", debugger_attached):
+            if cfg.read_stack("full_traceback", full_tracebacks):
                 raise exc
 
         if exc is None:
@@ -1231,7 +1231,7 @@ def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=
                 return eql_node
             except EqlError as e:
                 # If full traceback mode is enabled, then re-raise the exception
-                if cfg.read_stack("full_traceback", debugger_attached):
+                if cfg.read_stack("full_traceback", full_tracebacks):
                     raise
                 exc = e
 

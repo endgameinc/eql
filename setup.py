@@ -74,6 +74,9 @@ class Test(TestCommand):
     def run_tests(self):
         """Run pytest."""
         import pytest
+        import eql
+
+        eql.parser.full_tracebacks = True
         sys.exit(pytest.main(self.pytest_args))
 
 
