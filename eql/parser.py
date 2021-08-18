@@ -494,6 +494,9 @@ class LarkToEQL(Interpreter):
         if text.rstrip("~") in keywords:
             raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
 
+        if text.startswith("$") and not self._dollar_var:
+            raise self._error(node, "Invalid syntax", cls=EqlSyntaxError)
+
         return text
 
     def number(self, node):

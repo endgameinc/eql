@@ -589,5 +589,6 @@ class TestParser(unittest.TestCase):
 
             # support $variable syntax
             parse_query('process where _arraysearch(process.args, $variable, $variable == "foo"')
+            parse_query('process where _arraysearch(process.Ext.code_signature, $sig, $sig.trusted == true')
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
