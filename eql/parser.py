@@ -56,7 +56,7 @@ nullable_fields = ParserConfig(strict_fields=False)
 non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
-
+elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True)
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
             "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
@@ -134,6 +134,7 @@ class LarkToEQL(Interpreter):
         self._ignore_missing = ParserConfig.read_stack("ignore_missing_fields", False)
         self._strict_fields = ParserConfig.read_stack("strict_fields", False)
         self._elasticsearch_syntax = ParserConfig.read_stack("elasticsearch_syntax", False)
+        self._dollar_var = ParserConfig.read_stack("dollar_var", False)
         self._allow_enum = ParserConfig.read_stack("enable_enum", False)
         self._count_keys = []
         self._pipe_schemas = []
@@ -575,6 +576,14 @@ class LarkToEQL(Interpreter):
                 raise self._error(node, "Unable to parser field", cls=EqlSyntaxError)
 
         base, path = full_path[0], full_path[1:]
+
+        # only Elastic Endpoint supports $var syntax
+        if base.startswith("$"):
+            if not self._dollar_var:
+                raise self._error(node, "Invalid syntax", cls=EqlSyntaxError)
+
+            field = ast.Field(base, path)
+            return NodeInfo(field, source=node, type_info=TypeHint.Unknown)
 
         # if get_variable:
         #     if base_name in RESERVED or node.sub_fields:

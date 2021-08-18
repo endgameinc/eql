@@ -11,7 +11,7 @@ from eql.ast import *  # noqa: F403
 from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
-    extract_query_terms, keywords, elasticsearch_syntax
+    extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -535,6 +535,10 @@ class TestParser(unittest.TestCase):
             parse_query("process where startsWith(process_name, \"cmd.exe\")")
             parse_query("process where startsWith~(process_name, \"cmd.exe\")")
 
+            self.assertRaises(EqlSyntaxError, parse_query, "process where $variable")
+            self.assertRaises(EqlSyntaxError, parse_query,
+                              'process where _arraysearch(process.args, $variable, $variable == "foo"')
+
             # invalid syntax, because the right side should be a string literal or list of literals
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name :  length()")
 
@@ -578,3 +582,12 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name regex~ (\"cmd.exe\")")
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where startsWith~(process_name, \"cmd.exe\")")
+
+        with elastic_endpoint_syntax, schema, ignore_missing_functions:
+            # check elasticsearch-isms
+            parse_query('process where process_name : ("cmd*.exe", "foo*.exe")')
+
+            # support $variable syntax
+            parse_query('process where _arraysearch(process.args, $variable, $variable == "foo"')
+
+            self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")

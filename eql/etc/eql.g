@@ -100,7 +100,7 @@ escaped_name: ESCAPED_NAME
 // pin the first "." or "[" to resolve token ambiguities
 // sequence by pid [1] [true] looks identical to:
 // sequence by pid[1] [true]
-FIELD: FIELD_IDENT (ATTR | INDEX)+
+FIELD: "$"? FIELD_IDENT (ATTR | INDEX)+
 ATTR: "." WHITESPACE? FIELD_IDENT
 INDEX: "[" WHITESPACE? UNSIGNED_INTEGER WHITESPACE? "]"
 FIELD_IDENT: NAME | ESCAPED_NAME
