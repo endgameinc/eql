@@ -405,14 +405,16 @@ class Field(Expression):
 
     field_re = re.compile("^[_A-Za-z][_A-Za-z0-9]*$")
 
-    def __init__(self, base, path=None):
+    def __init__(self, base, path=None, as_var=False):
         """Query the event for the field expression.
 
         :param str base: The root field
         :param list[str|int] path: The sub fields and array positions
+        :param bool: Render the node as a variable
         """
         self.base = base
         self.path = path or []
+        self.as_var = as_var
 
     def query_multiple_events(self):  # type: () -> (int, Field)
         """Get the index into the event array and query."""
@@ -436,7 +438,10 @@ class Field(Expression):
         return key
 
     def _render(self):
-        text = [self.escape_ident(self.base)]
+        text = []
+        if self.as_var:
+            text.append("$")
+        text.append(self.escape_ident(self.base))
 
         for key in self.path:
             if is_number(key):

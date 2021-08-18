@@ -494,9 +494,6 @@ class LarkToEQL(Interpreter):
         if text.rstrip("~") in keywords:
             raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
 
-        if text.startswith("$") and not self._dollar_var:
-            raise self._error(node, "Invalid syntax", cls=EqlSyntaxError)
-
         return text
 
     def number(self, node):
@@ -557,14 +554,25 @@ class LarkToEQL(Interpreter):
 
         return self._update_field_info(NodeInfo(ast.Field(name), source=node))
 
-    def field(self, node):
-        """Callback function to walk the AST."""
-        full_path = []
+    def varpath(self, node):
+        if not self._dollar_var:
+            raise self._error(node, "Invalid syntax", cls=EqlSyntaxError)
 
+        # no schema validation, just pass it through (syntax validation only)
+        if node["base_field"]:
+            path = [to_unicode(node["base_field"]["name"])]
+        else:
+            path = self._field_path(node["field"])
+
+        field = ast.Field(path[0], path[1:], as_var=True)
+        return NodeInfo(field, source=node, type_info=TypeHint.Unknown)
+
+    def _field_path(self, node):
+        full_path = []
         # to get around parser ambiguities, we had to create a token to mash all of the parts together
         # but we have a separate rule "field_parts" that can safely re-parse and separate out the tokens.
         # we can walk through each token, and build the field path accordingly
-        for part in lark_parser.parse(node.children[0], "field_parts").children:
+        for part in lark_parser.parse(node.children[-1], "field_parts").children:
             if part["NAME"]:
                 name = to_unicode(part["NAME"])
                 full_path.append(name)
@@ -576,17 +584,14 @@ class LarkToEQL(Interpreter):
             elif part["UNSIGNED_INTEGER"]:
                 full_path.append(int(part["UNSIGNED_INTEGER"]))
             else:
-                raise self._error(node, "Unable to parser field", cls=EqlSyntaxError)
+                raise self._error(node, "Unable to parse field", cls=EqlSyntaxError)
 
+        return full_path
+
+    def field(self, node):
+        """Callback function to walk the AST."""
+        full_path = self._field_path(node)
         base, path = full_path[0], full_path[1:]
-
-        # only Elastic Endpoint supports $var syntax
-        if base.startswith("$"):
-            if not self._dollar_var:
-                raise self._error(node, "Invalid syntax", cls=EqlSyntaxError)
-
-            field = ast.Field(base, path)
-            return NodeInfo(field, source=node, type_info=TypeHint.Unknown)
 
         # if get_variable:
         #     if base_name in RESERVED or node.sub_fields:

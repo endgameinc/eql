@@ -72,6 +72,7 @@ function_call: (INSENSITIVE_NAME | NAME) "(" [expressions] ")"
      |  "(" expr ")"
 ?signed_single_atom: SIGN? single_atom
 ?single_atom: literal
+            | varpath
             | field
             | base_field
 base_field: name | escaped_name
@@ -90,7 +91,7 @@ string: RAW_TQ_STRING
       | SQ_STRING
       | RAW_DQ_STRING
       | RAW_SQ_STRING
-
+varpath: "$" (field | base_field)
 
 // Check against keyword usage
 name: NAME
@@ -100,7 +101,7 @@ escaped_name: ESCAPED_NAME
 // pin the first "." or "[" to resolve token ambiguities
 // sequence by pid [1] [true] looks identical to:
 // sequence by pid[1] [true]
-FIELD: "$"? FIELD_IDENT (ATTR | INDEX)+
+FIELD: FIELD_IDENT (ATTR | INDEX)+
 ATTR: "." WHITESPACE? FIELD_IDENT
 INDEX: "[" WHITESPACE? UNSIGNED_INTEGER WHITESPACE? "]"
 FIELD_IDENT: NAME | ESCAPED_NAME
@@ -120,7 +121,7 @@ WORD: LETTER+
 
 ESCAPED_NAME: "`" /[^`\r\n]+/ "`"
 INSENSITIVE_NAME.2: ("_"|LETTER) ("_"|LETTER|DIGIT)* "~"
-NAME: "$"? ("_"|LETTER) ("_"|LETTER|DIGIT)*
+NAME: ("_"|LETTER) ("_"|LETTER|DIGIT)*
 UNSIGNED_INTEGER: /[0-9]+/
 EXPONENT: /[Ee][-+]?\d+/
 DECIMAL: UNSIGNED_INTEGER? "." UNSIGNED_INTEGER+ EXPONENT?
