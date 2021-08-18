@@ -32,7 +32,7 @@ _Released 2020-12-01_
 _Released 2020-11-24_
 
 ### Changed
-* Elasticsearch insensitive wildcard `:` syntax to support lists and wildcards
+* Elasticsearch insensitive wildcard `:` syntax to support lists and wildcards, behind parser flag
 
 
 ## Version 0.9.5
