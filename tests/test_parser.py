@@ -513,7 +513,14 @@ class TestParser(unittest.TestCase):
 
     def test_elasticsearch_flag(self):
         """Check that removed Endgame syntax throws an error and new syntax does not."""
-        schema = Schema({"process": {"process_name": "string",  "pid": "number"}})
+        schema = Schema({
+            "process": {
+                "process_name": "string",
+                "pid": "number",
+                "string_array": ["string"],
+                "obj_array": ["string"],
+            }
+        })
 
         with elasticsearch_syntax, schema:
             parse_query('process where process_name : "cmd.exe"')
@@ -588,7 +595,7 @@ class TestParser(unittest.TestCase):
             parse_query('process where process_name : ("cmd*.exe", "foo*.exe")')
 
             # support $variable syntax
-            parse_query('process where _arraysearch(process.args, $variable, $variable == "foo")')
-            parse_query('process where _arraysearch(process.Ext.code_signature, $sig, $sig.trusted == true)')
+            parse_query('process where _arraysearch(string_array, $variable, $variable == "foo")')
+            parse_query('process where _arraysearch(obj_array, $sig, $sig.trusted == true)')
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
