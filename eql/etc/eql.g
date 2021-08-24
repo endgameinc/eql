@@ -72,6 +72,7 @@ function_call: (INSENSITIVE_NAME | NAME) "(" [expressions] ")"
      |  "(" expr ")"
 ?signed_single_atom: SIGN? single_atom
 ?single_atom: literal
+            | varpath
             | field
             | base_field
 base_field: name | escaped_name
@@ -90,7 +91,7 @@ string: RAW_TQ_STRING
       | SQ_STRING
       | RAW_DQ_STRING
       | RAW_SQ_STRING
-
+varpath: "$" (field | base_field)
 
 // Check against keyword usage
 name: NAME

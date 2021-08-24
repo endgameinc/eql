@@ -43,7 +43,7 @@ __all__ = (
 )
 
 
-debugger_attached = 'pydevd' in sys.modules
+full_tracebacks = 'pydevd' in sys.modules
 
 NON_SPACE_WS = re.compile(r"[^\S ]+")
 
@@ -56,7 +56,7 @@ nullable_fields = ParserConfig(strict_fields=False)
 non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
-
+elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True)
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
             "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
@@ -134,6 +134,7 @@ class LarkToEQL(Interpreter):
         self._ignore_missing = ParserConfig.read_stack("ignore_missing_fields", False)
         self._strict_fields = ParserConfig.read_stack("strict_fields", False)
         self._elasticsearch_syntax = ParserConfig.read_stack("elasticsearch_syntax", False)
+        self._dollar_var = ParserConfig.read_stack("dollar_var", False)
         self._allow_enum = ParserConfig.read_stack("enable_enum", False)
         self._count_keys = []
         self._pipe_schemas = []
@@ -553,14 +554,25 @@ class LarkToEQL(Interpreter):
 
         return self._update_field_info(NodeInfo(ast.Field(name), source=node))
 
-    def field(self, node):
-        """Callback function to walk the AST."""
-        full_path = []
+    def varpath(self, node):
+        if not self._dollar_var:
+            raise self._error(node, "Invalid syntax", cls=EqlSyntaxError)
 
+        # no schema validation, just pass it through (syntax validation only)
+        if node["base_field"]:
+            path = [to_unicode(node["base_field"]["name"])]
+        else:
+            path = self._field_path(node["field"])
+
+        field = ast.Field(path[0], path[1:], as_var=True)
+        return NodeInfo(field, source=node, type_info=TypeHint.Unknown)
+
+    def _field_path(self, node):
+        full_path = []
         # to get around parser ambiguities, we had to create a token to mash all of the parts together
         # but we have a separate rule "field_parts" that can safely re-parse and separate out the tokens.
         # we can walk through each token, and build the field path accordingly
-        for part in lark_parser.parse(node.children[0], "field_parts").children:
+        for part in lark_parser.parse(node.children[-1], "field_parts").children:
             if part["NAME"]:
                 name = to_unicode(part["NAME"])
                 full_path.append(name)
@@ -572,8 +584,13 @@ class LarkToEQL(Interpreter):
             elif part["UNSIGNED_INTEGER"]:
                 full_path.append(int(part["UNSIGNED_INTEGER"]))
             else:
-                raise self._error(node, "Unable to parser field", cls=EqlSyntaxError)
+                raise self._error(node, "Unable to parse field", cls=EqlSyntaxError)
 
+        return full_path
+
+    def field(self, node):
+        """Callback function to walk the AST."""
+        full_path = self._field_path(node)
         base, path = full_path[0], full_path[1:]
 
         # if get_variable:
@@ -1204,7 +1221,7 @@ def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=
             exc = EqlSyntaxError("Invalid syntax",
                                  line=e.line - 1, column=e.column - 1, width=width,
                                  source='\n'.join(walker.lines[e.line - 2:e.line]))
-            if cfg.read_stack("full_traceback", debugger_attached):
+            if cfg.read_stack("full_traceback", full_tracebacks):
                 raise exc
 
         if exc is None:
@@ -1219,7 +1236,7 @@ def _parse(text, start=None, preprocessor=None, implied_any=False, implied_base=
                 return eql_node
             except EqlError as e:
                 # If full traceback mode is enabled, then re-raise the exception
-                if cfg.read_stack("full_traceback", debugger_attached):
+                if cfg.read_stack("full_traceback", full_tracebacks):
                     raise
                 exc = e
 

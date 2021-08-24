@@ -30,6 +30,7 @@ test_requires = [
     "PyYAML",
     "toml~=0.10",
     "configparser<5.0; python_version<'3.4'",
+    "contextlib2~=0.6.0",
     "more-itertools~=5.0; python_version<'3.4'",
     "importlib-metadata<3.0; python_version<'3.4'",
     "zipp<1.0; python_version<'3.4'",
@@ -73,6 +74,9 @@ class Test(TestCommand):
     def run_tests(self):
         """Run pytest."""
         import pytest
+        import eql
+
+        eql.parser.full_tracebacks = True
         sys.exit(pytest.main(self.pytest_args))
 
 
