@@ -2,7 +2,7 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 # Version 0.9.10
-_Released 2021-08-18_
+_Released 2021-08-24_
 
 ### Added
 * Endpoint `$variable` syntax, behind parser flag
