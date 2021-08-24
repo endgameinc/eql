@@ -410,7 +410,7 @@ class Field(Expression):
 
         :param str base: The root field
         :param list[str|int] path: The sub fields and array positions
-        :param bool: Render the node as a variable
+        :param bool as_var: Render the node as a variable
         """
         self.base = base
         self.path = path or []
