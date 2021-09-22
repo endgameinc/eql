@@ -15,6 +15,11 @@ _loaded_plugins = False
 unicode_t = type(u"")
 long_t = type(int(1e100))
 
+try:
+    chr_compat = unichr
+except NameError:
+    chr_compat = chr
+
 if unicode_t == str:
     strings = str,
     to_unicode = str

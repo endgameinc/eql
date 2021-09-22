@@ -1,6 +1,12 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.11
+_Released 2021-09-23_
+
+### Added
+* Support for `\u{...}` [unicode escape sequences](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-escape-characters) in `"` style strings
+
 # Version 0.9.10
 _Released 2021-08-24_
 

@@ -127,7 +127,7 @@ EXPONENT: /[Ee][-+]?\d+/
 DECIMAL: UNSIGNED_INTEGER? "." UNSIGNED_INTEGER+ EXPONENT?
        | UNSIGNED_INTEGER EXPONENT
 SIGN:           "+" | "-"
-DQ_STRING:        /"(\\[btnfr"'\\]|[^\r\n"\\])*"/
+DQ_STRING:        /"(\\[btnfr"'\\]|\\u\{[a-zA-Z0-9]{2,8}\}|[^\r\n"\\])*"/
 SQ_STRING:        /'(\\[btnfr"'\\]|[^\r\n'\\])*'/
 RAW_DQ_STRING:    /\?"(\\\"|[^"\r\n])*"/
 RAW_SQ_STRING:    /\?'(\\\'|[^'\r\n])*'/
