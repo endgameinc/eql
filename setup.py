@@ -29,6 +29,7 @@ test_requires = [
     "flake8-pep257==1.0.5",
     "PyYAML",
     "toml~=0.10",
+    "pluggy-1.0.0.dev0; python_version<'3.4'",
     "configparser<5.0; python_version<'3.4'",
     "contextlib2~=0.6.0",
     "more-itertools~=5.0; python_version<'3.4'",
