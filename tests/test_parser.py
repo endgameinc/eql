@@ -512,6 +512,7 @@ class TestParser(unittest.TestCase):
         self.assertListEqual(simple_extracted, [network_event.strip()])
 
     def test_unicode_escape(self):
+        """Confirm that u{...} escapes are interpreted properly."""
         self.assertEqual(String("just A here"), parse_expression('"just \\u{41} here"'))
         self.assertEqual(String("just A here"), parse_expression('"just \\u{041} here"'))
         self.assertEqual(String("just A here"), parse_expression('"just \\u{0041} here"'))
