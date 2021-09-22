@@ -10,7 +10,7 @@ from enum import Enum
 from .errors import EqlError, EqlCompileError
 from .signatures import SignatureMixin
 from .types import TypeHint, NodeInfo  # noqa: F401
-from .utils import to_unicode, is_string, is_number, ParserConfig, fold_case
+from .utils import to_unicode, is_string, is_number, ParserConfig, fold_case, chr_compat
 
 __all__ = (
     # base classes
@@ -335,8 +335,13 @@ class String(Literal):
     def unescape(cls, s):
         """Unescape an EQL rendered string."""
         def replace_callback(sub):
-            return cls.reverse_patterns.get(sub.group(), sub.group())
-        return re.sub(r"\\.", replace_callback, s)
+            original = sub.group()
+            if original.startswith("\\u{"):
+                hex_digits = original[3:-1]
+                as_hex = int(hex_digits, 16)
+                return chr_compat(as_hex)
+            return cls.reverse_patterns[sub.group()]
+        return re.sub(r"\\u\{.+\}|\\[^u]", replace_callback, s)
 
     def _render(self):
         return '"{}"'.format(self.escape(self.value))

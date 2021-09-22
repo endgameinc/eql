@@ -511,6 +511,20 @@ class TestParser(unittest.TestCase):
         simple_extracted = extract_query_terms(network_event + "| unique process_name, user_name\n\n| tail 10")
         self.assertListEqual(simple_extracted, [network_event.strip()])
 
+    def test_unicode_escape(self):
+        """Confirm that u{...} escapes are interpreted properly."""
+        self.assertEqual(String("just A here"), parse_expression('"just \\u{41} here"'))
+        self.assertEqual(String("just A here"), parse_expression('"just \\u{041} here"'))
+        self.assertEqual(String("just A here"), parse_expression('"just \\u{0041} here"'))
+        self.assertEqual(String("just \u0407 here"), parse_expression('"just \\u{407} here"'))
+        self.assertEqual(String("just \U0001F4A9 here"), parse_expression('"just \\u{1F4A9} here"'))
+        self.assertEqual(String("just \U0001F4A9 here"), parse_expression('"just \\u{001F4A9} here"'))
+
+        with self.assertRaises(EqlParseError):
+            parse_expression('"just \\u{0} here"')
+            parse_expression('"just \\u{1} here"')
+            parse_expression('"just \\u{0000001F4A9} here"')
+
     def test_elasticsearch_flag(self):
         """Check that removed Endgame syntax throws an error and new syntax does not."""
         schema = Schema({
