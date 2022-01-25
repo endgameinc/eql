@@ -11,7 +11,7 @@ from eql.ast import *  # noqa: F403
 from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
-    extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax
+    extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax, elasticsearch_validate_optional_fields
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -533,6 +533,7 @@ class TestParser(unittest.TestCase):
                 "pid": "number",
                 "string_array": ["string"],
                 "obj_array": ["string"],
+                "process": {"name": "string"}
             }
         })
 
@@ -574,6 +575,22 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == ?'cmd.exe'")
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == ?\"cmd.exe\"")
 
+            # optional fields in the schema
+            parse_query('process where ?process.name : "cmd.exe"')
+            parse_query('process where ?process_name : "cmd.exe"')
+
+            # optional fields not in the schema
+            parse_query('process where ?unknown_field : "cmd.exe"')
+            parse_query('process where ?unknown.field : "cmd.exe"')
+
+            with elasticsearch_validate_optional_fields:
+                self.assertRaises(EqlSemanticError, parse_query, 'process where ?unknown_field : "cmd.exe"')
+                self.assertRaises(EqlSemanticError, parse_query, 'process where ?unknown.field : "cmd.exe"')
+
+                # optional fields in the schema
+                parse_query('process where ?process.name : "cmd.exe"')
+                parse_query('process where ?process_name : "cmd.exe"')
+
         with schema:
             parse_query("process where process_name == 'cmd.exe'")
             parse_query("process where process_name == ?'cmd.exe'")
@@ -603,6 +620,14 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name regex~ (\"cmd.exe\")")
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where startsWith~(process_name, \"cmd.exe\")")
+
+            # optional fields in the schema
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where ?process.name : "cmd.exe"')
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where ?process_name : "cmd.exe"')
+
+            # optional fields not in the schema
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where ?unknown_field : "cmd.exe"')
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where ?unknown.field : "cmd.exe"')
 
         with elastic_endpoint_syntax, schema, ignore_missing_functions:
             # check elasticsearch-isms
