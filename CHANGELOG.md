@@ -1,6 +1,14 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.12
+
+ _Released 2022-03-11_
+
+### Added
+
+* Support for [repeated sequences](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-sequences)
+
 # Version 0.9.11
 _Released 2021-09-22_
 
@@ -174,7 +182,7 @@ _Released 2019-11-01_
 * Mathematical operators `+`, `-`, `*`, `/`, `%`
 * Documentation for `match()` function
 * `between()` function for extracting the first substring between two strings
-* `cidrMatch()` function and several helper methods for subnet matching and regex building 
+* `cidrMatch()` function and several helper methods for subnet matching and regex building
 * `extract_query_terms` to extract the original text for each event in a query
 
 ### Changed

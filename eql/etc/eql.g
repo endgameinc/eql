@@ -18,11 +18,11 @@ pipes: pipe+
 pipe: "|" name [single_atom single_atom+ | expressions]
 
 join_values.2: "by" expressions
-?with_params.2: "with" "maxspan" EQUALS time_range
+?with_params.2: "with" ("maxspan" EQUALS time_range | "runs" EQUALS number)
 time_range: number name?
 
 
-subquery_by: subquery fork_param? join_values?
+subquery_by: subquery fork_param? join_values? with_params?
 subquery: "[" event_query "]"
 fork_param: "fork" (EQUALS boolean)?
 
@@ -58,6 +58,7 @@ NOT_OP:     "not"
                     | method_chain
 named_subquery.2: name "of" subquery
 ?method_chain: value method*
+?key: NAME?
 ?value: SIGN? function_call
       | SIGN? atom
 
