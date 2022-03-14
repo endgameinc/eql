@@ -18,7 +18,7 @@ pipes: pipe+
 pipe: "|" name [single_atom single_atom+ | expressions]
 
 join_values.2: "by" expressions
-?with_params.2: "with" maxspan" EQUALS time_range
+?with_params.2: "with" "maxspan" EQUALS time_range
 repeated_sequence.2: "with" "runs" EQUALS number
 time_range: number name?
 
