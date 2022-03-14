@@ -578,7 +578,7 @@ class LarkToEQL(Interpreter):
         optional_syntax = text.startswith("?")
         if optional_syntax:
             if not allow_optional:
-                raise self._error(node, "Invalid syntax. Optional fields are not supported.", cls=EqlSyntaxError, width=1)
+                raise self._error(node, "Optional fields are not supported.", cls=EqlSyntaxError, width=1)
 
             text = text[1:]
 
