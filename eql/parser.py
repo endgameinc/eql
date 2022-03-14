@@ -1030,7 +1030,7 @@ class LarkToEQL(Interpreter):
         if repeated_sequence is not None:
             runs_count = node["repeated_sequence"]["UNSIGNED_INTEGER"].value
 
-            if int(runs_count) <= 0 :
+            if int(runs_count) <= 0:
                 raise self._error(repeated_sequence, "Repeated sequence runs must be greater than 0")
 
             if allow_runs is False:
