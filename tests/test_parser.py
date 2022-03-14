@@ -184,7 +184,6 @@ class TestParser(unittest.TestCase):
             'process where descendant of [process where process_name == "lsass.exe"] and process_name == "cmd.exe"',
             'join \t\t\t[process where process_name == "*"] [  file where file_path == "*"\n]',
             'join by pid [process where name == "*"] [file where path == "*"] until [process where opcode == 2]',
-            'sequence [process where opcode == 1] by unique_pid [file where opcode == 0] by unique_pid with runs=2',
             'sequence [process where name == "*"] [file where path == "*"] until [process where opcode == 2]',
             'sequence by pid [process where name == "*"] [file where path == "*"] until [process where opcode == 2]',
             'join [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
@@ -292,6 +291,7 @@ class TestParser(unittest.TestCase):
             'sequence [process where pid == pid] []',
             'sequence with maxspan=false [process where true] [process where true]',
             'sequence with badparam=100 [process where true] [process where true]',
+            'sequence [process where opcode == 1] by unique_pid [file where opcode == 0] by unique_pid with runs=2',
             # check that the same number of BYs are in every subquery
             'sequence with runs=2 [file where opcode == 0] [file where opcode == 0]'
             'sequence [file where true] [process where true] by field1',
@@ -535,9 +535,13 @@ class TestParser(unittest.TestCase):
                 "pid": "number",
                 "string_array": ["string"],
                 "obj_array": ["string"],
+                "opcode": "number",
                 "process": {"name": "string"}
             }
         })
+
+        with elasticsearch_syntax:
+            parse_query('sequence [process where opcode == 1] by unique_pid [file where opcode == 0] by unique_pid with runs=2')
 
         with elasticsearch_syntax, schema:
             parse_query('process where process_name : "cmd.exe"')
@@ -640,3 +644,5 @@ class TestParser(unittest.TestCase):
             parse_query('process where _arraysearch(obj_array, $sig, $sig.trusted == true)')
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
+
+            self.assertRaises(EqlSyntaxError, parse_query, "'sequence [process where opcode == 1] by unique_pid [file where opcode == 0] by unique_pid with runs=2'")
