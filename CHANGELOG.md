@@ -1,6 +1,14 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+
+# Version 0.9.12
+_Released 2021-XX-XX_
+
+### Added
+* Support for `?` [optional field syntax](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-optional-fields)
+
+
 # Version 0.9.11
 _Released 2021-09-22_
 

@@ -77,6 +77,7 @@ function_call: (INSENSITIVE_NAME | NAME) "(" [expressions] ")"
             | base_field
 base_field: name | escaped_name
 field: FIELD
+      | OPTIONAL_FIELD
 literal: number
        | boolean
        | null
@@ -102,12 +103,13 @@ escaped_name: ESCAPED_NAME
 // sequence by pid [1] [true] looks identical to:
 // sequence by pid[1] [true]
 FIELD: FIELD_IDENT (ATTR | INDEX)+
+OPTIONAL_FIELD: "?" FIELD_IDENT (ATTR | INDEX)*
 ATTR: "." WHITESPACE? FIELD_IDENT
 INDEX: "[" WHITESPACE? UNSIGNED_INTEGER WHITESPACE? "]"
 FIELD_IDENT: NAME | ESCAPED_NAME
 
 // create a non-conflicting helper rule to deconstruct
-field_parts: field_ident ("." field_ident | "[" array_index "]")+
+field_parts: field_ident ("." field_ident | "[" array_index "]")*
 !array_index: UNSIGNED_INTEGER
 !field_ident: NAME | ESCAPED_NAME
 
