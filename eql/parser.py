@@ -1,25 +1,25 @@
 """Python parser functions for EQL syntax."""
 from __future__ import unicode_literals
 
+import contextlib
 import datetime
 import re
 import sys
 from collections import defaultdict
-import contextlib
 
-from lark import Lark, Tree, Token
-from lark.visitors import Interpreter
+from lark import Lark, Token, Tree
 from lark.exceptions import LarkError
+from lark.visitors import Interpreter
 
-from . import ast
-from . import pipes
-from .types import TypeHint, NodeInfo, TypeFoldCheck
-from .errors import EqlSyntaxError, EqlSemanticError, EqlSchemaError, EqlTypeMismatchError, EqlError
+from . import ast, pipes
+from .errors import (EqlError, EqlParseError, EqlSchemaError, EqlSemanticError,
+                     EqlSyntaxError, EqlTypeMismatchError)
 from .etc import get_etc_file
 from .functions import get_function, list_functions
 from .optimizer import Optimizer
 from .schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC, Schema
-from .utils import to_unicode, load_extensions, ParserConfig, is_string
+from .types import NodeInfo, TypeFoldCheck, TypeHint
+from .utils import ParserConfig, is_string, load_extensions, to_unicode
 
 __all__ = (
     "allow_enum_fields",
@@ -1163,6 +1163,9 @@ class LarkToEQL(Interpreter):
             params = self.time_range(node['with_params']['time_range'])
 
         queries, close = self._get_subqueries_and_close(node, allow_fork=True)
+
+        if len(queries) == 1 and not self._elasticsearch_syntax:
+            raise self._error(node, "Only one item in the sequence", cls=EqlSyntaxError)
         return ast.Sequence(queries, params, close)
 
     def definitions(self, node):
