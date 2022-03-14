@@ -552,7 +552,7 @@ class TestParser(unittest.TestCase):
             runs = [1, 2, 10, 30]
             for run in runs:
                 subquery2_runs = '[file where opcode == 0] by unique_pid with runs={}'.format(run)
-                parse_query(f'sequence {subquery1} {subquery2_runs}')
+                parse_query('sequence {} {}'.format(subquery1, subquery2_runs))
 
             self.assertRaises(EqlSemanticError, parse_query, 'sequence [process where opcode == 1] with runs=0')
             self.assertRaises(EqlSyntaxError, parse_query, 'sequence [process where opcode == 1] with runs=-1')
