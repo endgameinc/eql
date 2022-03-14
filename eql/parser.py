@@ -56,6 +56,7 @@ nullable_fields = ParserConfig(strict_fields=False)
 non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
+elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
 elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True)
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
@@ -135,6 +136,7 @@ class LarkToEQL(Interpreter):
         self._strict_fields = ParserConfig.read_stack("strict_fields", False)
         self._elasticsearch_syntax = ParserConfig.read_stack("elasticsearch_syntax", False)
         self._dollar_var = ParserConfig.read_stack("dollar_var", False)
+        self._validate_optional_fields = ParserConfig.read_stack("validate_optional_fields", False)
         self._allow_enum = ParserConfig.read_stack("enable_enum", False)
         self._count_keys = []
         self._pipe_schemas = []
@@ -385,9 +387,9 @@ class LarkToEQL(Interpreter):
         return ast.TimeRange(quantity, unit)
 
     # fields
-    def _update_field_info(self, node_info):
+    def _update_field_info(self, node_info, optional_syntax=False):
         type_hint = None
-        allow_missing = self._schema.allow_missing
+        allow_missing = self._schema.allow_missing or (optional_syntax and not self._validate_optional_fields)
         field = node_info.node
         schema = None
         schema_hint = None
@@ -562,17 +564,25 @@ class LarkToEQL(Interpreter):
         if node["base_field"]:
             path = [to_unicode(node["base_field"]["name"])]
         else:
-            path = self._field_path(node["field"])
+            _, path = self._field_path(node["field"])
 
         field = ast.Field(path[0], path[1:], as_var=True)
         return NodeInfo(field, source=node, type_info=TypeHint.Unknown)
 
-    def _field_path(self, node):
+    def _field_path(self, node, allow_optional=False):
         full_path = []
         # to get around parser ambiguities, we had to create a token to mash all of the parts together
         # but we have a separate rule "field_parts" that can safely re-parse and separate out the tokens.
         # we can walk through each token, and build the field path accordingly
-        for part in lark_parser.parse(node.children[-1], "field_parts").children:
+        text = node.children[-1]
+        optional_syntax = text.startswith("?")
+        if optional_syntax:
+            if not allow_optional:
+                raise self._error(node, "Optional fields are not supported.", cls=EqlSyntaxError, width=1)
+
+            text = text[1:]
+
+        for part in lark_parser.parse(text, "field_parts").children:
             if part["NAME"]:
                 name = to_unicode(part["NAME"])
                 full_path.append(name)
@@ -586,11 +596,11 @@ class LarkToEQL(Interpreter):
             else:
                 raise self._error(node, "Unable to parse field", cls=EqlSyntaxError)
 
-        return full_path
+        return optional_syntax, full_path
 
     def field(self, node):
         """Callback function to walk the AST."""
-        full_path = self._field_path(node)
+        optional_syntax, full_path = self._field_path(node, allow_optional=self._elasticsearch_syntax)
         base, path = full_path[0], full_path[1:]
 
         # if get_variable:
@@ -602,7 +612,7 @@ class LarkToEQL(Interpreter):
         #     # This can be overridden by the parent function that is parsing it
         #     return self._add_variable(node.base)
         field = ast.Field(base, path)
-        return self._update_field_info(NodeInfo(field, source=node))
+        return self._update_field_info(NodeInfo(field, source=node), optional_syntax=optional_syntax)
 
     def string_predicate(self, node):
         """Callback function to walk the AST."""
