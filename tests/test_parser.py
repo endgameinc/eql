@@ -536,12 +536,26 @@ class TestParser(unittest.TestCase):
                 "string_array": ["string"],
                 "obj_array": ["string"],
                 "opcode": "number",
-                "process": {"name": "string"}
+                "process": {"name": "string"},
+                "unique_pid": "string"
+            },
+            "file": {
+                "opcode": "number",
+                "unique_pid": "string"
             }
         })
 
         with elasticsearch_syntax:
             parse_query('sequence [process where opcode == 1] by unique_pid [file where opcode == 0] by unique_pid with runs=2')
+
+            subquery1 = '[process where opcode == 1] by unique_pid'
+            runs = [1, 2, 10, 30]
+            for run in runs:
+                subquery2_runs = f'[file where opcode == 0] by unique_pid with runs={run}'
+                parse_query(f'sequence {subquery1} {subquery2_runs}')
+
+            self.assertRaises(EqlSemanticError, parse_query,'sequence [process where opcode == 1] with runs=0')
+            self.assertRaises(EqlSyntaxError, parse_query,'sequence [process where opcode == 1] with runs=-1')
 
         with elasticsearch_syntax, schema:
             parse_query('process where process_name : "cmd.exe"')
@@ -644,5 +658,3 @@ class TestParser(unittest.TestCase):
             parse_query('process where _arraysearch(obj_array, $sig, $sig.trusted == true)')
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
-
-            self.assertRaises(EqlSyntaxError, parse_query, "'sequence [process where opcode == 1] by unique_pid [file where opcode == 0] by unique_pid with runs=2'")

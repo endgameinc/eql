@@ -12,7 +12,7 @@ from lark.exceptions import LarkError
 from lark.visitors import Interpreter
 
 from . import ast, pipes
-from .errors import (EqlError, EqlParseError, EqlSchemaError, EqlSemanticError,
+from .errors import (EqlError, EqlSchemaError, EqlSemanticError,
                      EqlSyntaxError, EqlTypeMismatchError)
 from .etc import get_etc_file
 from .functions import get_function, list_functions
@@ -1029,6 +1029,10 @@ class LarkToEQL(Interpreter):
         runs_count = 1
         if repeated_sequence is not None:
             runs_count = node["repeated_sequence"]["UNSIGNED_INTEGER"].value
+
+            if int(runs_count) <= 0 :
+                raise self._error(repeated_sequence, "Repeated sequence runs must be greater than 0")
+
             if allow_runs is False:
                 raise self._error(repeated_sequence, "Repeated sequences are not allowed here")
 
@@ -1049,7 +1053,8 @@ class LarkToEQL(Interpreter):
         else:
             join_values = []
 
-        return NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs), source=node), join_values, runs_count
+        return NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs),
+                        source=node), join_values, runs_count
 
     def join_values(self, node):
         """Return all of the expressions."""
@@ -1068,7 +1073,8 @@ class LarkToEQL(Interpreter):
 
         # Figure out how many fields are joined by in the first query, and match across all
         subquery_nodes = node.get_list("subquery_by")
-        first, first_info, _ = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork, position=0, allow_runs=allow_runs)
+        first, first_info, _ = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork,
+                                                position=0, allow_runs=allow_runs)
         num_values = len(first_info)
         subqueries = [(first, first_info)]
 
@@ -1080,7 +1086,8 @@ class LarkToEQL(Interpreter):
             subquery_nodes.append(until_node["subquery_by"])
 
         for pos, subquery in enumerate(subquery_nodes[1:], 1):
-            subquery, join_values, runs = self.subquery_by(subquery, num_values=num_values, allow_fork=allow_fork, position=pos, allow_runs=allow_runs)
+            subquery, join_values, runs = self.subquery_by(subquery, num_values=num_values, allow_fork=allow_fork,
+                                                           position=pos, allow_runs=allow_runs)
             multiple_subqueries = [(subquery, join_values)] * int(runs)
             subqueries.extend(multiple_subqueries)
 
