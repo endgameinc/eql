@@ -184,7 +184,7 @@ class TestParser(unittest.TestCase):
             'process where descendant of [process where process_name == "lsass.exe"] and process_name == "cmd.exe"',
             'join \t\t\t[process where process_name == "*"] [  file where file_path == "*"\n]',
             'join by pid [process where name == "*"] [file where path == "*"] until [process where opcode == 2]',
-            'sequence [process where opcode == 1] by unique_pid [file where opcode == 0] by unique_pid with runs=2 [file where opcode == 0] by unique_pid',
+            'sequence [process where opcode == 1] by unique_pid [file where opcode == 0] by unique_pid with runs=2',
             'sequence [process where name == "*"] [file where path == "*"] until [process where opcode == 2]',
             'sequence by pid [process where name == "*"] [file where path == "*"] until [process where opcode == 2]',
             'join [process where process_name == "*"] by process_path [file where file_path == "*"] by image_path',
