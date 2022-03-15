@@ -549,7 +549,7 @@ class TestParser(unittest.TestCase):
 
         with elasticsearch_syntax:
             subquery1 = '[process where opcode == 1] by unique_pid'
-            runs = [1, 2, 10, 30]
+            runs = [2, 10, 30]
             for run in runs:
                 subquery2_runs = '[file where opcode == 0] by unique_pid with runs={}'.format(run)
                 parse_query('sequence {} {}'.format(subquery1, subquery2_runs))
@@ -558,6 +558,7 @@ class TestParser(unittest.TestCase):
                               'sequence [file where true] by field until [file where true] with runs=2')
             self.assertRaises(EqlSemanticError, parse_query, 'sequence [process where opcode == 1] with runs=0')
             self.assertRaises(EqlSyntaxError, parse_query, 'sequence [process where opcode == 1] with runs=-1')
+            self.assertRaises(EqlSemanticError, parse_query, 'sequence [process where opcode == 1] with runs=1')
 
         with elasticsearch_syntax, schema:
             parse_query('process where process_name : "cmd.exe"')

@@ -1033,8 +1033,8 @@ class LarkToEQL(Interpreter):
             if allow_runs is False:
                 raise self._error(repeated_sequence, "Unsupported usage of repeated syntax", cls=EqlSyntaxError)
 
-            if int(runs_count) <= 0:
-                raise self._error(repeated_sequence, "Repeated sequence runs must be greater than 0",
+            if int(runs_count) <= 1:
+                raise self._error(repeated_sequence, "Repeated sequence runs must be greater than 1",
                                   cls=EqlSemanticError)
 
         fork_param = node["fork_param"]
@@ -1187,7 +1187,7 @@ class LarkToEQL(Interpreter):
         allow_runs = self._elasticsearch_syntax
 
         queries, close = self._get_subqueries_and_close(node, allow_fork=True, allow_runs=allow_runs)
-        if len(queries) == 1 and not self._elasticsearch_syntax:
+        if len(queries) <= 1 and not self._elasticsearch_syntax:
             raise self._error(node, "Only one item in the sequence",
                               cls=EqlSemanticError if self._elasticsearch_syntax else EqlSyntaxError)
         return ast.Sequence(queries, params, close)
