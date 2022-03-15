@@ -1028,7 +1028,7 @@ class LarkToEQL(Interpreter):
 
         runs_count = 1
         if repeated_sequence is not None:
-            runs_count = node["repeated_sequence"]["UNSIGNED_INTEGER"].value
+            runs_count = int(node["repeated_sequence"]["UNSIGNED_INTEGER"].value)
 
             if allow_runs is False:
                 raise self._error(repeated_sequence, "Unsupported usage of repeated syntax", cls=EqlSyntaxError)
@@ -1092,7 +1092,7 @@ class LarkToEQL(Interpreter):
         for pos, subquery in enumerate(subquery_nodes[1:], 1):
             subquery, join_values, runs = self.subquery_by(subquery, num_values=num_values, allow_fork=allow_fork,
                                                            position=pos, allow_runs=allow_runs)
-            multiple_subqueries = [(subquery, join_values)] * int(runs)
+            multiple_subqueries = [(subquery, join_values)] * runs
             subqueries.extend(multiple_subqueries)
 
         # Validate that each field has matching types
