@@ -1030,12 +1030,12 @@ class LarkToEQL(Interpreter):
         if repeated_sequence is not None:
             runs_count = node["repeated_sequence"]["UNSIGNED_INTEGER"].value
 
-            if int(runs_count) <= 0:
-                raise self._error(repeated_sequence, "Repeated sequence runs must be greater than 0",
-                                  cls=EqlSemanticError if self._elasticsearch_syntax else EqlSyntaxError)
-
             if allow_runs is False:
                 raise self._error(repeated_sequence, "Unsupported usage of repeated syntax", cls=EqlSyntaxError)
+
+            if int(runs_count) <= 0:
+                raise self._error(repeated_sequence, "Repeated sequence runs must be greater than 0",
+                                  cls=EqlSemanticError)
 
         fork_param = node["fork_param"]
 

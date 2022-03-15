@@ -293,7 +293,9 @@ class TestParser(unittest.TestCase):
             'sequence with badparam=100 [process where true] [process where true]',
             'sequence [process where opcode == 1] by unique_pid [file where opcode == 0] by unique_pid with runs=2',
             # check that the same number of BYs are in every subquery
-            'sequence with runs=2 [file where opcode == 0] [file where opcode == 0]'
+            'sequence with runs=2 [file where opcode == 0] [file where opcode == 0]',
+            'sequence [file where true] [process where true] until [network where true] with runs=2',
+            'join [file where opcode == 0] [file where opcode == 0] with runs=1',
             'sequence [file where true] [process where true] by field1',
             'sequence [file where true] by field [file where true] by field1 until [file where true]',
             'sequence by a,b,c [file where true] by field [file where true] by field1 until [file where true]',

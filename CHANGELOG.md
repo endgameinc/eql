@@ -3,13 +3,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 # Version 0.9.12
 
- _Released 2022-03-11_
+ _Released 2022-03-15_
 
 ### Added
 
-* Support for `?` [optional field syntax](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-optional-fields)
-* Support for [repeated sequences](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-sequences)
-
+* Support for `?` [optional field syntax](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-optional-fields) if the Elasticsearch flag is enabled
+* Support for [repeated sequences](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-sequences) if the Elasticsearch flag is enabled
 
 # Version 0.9.11
 _Released 2021-09-22_
