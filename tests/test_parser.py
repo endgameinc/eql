@@ -546,14 +546,14 @@ class TestParser(unittest.TestCase):
         })
 
         with elasticsearch_syntax:
-            parse_query('sequence [file where opcode == 0] by unique_pid with runs=2')
-
             subquery1 = '[process where opcode == 1] by unique_pid'
             runs = [1, 2, 10, 30]
             for run in runs:
                 subquery2_runs = '[file where opcode == 0] by unique_pid with runs={}'.format(run)
                 parse_query('sequence {} {}'.format(subquery1, subquery2_runs))
 
+            self.assertRaises(EqlSyntaxError, parse_query,
+                              'sequence [file where true] by field until [file where true] with runs=2')
             self.assertRaises(EqlSemanticError, parse_query, 'sequence [process where opcode == 1] with runs=0')
             self.assertRaises(EqlSyntaxError, parse_query, 'sequence [process where opcode == 1] with runs=-1')
 
@@ -648,6 +648,12 @@ class TestParser(unittest.TestCase):
             # optional fields not in the schema
             self.assertRaises(EqlSyntaxError, parse_query, 'process where ?unknown_field : "cmd.exe"')
             self.assertRaises(EqlSyntaxError, parse_query, 'process where ?unknown.field : "cmd.exe"')
+
+            subquery1 = '[process where opcode == 1] by unique_pid'
+            runs = [-1, 0, 1, 2, 10, 30]
+            for run in runs:
+                subquery2_runs = '[file where opcode == 0] by unique_pid with runs={}'.format(run)
+                self.assertRaises(EqlSyntaxError, parse_query, 'sequence {} {}'.format(subquery1, subquery2_runs))
 
         with elastic_endpoint_syntax, schema, ignore_missing_functions:
             # check elasticsearch-isms

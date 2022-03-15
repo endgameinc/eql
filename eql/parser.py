@@ -1031,10 +1031,11 @@ class LarkToEQL(Interpreter):
             runs_count = node["repeated_sequence"]["UNSIGNED_INTEGER"].value
 
             if int(runs_count) <= 0:
-                raise self._error(repeated_sequence, "Repeated sequence runs must be greater than 0")
+                raise self._error(repeated_sequence, "Repeated sequence runs must be greater than 0",
+                                  cls=EqlSemanticError if self._elasticsearch_syntax else EqlSyntaxError)
 
             if allow_runs is False:
-                raise self._error(repeated_sequence, "Repeated sequences are not allowed here")
+                raise self._error(repeated_sequence, "Unsupported usage of repeated syntax", cls=EqlSyntaxError)
 
         fork_param = node["fork_param"]
 
@@ -1053,8 +1054,8 @@ class LarkToEQL(Interpreter):
         else:
             join_values = []
 
-        return NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs),
-                        source=node), join_values, runs_count
+        node_info = NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs), source=node)
+        return node_info, join_values, runs_count
 
     def join_values(self, node):
         """Return all of the expressions."""
@@ -1083,6 +1084,9 @@ class LarkToEQL(Interpreter):
         close = None
 
         if until_node:
+            repeated_sequence = until_node["subquery_by"]["repeated_sequence"]
+            if repeated_sequence:
+                raise self._error(repeated_sequence, "Unsupported usage of repeated syntax", cls=EqlSyntaxError)
             subquery_nodes.append(until_node["subquery_by"])
 
         for pos, subquery in enumerate(subquery_nodes[1:], 1):
@@ -1180,11 +1184,12 @@ class LarkToEQL(Interpreter):
         if node['with_params']:
             params = self.time_range(node['with_params']['time_range'])
 
-        allow_runs = True if self._elasticsearch_syntax else False
+        allow_runs = self._elasticsearch_syntax
 
         queries, close = self._get_subqueries_and_close(node, allow_fork=True, allow_runs=allow_runs)
         if len(queries) == 1 and not self._elasticsearch_syntax:
-            raise self._error(node, "Only one item in the sequence", cls=EqlSyntaxError)
+            raise self._error(node, "Only one item in the sequence",
+                              cls=EqlSemanticError if self._elasticsearch_syntax else EqlSyntaxError)
         return ast.Sequence(queries, params, close)
 
     def definitions(self, node):
