@@ -1,25 +1,25 @@
 """Python parser functions for EQL syntax."""
 from __future__ import unicode_literals
 
+import contextlib
 import datetime
 import re
 import sys
 from collections import defaultdict
-import contextlib
 
-from lark import Lark, Tree, Token
-from lark.visitors import Interpreter
+from lark import Lark, Token, Tree
 from lark.exceptions import LarkError
+from lark.visitors import Interpreter
 
-from . import ast
-from . import pipes
-from .types import TypeHint, NodeInfo, TypeFoldCheck
-from .errors import EqlSyntaxError, EqlSemanticError, EqlSchemaError, EqlTypeMismatchError, EqlError
+from . import ast, pipes
+from .errors import (EqlError, EqlSchemaError, EqlSemanticError,
+                     EqlSyntaxError, EqlTypeMismatchError)
 from .etc import get_etc_file
 from .functions import get_function, list_functions
 from .optimizer import Optimizer
 from .schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC, Schema
-from .utils import to_unicode, load_extensions, ParserConfig, is_string
+from .types import NodeInfo, TypeFoldCheck, TypeHint
+from .utils import ParserConfig, is_string, load_extensions, to_unicode
 
 __all__ = (
     "allow_enum_fields",
@@ -1002,7 +1002,7 @@ class LarkToEQL(Interpreter):
         query = self.visit(node["subquery"]["event_query"])
         return NodeInfo(ast.NamedSubquery(name, query), TypeHint.Boolean, source=node)
 
-    def subquery_by(self, node, num_values=None, position=None, close=None, allow_fork=False):
+    def subquery_by(self, node, num_values=None, position=None, close=None, allow_fork=False, allow_runs=False):
         """Callback function to walk the AST."""
         if not self._subqueries_enabled:
             raise self._error(node, "Subqueries not supported")
@@ -1023,6 +1023,20 @@ class LarkToEQL(Interpreter):
             raise self._error(error_node, message, num=num_values, end=end)
 
         kwargs = {}
+
+        repeated_sequence = node["repeated_sequence"]
+
+        runs_count = 1
+        if repeated_sequence is not None:
+            runs_count = int(node["repeated_sequence"]["UNSIGNED_INTEGER"].value)
+
+            if allow_runs is False:
+                raise self._error(repeated_sequence, "Unsupported usage of repeated syntax", cls=EqlSyntaxError)
+
+            if runs_count <= 1:
+                raise self._error(repeated_sequence, "Repeated sequence runs must be greater than 1",
+                                  cls=EqlSemanticError)
+
         fork_param = node["fork_param"]
 
         if fork_param is not None:
@@ -1040,7 +1054,8 @@ class LarkToEQL(Interpreter):
         else:
             join_values = []
 
-        return NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs), source=node), join_values
+        node_info = NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs), source=node)
+        return node_info, join_values, runs_count
 
     def join_values(self, node):
         """Return all of the expressions."""
@@ -1051,7 +1066,7 @@ class LarkToEQL(Interpreter):
         queries, close = self._get_subqueries_and_close(node)
         return ast.Join(queries, close)
 
-    def _get_subqueries_and_close(self, node, allow_fork=False):
+    def _get_subqueries_and_close(self, node, allow_fork=False, allow_runs=False):
         """Helper function used by join and sequence to avoid duplicate code."""
         if not self._subqueries_enabled:
             # Raise the error earlier (instead of waiting until subquery_by) so that it's more meaningful
@@ -1059,7 +1074,8 @@ class LarkToEQL(Interpreter):
 
         # Figure out how many fields are joined by in the first query, and match across all
         subquery_nodes = node.get_list("subquery_by")
-        first, first_info = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork, position=0)
+        first, first_info, _ = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork,
+                                                position=0, allow_runs=allow_runs)
         num_values = len(first_info)
         subqueries = [(first, first_info)]
 
@@ -1068,10 +1084,16 @@ class LarkToEQL(Interpreter):
         close = None
 
         if until_node:
+            repeated_sequence = until_node["subquery_by"]["repeated_sequence"]
+            if repeated_sequence:
+                raise self._error(repeated_sequence, "Unsupported usage of repeated syntax", cls=EqlSyntaxError)
             subquery_nodes.append(until_node["subquery_by"])
 
         for pos, subquery in enumerate(subquery_nodes[1:], 1):
-            subqueries.append(self.subquery_by(subquery, num_values=num_values, allow_fork=allow_fork, position=pos))
+            subquery, join_values, runs_count = self.subquery_by(subquery, num_values=num_values, allow_fork=allow_fork,
+                                                                 position=pos, allow_runs=allow_runs)
+            multiple_subqueries = [(subquery, join_values)] * runs_count
+            subqueries.extend(multiple_subqueries)
 
         # Validate that each field has matching types
         default_hint = TypeHint.primitives()
@@ -1162,7 +1184,12 @@ class LarkToEQL(Interpreter):
         if node['with_params']:
             params = self.time_range(node['with_params']['time_range'])
 
-        queries, close = self._get_subqueries_and_close(node, allow_fork=True)
+        allow_runs = self._elasticsearch_syntax
+
+        queries, close = self._get_subqueries_and_close(node, allow_fork=True, allow_runs=allow_runs)
+        if len(queries) <= 1 and not self._elasticsearch_syntax:
+            raise self._error(node, "Only one item in the sequence",
+                              cls=EqlSemanticError if self._elasticsearch_syntax else EqlSyntaxError)
         return ast.Sequence(queries, params, close)
 
     def definitions(self, node):

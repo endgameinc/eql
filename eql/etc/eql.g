@@ -11,7 +11,7 @@ base_query: sequence
           | join
           | event_query
 event_query: [name "where"] expr
-sequence: "sequence" [join_values with_params? | with_params join_values?] subquery_by subquery_by+ [until_subquery_by]
+sequence: "sequence" [join_values with_params? | with_params join_values?] subquery_by+ [until_subquery_by]
 join: "join" join_values? subquery_by subquery_by+ until_subquery_by?
 until_subquery_by.2: "until" subquery_by
 pipes: pipe+
@@ -19,10 +19,11 @@ pipe: "|" name [single_atom single_atom+ | expressions]
 
 join_values.2: "by" expressions
 ?with_params.2: "with" "maxspan" EQUALS time_range
+repeated_sequence.2: "with" "runs" EQUALS UNSIGNED_INTEGER
 time_range: number name?
 
 
-subquery_by: subquery fork_param? join_values?
+subquery_by: subquery fork_param? join_values? repeated_sequence?
 subquery: "[" event_query "]"
 fork_param: "fork" (EQUALS boolean)?
 
