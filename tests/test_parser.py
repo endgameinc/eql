@@ -672,9 +672,9 @@ class TestParser(unittest.TestCase):
             parse_query('process where _arraysearch(obj_array, $sig, $sig.trusted == true)')
 
             # support sequence alias
-            # event0 = '[process where process.name == "abc.exe"]'
-            # event1 = '[network where p0.process.name == process.name]'
-            # parse_query('sequence %s as p0 %s' % (event0, event1))
-            # parse_query('sequence by user.name %s as p0 %s' % (event0, event1))
+            event0 = '[process where process.name == "abc.exe"]'
+            event1 = '[network where p0.process.name == process.name]'
+            parse_query('sequence %s as p0 %s' % (event0, event1))
+            parse_query('sequence by user.name %s as p0 %s' % (event0, event1))
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")

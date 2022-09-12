@@ -1,6 +1,15 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.14
+
+_Released 2022-09-16_
+
+### Added
+
+* Support for `sequence alias` if the Endpoint flag is enabled
+
+
 # Version 0.9.13
 
 _Released 2022-05-25_
