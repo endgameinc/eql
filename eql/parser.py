@@ -57,9 +57,9 @@ non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
 elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
-elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True)
+elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
 
-keywords = ("and", "by", "const", "false", "in", "join", "macro",
+keywords = ("and", "as", "by", "const", "false", "in", "join", "macro",
             "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
             )
 
@@ -143,6 +143,8 @@ class LarkToEQL(Interpreter):
         self._var_types = dict()
         self._check_functions = ParserConfig.read_stack("check_functions", True)
         self._stacks = defaultdict(list)
+        self._alias_enabled = ParserConfig.read_stack("allow_alias", True)
+        self._alias_list = []
 
     @property
     def lines(self):
@@ -415,9 +417,13 @@ class LarkToEQL(Interpreter):
         elif not self._schema:
             return NodeInfo(node_info, TypeHint.Unknown, source=node_info)
 
-        # check if it's a variable and
+        # check if it's a variable or using an alias
         elif field.base not in self._var_types:
             event_field = field
+
+            if field.base in self._alias_list:
+                event_field = ast.Field(field.path[0], field.path[1:])
+
             event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
 
             schema_hint = self._schema.get_event_type_hint(event_type, event_field.full_path)
@@ -1002,7 +1008,8 @@ class LarkToEQL(Interpreter):
         query = self.visit(node["subquery"]["event_query"])
         return NodeInfo(ast.NamedSubquery(name, query), TypeHint.Boolean, source=node)
 
-    def subquery_by(self, node, num_values=None, position=None, close=None, allow_fork=False, allow_runs=False):
+    def subquery_by(self, node, num_values=None, position=None, close=None, allow_fork=False, allow_runs=False,
+                    allow_alias=False):
         """Callback function to walk the AST."""
         if not self._subqueries_enabled:
             raise self._error(node, "Subqueries not supported")
@@ -1055,6 +1062,16 @@ class LarkToEQL(Interpreter):
             join_values = []
 
         node_info = NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs), source=node)
+
+        alias = node["sequence_alias"]
+        if alias is not None:
+            if allow_alias is False:
+                raise self._error(alias, "Unsupported usage of alias syntax", cls=EqlSyntaxError)
+            alias_name = alias.get('name').get('NAME').value
+
+            # reference the subqueries by name in alias mapping
+            self._alias_list.append(alias_name)
+
         return node_info, join_values, runs_count
 
     def join_values(self, node):
@@ -1066,7 +1083,7 @@ class LarkToEQL(Interpreter):
         queries, close = self._get_subqueries_and_close(node)
         return ast.Join(queries, close)
 
-    def _get_subqueries_and_close(self, node, allow_fork=False, allow_runs=False):
+    def _get_subqueries_and_close(self, node, allow_fork=False, allow_runs=False, allow_alias=False):
         """Helper function used by join and sequence to avoid duplicate code."""
         if not self._subqueries_enabled:
             # Raise the error earlier (instead of waiting until subquery_by) so that it's more meaningful
@@ -1075,7 +1092,9 @@ class LarkToEQL(Interpreter):
         # Figure out how many fields are joined by in the first query, and match across all
         subquery_nodes = node.get_list("subquery_by")
         first, first_info, _ = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork,
-                                                position=0, allow_runs=allow_runs)
+                                                position=0, allow_runs=allow_runs,
+                                                allow_alias=allow_alias)
+
         num_values = len(first_info)
         subqueries = [(first, first_info)]
 
@@ -1091,7 +1110,8 @@ class LarkToEQL(Interpreter):
 
         for pos, subquery in enumerate(subquery_nodes[1:], 1):
             subquery, join_values, runs_count = self.subquery_by(subquery, num_values=num_values, allow_fork=allow_fork,
-                                                                 position=pos, allow_runs=allow_runs)
+                                                                 position=pos, allow_runs=allow_runs,
+                                                                 allow_alias=allow_alias)
             multiple_subqueries = [(subquery, join_values)] * runs_count
             subqueries.extend(multiple_subqueries)
 
@@ -1186,7 +1206,8 @@ class LarkToEQL(Interpreter):
 
         allow_runs = self._elasticsearch_syntax
 
-        queries, close = self._get_subqueries_and_close(node, allow_fork=True, allow_runs=allow_runs)
+        queries, close = self._get_subqueries_and_close(node, allow_fork=True, allow_runs=allow_runs,
+                                                        allow_alias=self._alias_enabled)
         if len(queries) <= 1 and not self._elasticsearch_syntax:
             raise self._error(node, "Only one item in the sequence",
                               cls=EqlSemanticError if self._elasticsearch_syntax else EqlSyntaxError)

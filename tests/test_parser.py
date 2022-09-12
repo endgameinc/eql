@@ -539,11 +539,16 @@ class TestParser(unittest.TestCase):
                 "obj_array": ["string"],
                 "opcode": "number",
                 "process": {"name": "string"},
-                "unique_pid": "string"
+                "unique_pid": "string",
+                "user": {"name": "string"}
             },
             "file": {
                 "opcode": "number",
                 "unique_pid": "string"
+            },
+            "network": {
+                "process": {"name": "string"},
+                "user": {"name": "string"}
             }
         })
 
@@ -665,5 +670,9 @@ class TestParser(unittest.TestCase):
             # support $variable syntax
             parse_query('process where _arraysearch(string_array, $variable, $variable == "foo")')
             parse_query('process where _arraysearch(obj_array, $sig, $sig.trusted == true)')
+
+            # support sequence alias
+            parse_query('sequence [process where process.name == "abc.exe"] as p0 [network where p0.process.name == process.name]')
+            parse_query('sequence by user.name [process where process.name == "abc.exe"] as p0 [network where p0.process.name == process.name]')
 
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
