@@ -7,7 +7,7 @@ _Released 2022-09-16_
 
 ### Added
 
-* Support for `sequence alias` if the Endpoint flag is enabled
+* Support for sequence `alias` syntax if the Endpoint flag is enabled
 
 
 # Version 0.9.13
