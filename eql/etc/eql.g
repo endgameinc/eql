@@ -24,7 +24,7 @@ sequence_alias.2: "as" name
 time_range: number name?
 
 
-subquery_by: subquery fork_param? sequence_alias? join_values? repeated_sequence?
+subquery_by: subquery fork_param? join_values? repeated_sequence? sequence_alias?
 subquery: "[" event_query "]"
 fork_param: "fork" (EQUALS boolean)?
 

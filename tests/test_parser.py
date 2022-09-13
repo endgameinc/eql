@@ -321,8 +321,8 @@ class TestParser(unittest.TestCase):
             'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
             'sequence by pid with maxspan=1.0075d [process where process_name == "*"] [file where file_path == "*"]',
 
-            # bad sequence alias
-            'sequence [process where process.name == "cmd.exe"] as a0 [network where badalias.process.id == process.id]'
+            # bad sequence alias, without endpoint syntax
+            'sequence [process where process.name == "cmd.exe"] as a0 [network where a0.process.id == process.id]'
         ]
         for query in invalid:
             self.assertRaises(EqlParseError, parse_query, query)
@@ -677,9 +677,12 @@ class TestParser(unittest.TestCase):
             # support sequence alias
             event0 = '[process where process.name == "abc.exe"]'
             event1 = '[network where p0.process.name == process.name]'
+            event2 = '[network where p0.pid == 0]'
+            event3 = '[network where p0.badfield == 0]'
             parse_query('sequence %s as p0 %s' % (event0, event1))
             parse_query('sequence by user.name %s as p0 %s' % (event0, event1))
-            parse_query('sequence with maxspan=1m %s as p0 by user.name %s by user.name' % (event0, event1))
-
-            self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event1))
+            parse_query('sequence with maxspan=1m %s by user.name as p0 %s by user.name' % (event0, event1))
+            parse_query('sequence by user.name %s as p0 %s' % (event0, event2))
+            self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event2))
+            self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event3))
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")

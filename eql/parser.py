@@ -144,7 +144,7 @@ class LarkToEQL(Interpreter):
         self._check_functions = ParserConfig.read_stack("check_functions", True)
         self._stacks = defaultdict(list)
         self._alias_enabled = ParserConfig.read_stack("allow_alias", False)
-        self._alias_list = []
+        self._alias_mapping = {}
 
     @property
     def lines(self):
@@ -421,14 +421,15 @@ class LarkToEQL(Interpreter):
         elif field.base not in self._var_types:
             event_field = field
 
-            if self._alias_enabled and field.base in self._alias_list:
+            # alias perform no field validation on what's inside the alias
+            if self._alias_enabled and field.base in self._alias_mapping:
                 event_field = ast.Field(field.path[0], field.path[1:])
+                event_type = self._alias_mapping[field.base]
+                # if self._alias_enabled and (field.base not in self._alias_mapping and field.base not in schema_keys):
+                #     raise self._error(node_info, "Unknown field %s" % field.base, cls=EqlSchemaError)
 
-            schema_keys = self._schema.get_nested_schema_keys()
-            if self._alias_enabled and (field.base not in self._alias_list and field.base not in schema_keys):
-                raise self._error(node_info, "Unknown field %s" % field.base, cls=EqlSchemaError)
-
-            event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
+            else:
+                event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
 
             schema_hint = self._schema.get_event_type_hint(event_type, event_field.full_path)
 
@@ -1073,7 +1074,7 @@ class LarkToEQL(Interpreter):
             alias_name = alias.get('name').get('NAME').value
 
             # reference the subqueries by name in alias mapping
-            self._alias_list.append(alias_name)
+            self._alias_mapping[alias_name] = query.event_type
 
         return node_info, join_values, runs_count
 
