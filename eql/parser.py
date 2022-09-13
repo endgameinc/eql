@@ -143,7 +143,7 @@ class LarkToEQL(Interpreter):
         self._var_types = dict()
         self._check_functions = ParserConfig.read_stack("check_functions", True)
         self._stacks = defaultdict(list)
-        self._alias_enabled = ParserConfig.read_stack("allow_alias", True)
+        self._alias_enabled = ParserConfig.read_stack("allow_alias", False)
         self._alias_list = []
 
     @property
@@ -421,8 +421,12 @@ class LarkToEQL(Interpreter):
         elif field.base not in self._var_types:
             event_field = field
 
-            if field.base in self._alias_list:
+            if self._alias_enabled and field.base in self._alias_list:
                 event_field = ast.Field(field.path[0], field.path[1:])
+
+            schema_keys = self._schema.get_nested_schema_keys()
+            if self._alias_enabled and (field.base not in self._alias_list and field.base not in schema_keys):
+                raise self._error(node_info, f"Unknown field {field.base}", cls=EqlSchemaError)
 
             event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
 

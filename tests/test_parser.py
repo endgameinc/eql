@@ -8,7 +8,7 @@ import unittest
 
 from eql import Schema
 from eql.ast import *  # noqa: F403
-from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
+from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlParseError
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
     extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax, elasticsearch_validate_optional_fields
@@ -256,6 +256,9 @@ class TestParser(unittest.TestCase):
                 traceback.print_tb(tb)
                 self.fail("Unable to parse query #{}: {}".format(i, text))
 
+    def test_temp(self):
+        self.assertRaises(EqlParseError, parse_query, 'sequence by user.name [process where process.name == "cmd.exe"] as alias [network where badalias.process.id == process.id]')
+
     def test_invalid_queries(self):
         """Test that invalid queries throw the proper error."""
         invalid = [
@@ -320,6 +323,9 @@ class TestParser(unittest.TestCase):
             'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
             'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
             'sequence by pid with maxspan=1.0075d [process where process_name == "*"] [file where file_path == "*"]',
+
+            # bad sequence alias
+            'sequence [process where process.name == "cmd.exe"] as a0 [network where badalias.process.id == process.id]'
         ]
         for query in invalid:
             self.assertRaises(EqlParseError, parse_query, query)
@@ -677,4 +683,5 @@ class TestParser(unittest.TestCase):
             parse_query('sequence %s as p0 %s' % (event0, event1))
             parse_query('sequence by user.name %s as p0 %s' % (event0, event1))
 
+            self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event1))
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")

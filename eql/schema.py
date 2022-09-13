@@ -149,6 +149,11 @@ class Schema(ParserConfig):
             if self.allow_generic:
                 return TypeHint.Unknown, None
 
+    def get_nested_schema_keys(self):
+        """Return the nested schema keys."""
+        return list(set(list(self.flatten().schema['generic'].keys()) + list(self.schema.keys())))
+
+
     def validate_event_type(self, event_type):
         """Validate that an event type is allowed by the schema."""
         if event_type == EVENT_TYPE_ANY:
