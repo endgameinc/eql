@@ -256,9 +256,6 @@ class TestParser(unittest.TestCase):
                 traceback.print_tb(tb)
                 self.fail("Unable to parse query #{}: {}".format(i, text))
 
-    def test_temp(self):
-        self.assertRaises(EqlParseError, parse_query, 'sequence by user.name [process where process.name == "cmd.exe"] as alias [network where badalias.process.id == process.id]')
-
     def test_invalid_queries(self):
         """Test that invalid queries throw the proper error."""
         invalid = [
