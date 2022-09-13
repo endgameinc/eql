@@ -426,7 +426,7 @@ class LarkToEQL(Interpreter):
 
             schema_keys = self._schema.get_nested_schema_keys()
             if self._alias_enabled and (field.base not in self._alias_list and field.base not in schema_keys):
-                raise self._error(node_info, f"Unknown field {field.base}", cls=EqlSchemaError)
+                raise self._error(node_info, "Unknown field %s" % field.base, cls=EqlSchemaError)
 
             event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
 
