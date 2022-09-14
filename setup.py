@@ -36,6 +36,7 @@ test_requires = [
     "more-itertools~=5.0; python_version<'3.4'",
     "importlib-metadata<3.0; python_version<'3.4'",
     "zipp<1.0; python_version<'3.4'",
+    "attrs==21.4.0"
 ]
 etc_files = [os.path.relpath(fn, 'eql') for fn in glob.glob('eql/etc/*') if not fn.endswith('.py')]
 

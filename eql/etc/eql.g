@@ -20,10 +20,11 @@ pipe: "|" name [single_atom single_atom+ | expressions]
 join_values.2: "by" expressions
 ?with_params.2: "with" "maxspan" EQUALS time_range
 repeated_sequence.2: "with" "runs" EQUALS UNSIGNED_INTEGER
+sequence_alias.2: "as" name
 time_range: number name?
 
 
-subquery_by: subquery fork_param? join_values? repeated_sequence?
+subquery_by: subquery fork_param? join_values? repeated_sequence? sequence_alias?
 subquery: "[" event_query "]"
 fork_param: "fork" (EQUALS boolean)?
 

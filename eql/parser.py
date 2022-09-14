@@ -57,9 +57,9 @@ non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
 elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
-elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True)
+elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
 
-keywords = ("and", "by", "const", "false", "in", "join", "macro",
+keywords = ("and", "as", "by", "const", "false", "in", "join", "macro",
             "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
             )
 
@@ -143,6 +143,8 @@ class LarkToEQL(Interpreter):
         self._var_types = dict()
         self._check_functions = ParserConfig.read_stack("check_functions", True)
         self._stacks = defaultdict(list)
+        self._alias_enabled = ParserConfig.read_stack("allow_alias", False)
+        self._alias_mapping = {}
 
     @property
     def lines(self):
@@ -415,10 +417,16 @@ class LarkToEQL(Interpreter):
         elif not self._schema:
             return NodeInfo(node_info, TypeHint.Unknown, source=node_info)
 
-        # check if it's a variable and
+        # check if it's a variable or using an alias
         elif field.base not in self._var_types:
             event_field = field
-            event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
+
+            # alias perform no field validation on what's inside the alias
+            if self._alias_enabled and field.base in self._alias_mapping:
+                event_field = ast.Field(field.path[0], field.path[1:])
+                event_type = self._alias_mapping[field.base]
+            else:
+                event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
 
             schema_hint = self._schema.get_event_type_hint(event_type, event_field.full_path)
 
@@ -1055,6 +1063,16 @@ class LarkToEQL(Interpreter):
             join_values = []
 
         node_info = NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs), source=node)
+
+        alias = node["sequence_alias"]
+        if alias is not None:
+            if self._alias_enabled is False:
+                raise self._error(alias, "Unsupported usage of alias syntax", cls=EqlSyntaxError)
+            alias_name = alias.get('name').get('NAME').value
+
+            # reference the subqueries by name in alias mapping
+            self._alias_mapping[alias_name] = query.event_type
+
         return node_info, join_values, runs_count
 
     def join_values(self, node):
@@ -1076,6 +1094,7 @@ class LarkToEQL(Interpreter):
         subquery_nodes = node.get_list("subquery_by")
         first, first_info, _ = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork,
                                                 position=0, allow_runs=allow_runs)
+
         num_values = len(first_info)
         subqueries = [(first, first_info)]
 

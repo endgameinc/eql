@@ -8,7 +8,7 @@ import unittest
 
 from eql import Schema
 from eql.ast import *  # noqa: F403
-from eql.errors import EqlSyntaxError, EqlSemanticError, EqlParseError
+from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlParseError
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
     extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax, elasticsearch_validate_optional_fields
@@ -320,6 +320,9 @@ class TestParser(unittest.TestCase):
             'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
             'sequence by pid with maxspan=2.0h [process where process_name == "*"] [file where file_path == "*"]',
             'sequence by pid with maxspan=1.0075d [process where process_name == "*"] [file where file_path == "*"]',
+
+            # bad sequence alias, without endpoint syntax
+            'sequence [process where process.name == "cmd.exe"] as a0 [network where a0.process.id == process.id]'
         ]
         for query in invalid:
             self.assertRaises(EqlParseError, parse_query, query)
@@ -539,11 +542,16 @@ class TestParser(unittest.TestCase):
                 "obj_array": ["string"],
                 "opcode": "number",
                 "process": {"name": "string"},
-                "unique_pid": "string"
+                "unique_pid": "string",
+                "user": {"name": "string"}
             },
             "file": {
                 "opcode": "number",
                 "unique_pid": "string"
+            },
+            "network": {
+                "process": {"name": "string"},
+                "user": {"name": "string"}
             }
         })
 
@@ -666,4 +674,15 @@ class TestParser(unittest.TestCase):
             parse_query('process where _arraysearch(string_array, $variable, $variable == "foo")')
             parse_query('process where _arraysearch(obj_array, $sig, $sig.trusted == true)')
 
+            # support sequence alias
+            event0 = '[process where process.name == "abc.exe"]'
+            event1 = '[network where p0.process.name == process.name]'
+            event2 = '[network where p0.pid == 0]'
+            event3 = '[network where p0.badfield == 0]'
+            parse_query('sequence %s as p0 %s' % (event0, event1))
+            parse_query('sequence by user.name %s as p0 %s' % (event0, event1))
+            parse_query('sequence with maxspan=1m %s by user.name as p0 %s by user.name' % (event0, event1))
+            parse_query('sequence by user.name %s as p0 %s' % (event0, event2))
+            self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event2))
+            self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event3))
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
