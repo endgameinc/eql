@@ -425,9 +425,6 @@ class LarkToEQL(Interpreter):
             if self._alias_enabled and field.base in self._alias_mapping:
                 event_field = ast.Field(field.path[0], field.path[1:])
                 event_type = self._alias_mapping[field.base]
-                # if self._alias_enabled and (field.base not in self._alias_mapping and field.base not in schema_keys):
-                #     raise self._error(node_info, "Unknown field %s" % field.base, cls=EqlSchemaError)
-
             else:
                 event_type = self.scope("event_type", default=EVENT_TYPE_ANY)
 
