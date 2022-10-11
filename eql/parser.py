@@ -59,7 +59,7 @@ elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
 elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
 elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
 
-keywords = ("and", "as", "by", "const", "false", "in", "join", "macro",
+keywords = ("and", "by", "const", "false", "in", "join", "macro",
             "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
             )
 
@@ -595,7 +595,7 @@ class LarkToEQL(Interpreter):
                 name = to_unicode(part["NAME"])
                 full_path.append(name)
 
-                if name in keywords:
+                if name in keywords or (name == "as" and self._alias_enabled):
                     raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
             elif part["ESCAPED_NAME"]:
                 full_path.append(to_unicode(part["ESCAPED_NAME"]).strip("`"))

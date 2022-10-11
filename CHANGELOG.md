@@ -1,6 +1,14 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.15
+
+_Released 2022-10-11_
+
+### Fixed
+
+* Bug where [as](https://www.elastic.co/guide/en/ecs/current/ecs-as.html) fields overlapped `as` keyword
+
 # Version 0.9.14
 
 _Released 2022-09-16_
