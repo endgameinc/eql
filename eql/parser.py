@@ -62,6 +62,9 @@ elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=Tru
 keywords = ("and", "as", "by", "const", "false", "in", "join", "macro",
             "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
             )
+as_keyword_exceptions = ("client.as", "destination.as", "server.as", "source.as",
+                         "threat.enrichments.indicator.as", "threat.indicator.as"
+                         )
 
 RESERVED = {n.render(): n for n in [ast.Boolean(True), ast.Boolean(False), ast.Null()]}
 
@@ -595,7 +598,7 @@ class LarkToEQL(Interpreter):
                 name = to_unicode(part["NAME"])
                 full_path.append(name)
 
-                if name in keywords:
+                if name in keywords and ".".join(map(str, full_path)) not in as_keyword_exceptions:
                     raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
             elif part["ESCAPED_NAME"]:
                 full_path.append(to_unicode(part["ESCAPED_NAME"]).strip("`"))

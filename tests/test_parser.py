@@ -214,6 +214,8 @@ class TestParser(unittest.TestCase):
             'any where true | unique a b c | sort a b c | count',
             'any where true | unique a, b,   c | sort a b c | count',
             'any where true | unique a, b,   c | sort a,b,c | count',
+            'any where client.as.organization.name.text == "some string field"',
+            'any where destination.as.organization.name.text == "some string field"',
             'file where child of [registry where true]',
             'file where event of [registry where true]',
             'file where event of [registry where true]',
