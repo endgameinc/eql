@@ -595,7 +595,7 @@ class LarkToEQL(Interpreter):
                 name = to_unicode(part["NAME"])
                 full_path.append(name)
 
-                if name in keywords:
+                if name in keywords or (name == "as" and self._alias_enabled):
                     raise self._error(node, "Invalid use of keyword", cls=EqlSyntaxError)
             elif part["ESCAPED_NAME"]:
                 full_path.append(to_unicode(part["ESCAPED_NAME"]).strip("`"))

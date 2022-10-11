@@ -214,8 +214,6 @@ class TestParser(unittest.TestCase):
             'any where true | unique a b c | sort a b c | count',
             'any where true | unique a, b,   c | sort a b c | count',
             'any where true | unique a, b,   c | sort a,b,c | count',
-            'any where client.as.organization.name.text == "some string field"',
-            'any where destination.as.organization.name.text == "some string field"',
             'file where child of [registry where true]',
             'file where event of [registry where true]',
             'file where event of [registry where true]',
@@ -688,3 +686,7 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event2))
             self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event3))
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
+
+            # as fields not emmitted by the endpoint
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where client.as.organization.name == "some string field"')
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where destination.as.organization.name == "some string field"')
