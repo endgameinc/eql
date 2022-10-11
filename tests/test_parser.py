@@ -688,5 +688,5 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
 
             # as fields not emmitted by the endpoint
-            self.assertRaises(EqlSyntaxError, parse_query, 'process where client.as.organization.name == "some string field"')
-            self.assertRaises(EqlSyntaxError, parse_query, 'process where destination.as.organization.name == "some string field"')
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where client.as.organization.name == "string"')
+            self.assertRaises(EqlSyntaxError, parse_query, 'process where destination.as.organization.name == "string"')
