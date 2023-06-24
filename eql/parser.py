@@ -57,7 +57,7 @@ non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
 elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
-elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
+elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True, nested_fields=True)
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
             "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
@@ -145,6 +145,7 @@ class LarkToEQL(Interpreter):
         self._stacks = defaultdict(list)
         self._alias_enabled = ParserConfig.read_stack("allow_alias", False)
         self._alias_mapping = {}
+        self._nested_fields = ParserConfig.read_stack("nested_fields", False)
 
     @property
     def lines(self):
@@ -288,7 +289,10 @@ class LarkToEQL(Interpreter):
         error_node = node
         node_type = 'pipe' if issubclass(signature, ast.PipeCommand) else 'function'
         name = signature.name
-        bad_index = signature.validate(arguments)
+        nested = None
+        if self._nested_fields:
+            nested = self._schema.nested
+        bad_index = signature.validate(arguments, schema=nested)
 
         if bad_index is None:
             # no error exists, so no need to build a message
