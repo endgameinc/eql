@@ -10,7 +10,7 @@ class SignatureMixin(object):
     additional_types = None
 
     @classmethod
-    def validate(cls, arguments, schema=None):  # type: (list[NodeInfo]) -> int
+    def validate(cls, arguments, event_type, schema):  # type: (list[NodeInfo]) -> int
         """Find the first invalid argument. Return None if all are valid."""
         minimum_args = cls.minimum_args if cls.minimum_args is not None else len(cls.argument_types)
 

@@ -289,10 +289,9 @@ class LarkToEQL(Interpreter):
         error_node = node
         node_type = 'pipe' if issubclass(signature, ast.PipeCommand) else 'function'
         name = signature.name
-        nested = None
-        if self._nested_fields:
-            nested = self._schema.nested
-        bad_index = signature.validate(arguments, schema=nested)
+        event_type = self._stacks.get('event_type', [None])[-1]
+
+        bad_index = signature.validate(arguments, event_type=event_type, schema=self._schema)
 
         if bad_index is None:
             # no error exists, so no need to build a message
