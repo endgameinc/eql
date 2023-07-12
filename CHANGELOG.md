@@ -7,7 +7,7 @@ _Released 2023-07-12_
 
 ### Added
 
-* Support for schema validation on nested fields
+* Support for exposing nested fields for validation
 
 # Version 0.9.15
 
