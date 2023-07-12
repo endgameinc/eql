@@ -9,13 +9,27 @@ import unittest
 from eql import Schema
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlParseError
+from eql.functions import DynamicFunctionSignature, register
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
     extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax, elasticsearch_validate_optional_fields
 )
+from eql.types import TypeHint
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
 
+@register
+class TestNestedFields(DynamicFunctionSignature):
+    """Search for matches to a dynamic expression in an array."""
+
+    name = "nestedFields"
+    argument_types = [TypeHint.String]
+    return_value = TypeHint.Boolean
+
+    @classmethod
+    def validate(cls, arguments, event_type=None, schema=None):
+        if event_type and schema:
+            return None
 
 class TestParser(unittest.TestCase):
     """Test EQL parsing."""
@@ -690,3 +704,11 @@ class TestParser(unittest.TestCase):
             # as fields not emmitted by the endpoint
             self.assertRaises(EqlSyntaxError, parse_query, 'process where client.as.organization.name == "string"')
             self.assertRaises(EqlSyntaxError, parse_query, 'process where destination.as.organization.name == "string"')
+
+        with elastic_endpoint_syntax, schema:
+            # support nested fields (testing with schema passed)
+            parse_query('process where nestedFields(string_array)')
+
+        with elastic_endpoint_syntax:
+            # support nested fields (testing with schema not passed)
+            parse_query('process where nestedFields(string_array)')
