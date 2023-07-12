@@ -18,9 +18,10 @@ from eql.types import TypeHint
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
 
+
 @register
 class TestNestedFields(DynamicFunctionSignature):
-    """Search for matches to a dynamic expression in an array."""
+    """Test function for nested fields feature."""
 
     name = "nestedFields"
     argument_types = [TypeHint.String]
@@ -28,8 +29,10 @@ class TestNestedFields(DynamicFunctionSignature):
 
     @classmethod
     def validate(cls, arguments, event_type=None, schema=None):
+        """Validate arguments."""
         if event_type and schema:
             return None
+
 
 class TestParser(unittest.TestCase):
     """Test EQL parsing."""
