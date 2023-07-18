@@ -157,6 +157,7 @@ class TestSchemaValidation(unittest.TestCase):
                 parse_query(query)
 
     def test_array_functions_inner_type_mismatch(self):
+        """Test that array functions properly perform type validation on loop expressions."""
         valid = [
             "complex where arrayContains(string_arr, 1)",
             "complex where arrayContains(string_arr, 1, 2, 3)",
