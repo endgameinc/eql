@@ -731,4 +731,6 @@ class TestParser(unittest.TestCase):
 
             parse_query('process where arraySearch(field.nested_field, $var, $var.nf1 == "three")')
             parse_query('process where arraySearch(field.nested_field, $var, $var.nf2 == 3)')
+
+        with elastic_endpoint_syntax, schema, ignore_missing_functions:
             parse_query('process where _arraysearch(field.nested_field, $var, $var.nf2 == 3)')
