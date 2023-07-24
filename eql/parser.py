@@ -458,7 +458,7 @@ class LarkToEQL(Interpreter):
         if schema_hint is not None:
             type_hint, schema = schema_hint
 
-        if type_hint is None and not allow_missing and not self._in_variable:
+        if type_hint is None and not allow_missing:
             message = "Field not recognized"
             if event_type not in (EVENT_TYPE_ANY, EVENT_TYPE_GENERIC):
                 message += " for {event_type} event"
