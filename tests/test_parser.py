@@ -693,7 +693,7 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSyntaxError, parse_query, 'process where destination.as.organization.name == "string"')
 
     def test_nested_fields(self):
-        """Test nested fields"""
+        """Test nested fields."""
         schema = Schema({
             "process": {
                 "process_name": "string",
@@ -718,14 +718,16 @@ class TestParser(unittest.TestCase):
 
         with elastic_endpoint_syntax, schema:
             # should fail since nf1 type is a string
-            self.assertRaises(EqlTypeMismatchError, parse_query, 'process where arraySearch(field.nested_field, $var, $var.nf1 == 3)')
+            self.assertRaises(EqlTypeMismatchError, parse_query,
+                              'process where arraySearch(field.nested_field, $var, $var.nf1 == 3)')
 
             # should fail since nf4 doesn't exist
-            self.assertRaises(EqlSchemaError, parse_query, 'process where arraySearch(field.nested_field, $var, $var.nf4 == "3")')
+            self.assertRaises(EqlSchemaError, parse_query,
+                              'process where arraySearch(field.nested_field, $var, $var.nf4 == "3")')
 
             # should fail since the second $ is missing
-            self.assertRaises(EqlSchemaError, parse_query, 'process where arraySearch(field.nested_field, $var, var.nf2 == 3)')
+            self.assertRaises(EqlSchemaError, parse_query,
+                              'process where arraySearch(field.nested_field, $var, var.nf2 == 3)')
 
             parse_query('process where arraySearch(field.nested_field, $var, $var.nf1 == "three")')
             parse_query('process where arraySearch(field.nested_field, $var, $var.nf2 == 3)')
-
