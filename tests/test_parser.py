@@ -8,7 +8,7 @@ import unittest
 
 from eql import Schema
 from eql.ast import *  # noqa: F403
-from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlParseError
+from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlTypeMismatchError, EqlParseError
 from eql.parser import (
     parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
     extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax, elasticsearch_validate_optional_fields
@@ -539,11 +539,12 @@ class TestParser(unittest.TestCase):
                 "process_name": "string",
                 "pid": "number",
                 "string_array": ["string"],
-                "obj_array": ["string"],
+                "obj_array": [{"trusted": "boolean"}],
                 "opcode": "number",
                 "process": {"name": "string"},
                 "unique_pid": "string",
-                "user": {"name": "string"}
+                "user": {"name": "string"},
+                "field1": {"nested_field": "string", "nested_field2": "string"},
             },
             "file": {
                 "opcode": "number",
@@ -671,8 +672,8 @@ class TestParser(unittest.TestCase):
             parse_query('process where process_name : ("cmd*.exe", "foo*.exe")')
 
             # support $variable syntax
-            parse_query('process where _arraysearch(string_array, $variable, $variable == "foo")')
-            parse_query('process where _arraysearch(obj_array, $sig, $sig.trusted == true)')
+            parse_query('process where arraySearch(string_array, $variable, $variable == "foo")')
+            parse_query('process where arraySearch(obj_array, $sig, $sig.trusted == true)')
 
             # support sequence alias
             event0 = '[process where process.name == "abc.exe"]'
@@ -690,3 +691,41 @@ class TestParser(unittest.TestCase):
             # as fields not emmitted by the endpoint
             self.assertRaises(EqlSyntaxError, parse_query, 'process where client.as.organization.name == "string"')
             self.assertRaises(EqlSyntaxError, parse_query, 'process where destination.as.organization.name == "string"')
+
+    def test_nested_fields(self):
+        """Test nested fields"""
+        schema = Schema({
+            "process": {
+                "process_name": "string",
+                "pid": "number",
+                "string_array": ["string"],
+                "obj_array": ["string"],
+                "opcode": "number",
+                "process": {"name": "string"},
+                "unique_pid": "string",
+                "user": {"name": "string"},
+                "field": {"nested_field": [{"nf1": "string", "nf2": "number"}]},
+            },
+            "file": {
+                "opcode": "number",
+                "unique_pid": "string"
+            },
+            "network": {
+                "process": {"name": "string"},
+                "user": {"name": "string"}
+            }
+        })
+
+        with elastic_endpoint_syntax, schema:
+            # should fail since nf1 type is a string
+            self.assertRaises(EqlTypeMismatchError, parse_query, 'process where arraySearch(field.nested_field, $var, $var.nf1 == 3)')
+
+            # should fail since nf4 doesn't exist
+            self.assertRaises(EqlSchemaError, parse_query, 'process where arraySearch(field.nested_field, $var, $var.nf4 == "3")')
+
+            # should fail since the second $ is missing
+            self.assertRaises(EqlSchemaError, parse_query, 'process where arraySearch(field.nested_field, $var, var.nf2 == 3)')
+
+            parse_query('process where arraySearch(field.nested_field, $var, $var.nf1 == "three")')
+            parse_query('process where arraySearch(field.nested_field, $var, $var.nf2 == 3)')
+

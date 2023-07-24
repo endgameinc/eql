@@ -145,6 +145,7 @@ class LarkToEQL(Interpreter):
         self._stacks = defaultdict(list)
         self._alias_enabled = ParserConfig.read_stack("allow_alias", False)
         self._alias_mapping = {}
+        self._in_variable = False
 
     @property
     def lines(self):
@@ -395,6 +396,7 @@ class LarkToEQL(Interpreter):
         field = node_info.node
         schema = None
         schema_hint = None
+        allow_variables = self._in_variable if self._dollar_var else True
 
         if self._in_pipes:
             event_schema = self._pipe_schemas[0]
@@ -418,7 +420,7 @@ class LarkToEQL(Interpreter):
             return NodeInfo(node_info, TypeHint.Unknown, source=node_info)
 
         # check if it's a variable or using an alias
-        elif field.base not in self._var_types:
+        elif field.base not in self._var_types or not allow_variables:
             event_field = field
 
             # alias perform no field validation on what's inside the alias
@@ -576,15 +578,10 @@ class LarkToEQL(Interpreter):
     def varpath(self, node):
         if not self._dollar_var:
             raise self._error(node, "Invalid syntax", cls=EqlSyntaxError)
-
-        # no schema validation, just pass it through (syntax validation only)
-        if node["base_field"]:
-            path = [to_unicode(node["base_field"]["name"])]
-        else:
-            _, path = self._field_path(node["field"])
-
-        field = ast.Field(path[0], path[1:], as_var=True)
-        return NodeInfo(field, source=node, type_info=TypeHint.Unknown)
+        self._in_variable = True
+        visited = self.visit(node.children[0])
+        self._in_variable = False
+        return visited
 
     def _field_path(self, node, allow_optional=False):
         full_path = []
@@ -896,6 +893,10 @@ class LarkToEQL(Interpreter):
                 if idx in variables:
                     if arg_source.data == "base_field":
                         variable_name = self.visit(arg_source["name"])
+                        self._add_variable(variable_name, var_type or TypeHint.Unknown, var_schema)
+                        args.append(NodeInfo(ast.Field(variable_name), TypeHint.Variable, source=arg_source))
+                    elif arg_source.data == "varpath" and arg_source["base_field"]:
+                        variable_name = self.visit(arg_source["base_field"]["name"])
                         self._add_variable(variable_name, var_type or TypeHint.Unknown, var_schema)
                         args.append(NodeInfo(ast.Field(variable_name), TypeHint.Variable, source=arg_source))
                     else:
