@@ -145,6 +145,7 @@ class LarkToEQL(Interpreter):
         self._stacks = defaultdict(list)
         self._alias_enabled = ParserConfig.read_stack("allow_alias", False)
         self._alias_mapping = {}
+        self._in_variable = False
 
     @property
     def lines(self):
@@ -395,6 +396,7 @@ class LarkToEQL(Interpreter):
         field = node_info.node
         schema = None
         schema_hint = None
+        allow_variables = self._in_variable if self._dollar_var else True
 
         if self._in_pipes:
             event_schema = self._pipe_schemas[0]
@@ -418,7 +420,7 @@ class LarkToEQL(Interpreter):
             return NodeInfo(node_info, TypeHint.Unknown, source=node_info)
 
         # check if it's a variable or using an alias
-        elif field.base not in self._var_types:
+        elif field.base not in self._var_types or not allow_variables:
             event_field = field
 
             # alias perform no field validation on what's inside the alias
@@ -442,7 +444,16 @@ class LarkToEQL(Interpreter):
                     return NodeInfo(comparison, TypeHint.Boolean, nullable=not self._strict_fields, source=node_info)
 
         else:
-            type_hint = self._var_types[field.base]
+            # Extract out types from variables and perform validation on the nested schema
+            schema_hint = self._var_types[field.base]
+            type_hint, schema = schema_hint
+
+            if field.path and type_hint != TypeHint.Unknown:
+                schema_hint = Schema.get_relative_path(schema, field.path)
+
+            if schema_hint is None and not allow_missing:
+                message = "Field not recognized on variable"
+                raise self._error(node_info, message, cls=EqlSchemaError)
 
         if schema_hint is not None:
             type_hint, schema = schema_hint
@@ -457,8 +468,8 @@ class LarkToEQL(Interpreter):
         type_hint = type_hint or TypeHint.Unknown
         return NodeInfo(field, type_hint, nullable=not self._strict_fields, schema=schema, source=node_info)
 
-    def _add_variable(self, name, type_hint=TypeHint.Unknown):
-        self._var_types[name] = type_hint
+    def _add_variable(self, name, type_hint=TypeHint.Unknown, schema_hint=None):
+        self._var_types[name] = type_hint, schema_hint
         return NodeInfo(ast.Field(name), TypeHint.Variable)
 
     def method_chain(self, node):
@@ -567,15 +578,10 @@ class LarkToEQL(Interpreter):
     def varpath(self, node):
         if not self._dollar_var:
             raise self._error(node, "Invalid syntax", cls=EqlSyntaxError)
-
-        # no schema validation, just pass it through (syntax validation only)
-        if node["base_field"]:
-            path = [to_unicode(node["base_field"]["name"])]
-        else:
-            _, path = self._field_path(node["field"])
-
-        field = ast.Field(path[0], path[1:], as_var=True)
-        return NodeInfo(field, source=node, type_info=TypeHint.Unknown)
+        self._in_variable = True
+        visited = self.visit(node.children[0])
+        self._in_variable = False
+        return visited
 
     def _field_path(self, node, allow_optional=False):
         full_path = []
@@ -880,11 +886,18 @@ class LarkToEQL(Interpreter):
 
             # Get all of the arguments first, because they may depend on others
             # and we need to pull out all of the variables
+            var_type = None
+            var_schema = None
+
             for idx, arg_source in enumerate(nodes):
                 if idx in variables:
                     if arg_source.data == "base_field":
                         variable_name = self.visit(arg_source["name"])
-                        self._add_variable(variable_name)
+                        self._add_variable(variable_name, var_type or TypeHint.Unknown, var_schema)
+                        args.append(NodeInfo(ast.Field(variable_name), TypeHint.Variable, source=arg_source))
+                    elif arg_source.data == "varpath" and arg_source["base_field"]:
+                        variable_name = self.visit(arg_source["base_field"]["name"])
+                        self._add_variable(variable_name, var_type or TypeHint.Unknown, var_schema)
                         args.append(NodeInfo(ast.Field(variable_name), TypeHint.Variable, source=arg_source))
                     else:
                         raise self._type_error(NodeInfo(None, source=arg_source), TypeHint.Variable,
@@ -896,8 +909,16 @@ class LarkToEQL(Interpreter):
                 else:
                     args.append(self.visit(arg_source))
 
-            # In theory, we could do another round of validation for generics, but we'll just assume
-            # that loop variables can take any shape they need to, as long as the other arguments match
+                # Implicitly treat variables as relative to a previous array argument.
+                # If not possible, it falls back to the previously permissive behavior of treating variables
+                # like an Any type.
+                var_type = None
+                var_schema = None
+
+                if isinstance(args[idx].schema, list) and len(args[idx].schema) == 1:
+                    nested_type = Schema.convert_to_type(args[idx].schema[0])
+                    if nested_type is not None:
+                        var_type, var_schema = nested_type
 
             # Validate that the arguments match the function signature by type and length
             self.validate_signature(node, signature, args)

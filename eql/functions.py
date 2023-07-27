@@ -124,6 +124,20 @@ class ArrayContains(FunctionSignature):
                     return True
             return False
 
+    @classmethod
+    def validate(cls, arguments):  # type: (list[NodeInfo]) -> int
+        """Validate that the type of the expression matches the type of the array elements."""
+        from .schema import Schema
+
+        invalid = super(ArrayContains, cls).validate(arguments)
+        if invalid is not None:
+            return invalid
+
+        if isinstance(arguments[0].schema, list) and len(arguments[0].schema) == 1:
+            element_type, _ = Schema.convert_to_type(arguments[0].schema[0])
+            if not arguments[1].validate(element_type):
+                return 1
+
 
 @register
 class ArrayCount(DynamicFunctionSignature):

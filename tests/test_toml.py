@@ -6,7 +6,7 @@ import string
 import eql
 import eql.etc
 
-from . import utils
+from tests import utils
 
 
 fold_tests = []

@@ -1,6 +1,14 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.16
+
+ _Released 2023-07-27_
+
+### Added
+
+* Support for nested field validation within the arraySearch function
+
 # Version 0.9.15
 
 _Released 2022-10-11_

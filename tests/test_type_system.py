@@ -7,7 +7,7 @@ from eql.errors import EqlTypeMismatchError
 from eql.parser import parse_expression, implied_booleans
 from eql.types import TypeFoldCheck, TypeHint, NodeInfo
 
-from . import utils
+from tests import utils
 
 
 class TestTypeSystem(unittest.TestCase):

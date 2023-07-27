@@ -62,7 +62,7 @@ class NodeInfo(object):
         :param ast.EqlNode node: The EQL node in the tree.
         :param TypeHint type_info: The type information.
         :param bool nullable: Whether the current type can be compared to null
-        :param object schema: Schema information for composite values.
+        :param object|list schema: Schema information for composite values.
         :param object source: Parse tree information for node.
         """
         self.node = node

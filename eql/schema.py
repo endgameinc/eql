@@ -80,7 +80,7 @@ class Schema(ParserConfig):
         return True
 
     @classmethod
-    def _convert_to_type(cls, schema):
+    def convert_to_type(cls, schema):
         """Convert a schema to the type system."""
         if schema == {} or schema == MIXED_TYPES:
             return TypeHint.Unknown, None
@@ -91,7 +91,8 @@ class Schema(ParserConfig):
         else:
             return primitive_lookup[schema], None
 
-    def _get_path_hint(self, event_schema, path):
+    @classmethod
+    def get_relative_path(cls, event_schema, path):
         """Validate a field against a schema."""
         base = path[0]
         subpath = path[1:]
@@ -103,25 +104,25 @@ class Schema(ParserConfig):
             elif subpath:
                 # if it's nested, then we have to enumerate over the union of nested schemas
                 for subschema in event_schema:
-                    hint = self._get_path_hint(subschema, subpath)
+                    hint = cls.get_relative_path(subschema, subpath)
                     if hint is not None:
                         return hint
                 return
             else:
-                return self._convert_to_type(event_schema[0])
+                return cls.convert_to_type(event_schema[0])
         elif isinstance(event_schema, (list, tuple)):
             # strings can't index into arrays
             return
         elif event_schema == {}:
             # if the event schema is wide open, then anything goes
-            return self._convert_to_type(event_schema)
+            return cls.convert_to_type(event_schema)
         elif isinstance(event_schema, dict) and base in event_schema:
             if event_schema and subpath:
                 # check if the current field is in the schema, and we still have to recurse
-                return self._get_path_hint(event_schema[base], subpath)
+                return cls.get_relative_path(event_schema[base], subpath)
             else:
                 # return the type hint if one exists
-                return self._convert_to_type(event_schema[base])
+                return cls.convert_to_type(event_schema[base])
 
     def get_event_type_hint(self, event_type, path):
         """Validate that a field matches an event_type."""
@@ -140,7 +141,7 @@ class Schema(ParserConfig):
                     return TypeHint.Unknown, None
         elif event_type in self.schema:
             # Convert the values to the expected string values or None
-            type_hint = self._get_path_hint(self.schema[event_type], path)
+            type_hint = self.get_relative_path(self.schema[event_type], path)
             if type_hint is not None:
                 return type_hint
             elif self.allow_missing:

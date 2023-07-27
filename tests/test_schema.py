@@ -2,7 +2,7 @@
 import unittest
 
 from eql.events import Event
-from eql.errors import EqlSchemaError, EqlTypeMismatchError
+from eql.errors import EqlSchemaError, EqlTypeMismatchError, EqlSemanticError
 from eql.parser import parse_query, strict_booleans, non_nullable_fields, allow_enum_fields
 from eql.schema import Schema
 from eql.types import TypeHint
@@ -43,6 +43,9 @@ class TestSchemaValidation(unittest.TestCase):
                 "num": NUM
             },
             "objarray": [{}],
+            "array_array": [
+                {"s": [STR]},
+            ],
         }
     }
 
@@ -141,19 +144,28 @@ class TestSchemaValidation(unittest.TestCase):
         valid = [
             "complex where arrayContains(string_arr, 'thesearchstring')",
             "complex where arrayContains(string_arr, 'thesearchstring', 'anothersearchstring')",
-            # this should pass until generics/templates are handled better
-            "complex where arrayContains(string_arr, 1)",
-            "complex where arrayContains(string_arr, 1, 2, 3)",
             "complex where arraySearch(string_arr, x, x == '*subs*')",
-            "complex where arraySearch(objarray, x, x.key == 'k')",
-            "complex where arraySearch(objarray, x, arraySearch(x, y, y.key == true))",
             "complex where arraySearch(nested.arr, x, x == '*subs*')",
             "complex where arrayContains(objarray, 1)",
             "complex where arrayContains(objarray, 1, 2, 3)",
+            "complex where arraySearch(objarray, x, x.key == 'k')",
+            "complex where arraySearch(objarray, x, arraySearch(x, y, y.key == true))",
+            "complex where arraySearch(array_array, x, arraySearch(x.s, y, y == 'abc'))",
         ]
         with Schema(self.schema):
             for query in valid:
                 parse_query(query)
+
+    def test_array_functions_inner_type_mismatch(self):
+        """Test that array functions properly perform type validation on loop expressions."""
+        valid = [
+            "complex where arrayContains(string_arr, 1)",
+            "complex where arrayContains(string_arr, 1, 2, 3)",
+            "complex where arraySearch(array_array, x, arraySearch(x.s, y, y == 1))",
+        ]
+        with Schema(self.schema):
+            for query in valid:
+                self.assertRaises(EqlSemanticError, parse_query, query)
 
     def test_array_function_failures(self):
         """Test that array functions fail on nested objects or the wrong type."""
