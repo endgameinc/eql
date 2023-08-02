@@ -557,6 +557,10 @@ class TestParser(unittest.TestCase):
         })
 
         with elasticsearch_syntax:
+            ast = parse_query('sequence [process where process.name != null] with runs=3')
+            self.assertEqual(len(ast.first.queries), 3)
+
+        with elasticsearch_syntax:
             subquery1 = '[process where opcode == 1] by unique_pid'
             runs = [2, 10, 30]
             for run in runs:
