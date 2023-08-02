@@ -556,7 +556,6 @@ class TestParser(unittest.TestCase):
             }
         })
 
-
         with elasticsearch_syntax:
             subquery1 = '[process where opcode == 1] by unique_pid'
             runs = [2, 10, 30]
