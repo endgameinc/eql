@@ -13,7 +13,7 @@ $(VENV):
 	pip install virtualenv
 	virtualenv $(VENV)
 	$(PIP) install setuptools -U
-	$(PIP) setup.py install
+	$(PYTHON) setup.py install
 
 
 .PHONY: clean
