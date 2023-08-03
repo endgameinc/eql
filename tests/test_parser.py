@@ -569,6 +569,12 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSyntaxError, parse_query, 'sequence [process where opcode == 1] with runs=-1')
             self.assertRaises(EqlSemanticError, parse_query, 'sequence [process where opcode == 1] with runs=1')
 
+            # ensure runs feature is building subqueries correctly (even on first subquery)
+            ast = parse_query('sequence [process where process.name != null] with runs=3')
+            self.assertEqual(len(ast.first.queries), 3)
+            ast = parse_query('sequence [process where process.name != null]')
+            self.assertEqual(len(ast.first.queries), 1)
+
         with elasticsearch_syntax, schema:
             parse_query('process where process_name : "cmd.exe"')
             parse_query('process where process_name : """cmd.exe"""')

@@ -1,6 +1,15 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.17
+
+ _Released 2023-08-02_
+
+### Fixed
+
+* Support for runs count field on the first subquery
+* Makefile install command
+
 # Version 0.9.16
 
  _Released 2023-07-27_

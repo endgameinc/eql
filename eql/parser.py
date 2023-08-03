@@ -1113,11 +1113,11 @@ class LarkToEQL(Interpreter):
 
         # Figure out how many fields are joined by in the first query, and match across all
         subquery_nodes = node.get_list("subquery_by")
-        first, first_info, _ = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork,
-                                                position=0, allow_runs=allow_runs)
+        first, first_info, first_runs_count = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork,
+                                                               position=0, allow_runs=allow_runs)
 
         num_values = len(first_info)
-        subqueries = [(first, first_info)]
+        subqueries = [(first, first_info)] * first_runs_count
 
         shared = node['join_values']
         until_node = node["until_subquery_by"]
