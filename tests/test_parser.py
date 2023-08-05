@@ -10,7 +10,7 @@ from eql import Schema
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlTypeMismatchError, EqlParseError
 from eql.parser import (
-    allow_sample, parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field,
+    allow_sample, allow_runs, parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field,
     parse_literal, extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax,
     elasticsearch_validate_optional_fields
 )
@@ -557,7 +557,7 @@ class TestParser(unittest.TestCase):
             }
         })
 
-        with elasticsearch_syntax:
+        with elasticsearch_syntax, allow_runs:
             subquery1 = '[process where opcode == 1] by unique_pid'
             runs = [2, 10, 30]
             for run in runs:

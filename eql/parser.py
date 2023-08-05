@@ -56,6 +56,7 @@ nullable_fields = ParserConfig(strict_fields=False)
 non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
 allow_sample = ParserConfig(allow_sample=True)
+allow_runs = ParserConfig(allow_runs=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
 elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
 elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
@@ -147,6 +148,7 @@ class LarkToEQL(Interpreter):
         self._stacks = defaultdict(list)
         self._alias_enabled = ParserConfig.read_stack("allow_alias", False)
         self._alias_mapping = {}
+        self._allow_runs = ParserConfig.read_stack("allow_runs", False)
         self._in_variable = False
         self._allow_sample = ParserConfig.read_stack("allow_sample", False)
 
@@ -283,8 +285,8 @@ class LarkToEQL(Interpreter):
 
         if isinstance(tree, list):
             return [self.visit(t) for t in tree]
-        elif tree.data == 'sample' and not self._allow_sample:
-            raise self._error(tree, "Sample syntax allowed here")
+        elif tree.data == 'sample' and (not self._allow_sample or not self._elasticsearch_syntax):
+            raise self._error(tree, "Unsupported usage of sample syntax")
 
         return Interpreter.visit(self, tree)
 
@@ -1231,7 +1233,7 @@ class LarkToEQL(Interpreter):
         if node['with_params']:
             params = self.time_range(node['with_params']['time_range'])
 
-        allow_runs = self._elasticsearch_syntax
+        allow_runs = self._elasticsearch_syntax and self._allow_runs
 
         queries, close = self._get_subqueries_and_close(node, allow_fork=True, allow_runs=allow_runs)
         if len(queries) <= 1 and not self._elasticsearch_syntax:
