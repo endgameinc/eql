@@ -8,10 +8,12 @@ query_with_definitions: definitions piped_query
 piped_query: base_query [pipes]
            | pipes
 base_query: sequence
+          | sample
           | join
           | event_query
 event_query: [name "where"] expr
 sequence: "sequence" [join_values with_params? | with_params join_values?] subquery_by+ [until_subquery_by]
+sample: "sample" join_values? subquery_by+
 join: "join" join_values? subquery_by subquery_by+ until_subquery_by?
 until_subquery_by.2: "until" subquery_by
 pipes: pipe+

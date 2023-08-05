@@ -88,6 +88,13 @@ class Walker(object):
         self.base_event_types = []
         if isinstance(node.first, EventQuery):
             self.base_event_types.append(node.first.event_type)
+        elif isinstance(node.first, list):
+            # add the first node
+            self.base_event_types.append(node.first[0][0].node.base)
+
+            # iterate over a list of tuples to get the event types
+            for q in node.first[1:]:
+                self.base_event_types.append(q[0].node.query.event_type)
         else:
             self.base_event_types.extend(q.query.event_type for q in node.first.queries)
 

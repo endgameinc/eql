@@ -10,8 +10,9 @@ from eql import Schema
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlTypeMismatchError, EqlParseError
 from eql.parser import (
-    parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field, parse_literal,
-    extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax, elasticsearch_validate_optional_fields
+    allow_sample, parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field,
+    parse_literal, extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax,
+    elasticsearch_validate_optional_fields
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -628,6 +629,14 @@ class TestParser(unittest.TestCase):
                 # optional fields in the schema
                 parse_query('process where ?process.name : "cmd.exe"')
                 parse_query('process where ?process_name : "cmd.exe"')
+
+            # sample base query usage
+            with allow_sample:
+                parse_query('sample by user [process where opcode == 1] [process where opcode == 1]')
+
+            # invalid sample base query usage
+            self.assertRaises(EqlSemanticError, parse_query,
+                              'sample by user [process where opcode == 1] [process where opcode == 1]')
 
         with schema:
             parse_query("process where process_name == 'cmd.exe'")

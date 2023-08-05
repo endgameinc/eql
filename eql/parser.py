@@ -55,12 +55,14 @@ strict_booleans = ParserConfig(implied_booleans=False)
 nullable_fields = ParserConfig(strict_fields=False)
 non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
+allow_sample = ParserConfig(allow_sample=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
 elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
 elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
-            "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
+            "not", "null", "of", "or", "sample", "sequence", "true", "until",
+            "with", "where"
             )
 
 RESERVED = {n.render(): n for n in [ast.Boolean(True), ast.Boolean(False), ast.Null()]}
@@ -146,6 +148,7 @@ class LarkToEQL(Interpreter):
         self._alias_enabled = ParserConfig.read_stack("allow_alias", False)
         self._alias_mapping = {}
         self._in_variable = False
+        self._allow_sample = ParserConfig.read_stack("allow_sample", False)
 
     @property
     def lines(self):
@@ -280,6 +283,8 @@ class LarkToEQL(Interpreter):
 
         if isinstance(tree, list):
             return [self.visit(t) for t in tree]
+        elif tree.data == 'sample' and not self._allow_sample:
+            raise self._error(tree, "Sample syntax allowed here")
 
         return Interpreter.visit(self, tree)
 
@@ -983,7 +988,7 @@ class LarkToEQL(Interpreter):
         return pipe_cls([arg.node for arg in args])
 
     def base_query(self, node):
-        """Visit a sequence, join or event query."""
+        """Visit a sample, sequence, join or event query."""
         return self.visit(node.children[0])
 
     def piped_query(self, node):
@@ -998,6 +1003,8 @@ class LarkToEQL(Interpreter):
         self._in_pipes = True
         if isinstance(first, ast.EventQuery):
             base_event_types = [first.event_type]
+        elif isinstance(first, list):
+            base_event_types = [first[0][0].node.base]
         else:
             base_event_types = [q.query.event_type for q in first.queries]
 
