@@ -1003,8 +1003,6 @@ class LarkToEQL(Interpreter):
         self._in_pipes = True
         if isinstance(first, ast.EventQuery):
             base_event_types = [first.event_type]
-        elif isinstance(first, ast.Sample):
-            base_event_types = [q.query.event_type for q in first.queries[0]]
         else:
             base_event_types = [q.query.event_type for q in first.queries]
 
@@ -1223,7 +1221,7 @@ class LarkToEQL(Interpreter):
 
     def sample(self, node):
         """Callback function to walk the AST for a sample."""
-        if not self._allow_sample and self._elasticsearch_syntax:
+        if not self._allow_sample and not self._elasticsearch_syntax:
             raise self._error(node, "Sample not supported")
 
         join_keys = []
@@ -1231,8 +1229,8 @@ class LarkToEQL(Interpreter):
         if node['join_values']:
             join_keys = [key.node.base for key in self.join_values(node["join_values"])]
 
-        queries = self._get_subqueries_and_close(node, allow_fork=True)
-        if len(queries) <= 1 and not self._elasticsearch_syntax:
+        queries, _ = self._get_subqueries_and_close(node, allow_fork=True)
+        if len(queries) <= 1:
             raise self._error(node, "Only one item in the sample",
                               cls=EqlSemanticError)
         return ast.Sample(queries, join_keys)

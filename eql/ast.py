@@ -967,7 +967,6 @@ class Sample(EqlNode):
             text += ' by ' + ', '.join(self.join_keys)
         text += '\n'
         text += self.indent('\n'.join(query.render() for query in self.queries))
-
         return text
 
 

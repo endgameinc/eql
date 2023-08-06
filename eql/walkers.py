@@ -88,8 +88,6 @@ class Walker(object):
         self.base_event_types = []
         if isinstance(node.first, EventQuery):
             self.base_event_types.append(node.first.event_type)
-        elif isinstance(node.first, Sample):
-           self.base_event_types.extend(q.query.event_type for q in node.first.queries[0])
         else:
             self.base_event_types.extend(q.query.event_type for q in node.first.queries)
 
@@ -272,4 +270,4 @@ class ConfigurableWalker(RecursiveWalker):
 
 
 # circular dependency
-from .ast import BaseNode, EventQuery, Sample  # noqa: E402
+from .ast import BaseNode, EventQuery  # noqa: E402
