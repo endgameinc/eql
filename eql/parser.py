@@ -1221,7 +1221,7 @@ class LarkToEQL(Interpreter):
 
     def sample(self, node):
         """Callback function to walk the AST for a sample."""
-        if not self._allow_sample and not self._elasticsearch_syntax:
+        if not self._allow_sample or not self._elasticsearch_syntax:
             raise self._error(node, "Sample not supported")
 
         join_keys = []
