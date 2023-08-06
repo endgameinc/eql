@@ -285,8 +285,6 @@ class LarkToEQL(Interpreter):
 
         if isinstance(tree, list):
             return [self.visit(t) for t in tree]
-        elif tree.data == 'sample' and (not self._allow_sample or not self._elasticsearch_syntax):
-            raise self._error(tree, "Unsupported usage of sample syntax")
 
         return Interpreter.visit(self, tree)
 
@@ -1223,6 +1221,22 @@ class LarkToEQL(Interpreter):
 
         return key, ast.Boolean(bool(value.node.value))
 
+    def sample(self, node):
+        """Callback function to walk the AST for a sample."""
+        if not self._allow_sample and self._elasticsearch_syntax:
+            raise self._error(node, "Sample not supported")
+
+        join_keys = []
+
+        if node['join_values']:
+            join_keys = [self.identifier(value) for value in node['join_values']['expressions']]
+
+        queries = self._get_subqueries_and_close(node, allow_fork=True)
+        if len(queries) <= 1 and not self._elasticsearch_syntax:
+            raise self._error(node, "Only one item in the sample",
+                              cls=EqlSemanticError)
+        return ast.Sample(queries, join_keys)
+
     def sequence(self, node):
         """Callback function to walk the AST."""
         if not self._subqueries_enabled:
@@ -1516,6 +1530,7 @@ class TermExtractor(Interpreter, object):
 
     # these have similar enough ASTs that this is fine for extracting terms
     join = sequence
+    sample = sequence
 
 
 def extract_query_terms(text, **kwargs):

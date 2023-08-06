@@ -944,6 +944,33 @@ class Join(EqlNode):
         return text
 
 
+class Sample(EqlNode):
+    """Sample finds events matching the defined filters, regardless of their temporal order.
+
+    Sample supports defining one or more join keys.
+    """
+
+    __slots__ = 'queries', 'join_keys'
+
+    def __init__(self, queries, join_keys=None):
+        """Create a Sample of multiple events.
+
+        :param list[SubqueryBy] queries: List of queries to be sampled
+        :param list[str] join_keys: List of join keys
+        """
+        self.queries = queries
+        self.join_keys = join_keys or []
+
+    def _render(self):
+        text = 'sample'
+        if self.join_keys:
+            text += ' by ' + ', '.join(self.join_keys)
+        text += '\n'
+        text += self.indent('\n'.join(query.render() for query in self.queries))
+
+        return text
+
+
 class Sequence(EqlNode):
     """Sequence is very similar to join, but enforces an ordering.
 
