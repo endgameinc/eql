@@ -1003,8 +1003,8 @@ class LarkToEQL(Interpreter):
         self._in_pipes = True
         if isinstance(first, ast.EventQuery):
             base_event_types = [first.event_type]
-        elif isinstance(first, list):
-            base_event_types = [first[0][0].node.base]
+        elif isinstance(first, ast.Sample):
+            base_event_types = [q.query.event_type for q in first.queries[0]]
         else:
             base_event_types = [q.query.event_type for q in first.queries]
 
@@ -1229,7 +1229,7 @@ class LarkToEQL(Interpreter):
         join_keys = []
 
         if node['join_values']:
-            join_keys = [self.identifier(value) for value in node['join_values']['expressions']]
+            join_keys = [key.node.base for key in self.join_values(node["join_values"])]
 
         queries = self._get_subqueries_and_close(node, allow_fork=True)
         if len(queries) <= 1 and not self._elasticsearch_syntax:
