@@ -1224,16 +1224,11 @@ class LarkToEQL(Interpreter):
         if not self._allow_sample or not self._elasticsearch_syntax:
             raise self._error(node, "Sample not supported")
 
-        join_keys = []
-
-        if node['join_values']:
-            join_keys = [key.node.base for key in self.join_values(node["join_values"])]
-
         queries, _ = self._get_subqueries_and_close(node, allow_fork=True)
         if len(queries) <= 1:
             raise self._error(node, "Only one item in the sample",
                               cls=EqlSemanticError)
-        return ast.Sample(queries, join_keys)
+        return ast.Sample(queries)
 
     def sequence(self, node):
         """Callback function to walk the AST."""
