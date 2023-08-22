@@ -957,7 +957,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         for pos, query in enumerate(node.queries):
             self._convert_sample_term(query, pos, size, samples, next_pipe)
 
-
     def _convert_sequence_term(self, subquery, position, size, lookups, next_pipe=None):
         # type: (SubqueryBy, int, int, list[dict[object, list[Event]]], callable) -> callable
         check_event = self.convert(subquery.query)
