@@ -32,7 +32,7 @@ class EqlLexer(RegexLexer):
             include('whitespace'),
             include('comments'),
             (r'(and|in|not|or)\b', token.Operator.Word),  # Keyword.Pseudo can also work
-            (r'(join|sequence|until|where)\b', token.Keyword),
+            (r'(join|sequence|until|where|sample)\b', token.Keyword),
             (r'(%s)(=\s+)(where)\b' % _name, bygroups(token.Name, token.Whitespace, token.Keyword)),
             (r'(const)(\s+)(%s)\b' % _name, bygroups(token.Keyword.Declaration, token.Whitespace, token.Name.Constant)),
             (r'(macro)(\s+)(%s)\b' % _name, bygroups(token.Keyword.Declaration, token.Whitespace, token.Name.Constant)),
