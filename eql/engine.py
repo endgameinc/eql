@@ -934,6 +934,30 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         for pos, query in enumerate(node.queries):
             convert_join_term(query, pos)
 
+    def _convert_sample_term(self, subquery, position, size, samples, next_pipe=None):
+        check_event = self.convert(subquery.query)
+        get_join_value = self._convert_key(subquery.join_values, scoped=True)
+
+        @self.event_callback(subquery.query.event_type)
+        def sample_callback(event):  # type: (Event) -> None
+            if check_event(event):
+                join_value = get_join_value(event)
+                if join_value not in samples:
+                    samples[join_value] = []
+                samples[join_value].append(event)
+                if len(samples[join_value]) == size:
+                    next_pipe(samples[join_value])
+                    samples.pop(join_value)
+
+    def _convert_sample(self, node, next_pipe):
+        # type: (Sample, callable) -> callable
+        samples = {}  # type: dict[object, list[Event]]
+        size = len(node.queries)
+
+        for pos, query in enumerate(node.queries):
+            self._convert_sample_term(query, pos, size, samples, next_pipe)
+
+
     def _convert_sequence_term(self, subquery, position, size, lookups, next_pipe=None):
         # type: (SubqueryBy, int, int, list[dict[object, list[Event]]], callable) -> callable
         check_event = self.convert(subquery.query)
@@ -1079,6 +1103,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         elif isinstance(base_query, Sequence):
             self._convert_sequence(base_query, output_pipe)
+
+        elif isinstance(base_query, Sample):
+            self._convert_sample(base_query, output_pipe)
 
         else:
             raise EqlCompileError("Unsupported {}".format(type(base_query).__name__))

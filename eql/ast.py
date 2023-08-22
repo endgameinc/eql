@@ -48,6 +48,7 @@ __all__ = (
     "SubqueryBy",
     "Join",
     "Sequence",
+    "Sample",
 
     # pipes
     "PipeCommand",
