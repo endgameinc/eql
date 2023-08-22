@@ -934,7 +934,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         for pos, query in enumerate(node.queries):
             convert_join_term(query, pos)
 
-    def _convert_sample_term(self, subquery, position, size, samples, next_pipe=None):
+    def _convert_sample_term(self, subquery, size, samples, next_pipe=None):
         check_event = self.convert(subquery.query)
         get_join_value = self._convert_key(subquery.join_values, scoped=True)
 
@@ -954,8 +954,8 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         samples = {}  # type: dict[object, list[Event]]
         size = len(node.queries)
 
-        for pos, query in enumerate(node.queries):
-            self._convert_sample_term(query, pos, size, samples, next_pipe)
+        for _, query in enumerate(node.queries):
+            self._convert_sample_term(query, size, samples, next_pipe)
 
     def _convert_sequence_term(self, subquery, position, size, lookups, next_pipe=None):
         # type: (SubqueryBy, int, int, list[dict[object, list[Event]]], callable) -> callable
