@@ -936,18 +936,31 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
     def _convert_sample_term(self, subquery, size, samples, next_pipe=None):
         check_event = self.convert(subquery.query)
-        get_join_value = self._convert_key(subquery.join_values, scoped=True)
+
+        # Determine if there's a join_value present
+        has_join_value = subquery.join_values is not None
+
+        # If there's a join value, get it.
+        get_join_value = self._convert_key(subquery.join_values, scoped=True) if has_join_value else None
 
         @self.event_callback(subquery.query.event_type)
         def sample_callback(event):  # type: (Event) -> None
             if check_event(event):
-                join_value = get_join_value(event)
-                if join_value not in samples:
-                    samples[join_value] = []
-                samples[join_value].append(event)
-                if len(samples[join_value]) == size:
-                    next_pipe(samples[join_value])
-                    samples.pop(join_value)
+                if has_join_value:  # The regular case where join values exist
+                    join_value = get_join_value(event)
+                    if join_value not in samples:
+                        samples[join_value] = []
+                    samples[join_value].append(event)
+
+                    if len(samples[join_value]) == size:
+                        next_pipe(samples[join_value])
+                        samples.pop(join_value)
+
+                else:  # The case where no join values exist
+                    samples.append(event)
+                    if len(samples) == size:
+                        next_pipe(samples)
+                        samples.clear()
 
     def _convert_sample(self, node, next_pipe):
         # type: (Sample, callable) -> callable
