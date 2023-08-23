@@ -959,12 +959,18 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 else:  # The case where no join values exist
                     samples.append(event)
                     if len(samples) == size:
-                        next_pipe(samples)
+                        # Pass a copy to the next_pipe to avoid mutation issues
+                        next_pipe(samples[:])
                         samples.clear()
 
     def _convert_sample(self, node, next_pipe):
         # type: (Sample, callable) -> callable
-        samples = {}  # type: dict[object, list[Event]]
+
+        # Check if there's a join value for any subquery
+        has_join_value_for_any_subquery = any(subquery.join_values for subquery in node.queries)
+
+        # Initialize samples based on the presence of join values
+        samples = {} if has_join_value_for_any_subquery else []
         size = len(node.queries)
 
         for _, query in enumerate(node.queries):
