@@ -973,7 +973,8 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         samples = {} if has_join_value_for_any_subquery else []
         size = len(node.queries)
 
-        for _, query in enumerate(node.queries):
+        for _, query in reversed(list(enumerate(node.queries))):
+            # Create these in reverse order, so one event can't hit multiple callbacks to be propagated
             self._convert_sample_term(query, size, samples, next_pipe)
 
     def _convert_sequence_term(self, subquery, position, size, lookups, next_pipe=None):
