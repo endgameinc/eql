@@ -938,7 +938,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         check_event = self.convert(subquery.query)
 
         # Determine if there's a join_value present
-        has_join_value = subquery.join_values is not None
+        has_join_value = True if subquery.join_values else False
 
         # If there's a join value, get it.
         get_join_value = self._convert_key(subquery.join_values, scoped=True) if has_join_value else None
