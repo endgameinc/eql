@@ -277,6 +277,8 @@ def get_query_type(query):
 
     if isinstance(query.first, ast.Sequence):
         return "sequence"
+    elif isinstance(query.first, ast.Sample):
+        return "sample"
     elif isinstance(query.first, ast.Join):
         return "join"
     elif isinstance(query.first, ast.EventQuery):

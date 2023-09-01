@@ -934,6 +934,49 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         for pos, query in enumerate(node.queries):
             convert_join_term(query, pos)
 
+    def _convert_sample_term(self, subquery, size, samples, next_pipe=None):
+        check_event = self.convert(subquery.query)
+
+        # Determine if there's a join_value present
+        has_join_value = True if subquery.join_values else False
+
+        # If there's a join value, get it.
+        get_join_value = self._convert_key(subquery.join_values, scoped=True) if has_join_value else None
+
+        @self.event_callback(subquery.query.event_type)
+        def sample_callback(event):  # type: (Event) -> None
+            if check_event(event):
+                if has_join_value:  # The regular case where join values exist
+                    join_value = get_join_value(event)
+                    if join_value not in samples:
+                        samples[join_value] = []
+                    samples[join_value].append(event)
+
+                    if len(samples[join_value]) == size:
+                        next_pipe(samples[join_value])
+                        samples.pop(join_value)
+
+                else:  # The case where no join values exist
+                    samples.append(event)
+                    if len(samples) == size:
+                        # Pass a copy to the next_pipe to avoid mutation issues
+                        next_pipe(samples[:])
+                        samples.clear()
+
+    def _convert_sample(self, node, next_pipe):
+        # type: (Sample, callable) -> callable
+
+        # Check if there's a join value for any subquery
+        has_join_value_for_any_subquery = any(subquery.join_values for subquery in node.queries)
+
+        # Initialize samples based on the presence of join values
+        samples = {} if has_join_value_for_any_subquery else []
+        size = len(node.queries)
+
+        for _, query in reversed(list(enumerate(node.queries))):
+            # Create these in reverse order, so one event can't hit multiple callbacks to be propagated
+            self._convert_sample_term(query, size, samples, next_pipe)
+
     def _convert_sequence_term(self, subquery, position, size, lookups, next_pipe=None):
         # type: (SubqueryBy, int, int, list[dict[object, list[Event]]], callable) -> callable
         check_event = self.convert(subquery.query)
@@ -1079,6 +1122,9 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
         elif isinstance(base_query, Sequence):
             self._convert_sequence(base_query, output_pipe)
+
+        elif isinstance(base_query, Sample):
+            self._convert_sample(base_query, output_pipe)
 
         else:
             raise EqlCompileError("Unsupported {}".format(type(base_query).__name__))

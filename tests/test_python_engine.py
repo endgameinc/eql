@@ -6,7 +6,7 @@ from collections import defaultdict
 from eql import *  # noqa: F403
 from eql.ast import *  # noqa: F403
 from eql.engine import Scope
-from eql.parser import ignore_missing_functions
+from eql.parser import ignore_missing_functions, allow_sample, elasticsearch_syntax
 from eql.schema import EVENT_TYPE_GENERIC
 from eql.tests.base import TestEngine
 
@@ -105,6 +105,22 @@ class TestPythonEngine(TestEngine):
 
         with ignore_missing_functions:
             for query in queries:
+                # Make sure every query can be converted without raising any exceptions
+                parsed_query = parse_query(query)
+                engine.add_query(parsed_query)
+
+                # Also try to load it as an analytic
+                parsed_analytic = parse_analytic({'metadata': {'id': uuid.uuid4()}, 'query': query})
+                engine.add_analytic(parsed_analytic)
+
+        sample_queries = [
+            'sample [event where x == y] [event where a == b]',
+            'sample by x,y,z [event where a == 1] [event where b == 2]',
+            'sample [event where name == "test"] [event where name == "test"]'
+        ]
+
+        with ignore_missing_functions, allow_sample, elasticsearch_syntax:
+            for query in sample_queries:
                 # Make sure every query can be converted without raising any exceptions
                 parsed_query = parse_query(query)
                 engine.add_query(parsed_query)

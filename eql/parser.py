@@ -55,12 +55,15 @@ strict_booleans = ParserConfig(implied_booleans=False)
 nullable_fields = ParserConfig(strict_fields=False)
 non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
+allow_sample = ParserConfig(allow_sample=True)
+allow_runs = ParserConfig(allow_runs=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
 elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
 elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
-            "not", "null", "of", "or", "sequence", "true", "until", "with", "where"
+            "not", "null", "of", "or", "sample", "sequence", "true", "until",
+            "with", "where"
             )
 
 RESERVED = {n.render(): n for n in [ast.Boolean(True), ast.Boolean(False), ast.Null()]}
@@ -145,7 +148,9 @@ class LarkToEQL(Interpreter):
         self._stacks = defaultdict(list)
         self._alias_enabled = ParserConfig.read_stack("allow_alias", False)
         self._alias_mapping = {}
+        self._allow_runs = ParserConfig.read_stack("allow_runs", False)
         self._in_variable = False
+        self._allow_sample = ParserConfig.read_stack("allow_sample", False)
 
     @property
     def lines(self):
@@ -983,7 +988,7 @@ class LarkToEQL(Interpreter):
         return pipe_cls([arg.node for arg in args])
 
     def base_query(self, node):
-        """Visit a sequence, join or event query."""
+        """Visit a sample, sequence, join or event query."""
         return self.visit(node.children[0])
 
     def piped_query(self, node):
@@ -1214,6 +1219,17 @@ class LarkToEQL(Interpreter):
 
         return key, ast.Boolean(bool(value.node.value))
 
+    def sample(self, node):
+        """Callback function to walk the AST for a sample."""
+        if not self._allow_sample or not self._elasticsearch_syntax:
+            raise self._error(node, "Sample not supported")
+
+        queries, _ = self._get_subqueries_and_close(node, allow_fork=True)
+        if len(queries) <= 1:
+            raise self._error(node, "Only one item in the sample",
+                              cls=EqlSemanticError)
+        return ast.Sample(queries)
+
     def sequence(self, node):
         """Callback function to walk the AST."""
         if not self._subqueries_enabled:
@@ -1224,7 +1240,7 @@ class LarkToEQL(Interpreter):
         if node['with_params']:
             params = self.time_range(node['with_params']['time_range'])
 
-        allow_runs = self._elasticsearch_syntax
+        allow_runs = self._elasticsearch_syntax and self._allow_runs
 
         queries, close = self._get_subqueries_and_close(node, allow_fork=True, allow_runs=allow_runs)
         if len(queries) <= 1 and not self._elasticsearch_syntax:
@@ -1507,6 +1523,7 @@ class TermExtractor(Interpreter, object):
 
     # these have similar enough ASTs that this is fine for extracting terms
     join = sequence
+    sample = sequence
 
 
 def extract_query_terms(text, **kwargs):
