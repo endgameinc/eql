@@ -535,7 +535,12 @@ class Multiply(MathFunctionSignature):
         """Multiply numeric values."""
         if is_number(x) and is_number(y):
             return x * y
+            
+@register
+class Negate(FunctionSignature):
+    """Negate the expression"""
 
+    name = "negate"
 
 @register
 class Safe(DynamicFunctionSignature):
