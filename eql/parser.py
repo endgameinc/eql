@@ -638,6 +638,8 @@ class LarkToEQL(Interpreter):
         predicate = node["STRING_PREDICATE"]
         if predicate == ":":
             function_name = "wildcard"
+        elif predicate == "!":
+            function_name = "negate"
         elif predicate in ("like", "like~"):
             function_name = "wildcard"
         elif predicate in ("regex", "regex~"):
