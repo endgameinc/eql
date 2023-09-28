@@ -536,6 +536,7 @@ class Multiply(MathFunctionSignature):
         if is_number(x) and is_number(y):
             return x * y
 
+
 @register
 class Safe(DynamicFunctionSignature):
     """Evaluate an expression and suppress exceptions."""
