@@ -28,6 +28,7 @@ time_range: number name?
 
 subquery_by: subquery fork_param? join_values? repeated_sequence? sequence_alias?
 subquery: "[" event_query "]"
+     | NOT_OP* "[" event_query "]"
 fork_param: "fork" (EQUALS boolean)?
 
 // Expressions
@@ -54,7 +55,7 @@ STRING_PREDICATE.3:  ":"
 COMP_OP: "<=" | "<" | "!=" | ">=" | ">"
 ?comp_op: EQUALS | COMP_OP
 MULT_OP:    "*" | "/" | "%"
-NOT_OP:     "not"
+NOT_OP:     "not" | "!"
 
 ?sum_expr: mul_expr (SIGN mul_expr)*
 ?mul_expr: named_subquery_test (MULT_OP named_subquery_test)*
