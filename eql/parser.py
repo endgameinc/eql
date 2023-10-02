@@ -55,6 +55,7 @@ strict_booleans = ParserConfig(implied_booleans=False)
 nullable_fields = ParserConfig(strict_fields=False)
 non_nullable_fields = ParserConfig(strict_fields=True)
 allow_enum_fields = ParserConfig(enable_enum=True)
+allow_negation = ParserConfig(allow_negation=True)
 allow_sample = ParserConfig(allow_sample=True)
 allow_runs = ParserConfig(allow_runs=True)
 elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
@@ -151,6 +152,7 @@ class LarkToEQL(Interpreter):
         self._allow_runs = ParserConfig.read_stack("allow_runs", False)
         self._in_variable = False
         self._allow_sample = ParserConfig.read_stack("allow_sample", False)
+        self._allow_negation = ParserConfig.read_stack("allow_negation", False)
 
     @property
     def lines(self):
@@ -1088,7 +1090,9 @@ class LarkToEQL(Interpreter):
         else:
             join_values = []
 
-        node_info = NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], **kwargs), source=node)
+        node0 = self.visit(node["subquery"])[0]
+        kwargs["is_negated"] = True if hasattr(node0, "type") and node0.type == "MISSING_EVENT_OPEN" else False
+        node_info = NodeInfo(ast.SubqueryBy(query, [v.node for v in join_values], kwargs), source=node)
 
         alias = node["sequence_alias"]
         if alias is not None:
@@ -1108,10 +1112,16 @@ class LarkToEQL(Interpreter):
     def join(self, node):
         """Callback function to walk the AST."""
         queries, close = self._get_subqueries_and_close(node)
+        if self.negative_subquery_used:
+            raise self._error(node, "Negative subquery not permitted in join",
+                              cls=EqlSemanticError)
         return ast.Join(queries, close)
 
     def _get_subqueries_and_close(self, node, allow_fork=False, allow_runs=False):
         """Helper function used by join and sequence to avoid duplicate code."""
+
+        self.negative_subquery_used = False
+
         if not self._subqueries_enabled:
             # Raise the error earlier (instead of waiting until subquery_by) so that it's more meaningful
             raise self._error(node, "Subqueries not supported")
@@ -1120,6 +1130,8 @@ class LarkToEQL(Interpreter):
         subquery_nodes = node.get_list("subquery_by")
         first, first_info, first_runs_count = self.subquery_by(subquery_nodes[0], allow_fork=allow_fork,
                                                                position=0, allow_runs=allow_runs)
+        if first.node.data["is_negated"]:
+            self.negative_subquery_used = True
 
         num_values = len(first_info)
         subqueries = [(first, first_info)] * first_runs_count
@@ -1137,6 +1149,9 @@ class LarkToEQL(Interpreter):
         for pos, subquery in enumerate(subquery_nodes[1:], 1):
             subquery, join_values, runs_count = self.subquery_by(subquery, num_values=num_values, allow_fork=allow_fork,
                                                                  position=pos, allow_runs=allow_runs)
+            if subquery.node.data["is_negated"]:
+                self.negative_subquery_used = True
+
             multiple_subqueries = [(subquery, join_values)] * runs_count
             subqueries.extend(multiple_subqueries)
 
@@ -1228,6 +1243,10 @@ class LarkToEQL(Interpreter):
         if len(queries) <= 1:
             raise self._error(node, "Only one item in the sample",
                               cls=EqlSemanticError)
+
+        if self.negative_subquery_used:
+            raise self._error(node, "Negative subquery not permitted in sample",
+                              cls=EqlSemanticError)
         return ast.Sample(queries)
 
     def sequence(self, node):
@@ -1241,8 +1260,20 @@ class LarkToEQL(Interpreter):
             params = self.time_range(node['with_params']['time_range'])
 
         allow_runs = self._elasticsearch_syntax and self._allow_runs
+        allow_negation = self._elasticsearch_syntax and self._allow_negation
 
         queries, close = self._get_subqueries_and_close(node, allow_fork=True, allow_runs=allow_runs)
+
+        # Fail if negative operator used without exposing in elasticsearch syntax
+        if self.negative_subquery_used and not allow_negation:
+            raise self._error(node, "Negative subquery used ",
+                              cls=EqlSemanticError if self._elasticsearch_syntax else EqlSyntaxError)
+
+        # Fail if any subquery uses the negative operator without maxspan
+        if not params and self.negative_subquery_used:
+            raise self._error(node, "Negative subquery used without maxspan",
+                              cls=EqlSemanticError if self._elasticsearch_syntax else EqlSyntaxError)
+
         if len(queries) <= 1 and not self._elasticsearch_syntax:
             raise self._error(node, "Only one item in the sequence",
                               cls=EqlSemanticError if self._elasticsearch_syntax else EqlSyntaxError)

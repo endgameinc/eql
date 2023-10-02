@@ -27,7 +27,7 @@ time_range: number name?
 
 
 subquery_by: subquery fork_param? join_values? repeated_sequence? sequence_alias?
-subquery: "[" event_query "]"
+subquery: ( "[" | MISSING_EVENT_OPEN ) event_query "]"
 fork_param: "fork" (EQUALS boolean)?
 
 // Expressions
@@ -107,6 +107,7 @@ escaped_name: ESCAPED_NAME
 // sequence by pid [1] [true] looks identical to:
 // sequence by pid[1] [true]
 FIELD: FIELD_IDENT (ATTR | INDEX)+
+MISSING_EVENT_OPEN: "!["
 OPTIONAL_FIELD: "?" FIELD_IDENT (ATTR | INDEX)*
 ATTR: "." WHITESPACE? FIELD_IDENT
 INDEX: "[" WHITESPACE? UNSIGNED_INTEGER WHITESPACE? "]"

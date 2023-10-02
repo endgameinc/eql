@@ -10,9 +10,9 @@ from eql import Schema
 from eql.ast import *  # noqa: F403
 from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlTypeMismatchError, EqlParseError
 from eql.parser import (
-    allow_sample, allow_runs, parse_query, parse_expression, parse_definitions, ignore_missing_functions, parse_field,
-    parse_literal, extract_query_terms, keywords, elasticsearch_syntax, elastic_endpoint_syntax,
-    elasticsearch_validate_optional_fields
+    allow_negation, allow_sample, allow_runs, parse_query, parse_expression, parse_definitions,
+    ignore_missing_functions, parse_field, parse_literal, extract_query_terms, keywords, elasticsearch_syntax,
+    elastic_endpoint_syntax, elasticsearch_validate_optional_fields
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -324,6 +324,12 @@ class TestParser(unittest.TestCase):
 
             # bad sequence alias, without endpoint syntax
             'sequence [process where process.name == "cmd.exe"] as a0 [network where a0.process.id == process.id]'
+
+            # sequence with negative missing events without maxspan
+            'sequence [process where true] ![file where true]',
+
+            # sequence with negative missing events without elasticsearch flag
+            'sequence with maxspan [process where true] ![file where true]',
         ]
         for query in invalid:
             self.assertRaises(EqlParseError, parse_query, query)
@@ -637,6 +643,20 @@ class TestParser(unittest.TestCase):
             # invalid sample base query usage
             self.assertRaises(EqlSemanticError, parse_query,
                               'sample by user [process where opcode == 1] [process where opcode == 1]')
+            self.assertRaises(EqlSemanticError, parse_query,
+                              'sample by user [process where opcode == 1] ![process where opcode == 1]')
+
+        with elasticsearch_syntax, allow_negation:
+            parse_query('sequence with maxspan=2s [process where true] ![file where true]')
+            parse_query('sequence with maxspan=2s ![process where true] [file where true]')
+            parse_query('sequence with maxspan=2s [process where true] ![file where true] [file where true]')
+
+            self.assertRaises(EqlSemanticError, parse_query,
+                              'sequence [process where true] [file where true] ![file where true]')
+            self.assertRaises(EqlSemanticError, parse_query,
+                              'join ![process where true] [file where true] [file where true]')
+            self.assertRaises(EqlSemanticError, parse_query,
+                              'sample ![process where true] [file where true] [file where true]')
 
         with schema:
             parse_query("process where process_name == 'cmd.exe'")
@@ -695,6 +715,7 @@ class TestParser(unittest.TestCase):
             event1 = '[network where p0.process.name == process.name]'
             event2 = '[network where p0.pid == 0]'
             event3 = '[network where p0.badfield == 0]'
+            event4 = f'!{event0}'
             parse_query('sequence %s as p0 %s' % (event0, event1))
             parse_query('sequence by user.name %s as p0 %s' % (event0, event1))
             parse_query('sequence with maxspan=1m %s by user.name as p0 %s by user.name' % (event0, event1))
@@ -702,6 +723,9 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event2))
             self.assertRaises(EqlSchemaError, parse_query, 'sequence by user.name %s as p1 %s' % (event0, event3))
             self.assertRaises(EqlSyntaxError, parse_query, "process where process_name == 'cmd.exe'")
+
+            # negative runs not supported on the endpoint
+            self.assertRaises(EqlSemanticError, parse_query, 'sequence %s %s' % (event0, event4))
 
             # as fields not emmitted by the endpoint
             self.assertRaises(EqlSyntaxError, parse_query, 'process where client.as.organization.name == "string"')
