@@ -1119,7 +1119,6 @@ class LarkToEQL(Interpreter):
 
     def _get_subqueries_and_close(self, node, allow_fork=False, allow_runs=False):
         """Helper function used by join and sequence to avoid duplicate code."""
-
         self.negative_subquery_used = False
 
         if not self._subqueries_enabled:

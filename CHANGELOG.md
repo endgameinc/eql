@@ -1,6 +1,14 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.19
+
+ _Released 2023-10-10_
+
+### Added
+
+* Support for [missing events](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-missing-events) feature used in Elasticsearch sequence queries
+
 # Version 0.9.18
 
  _Released 2023-09-01_

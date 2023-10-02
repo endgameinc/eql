@@ -715,7 +715,7 @@ class TestParser(unittest.TestCase):
             event1 = '[network where p0.process.name == process.name]'
             event2 = '[network where p0.pid == 0]'
             event3 = '[network where p0.badfield == 0]'
-            event4 = f'!{event0}'
+            event4 = '!{%s}' % (event0)
             parse_query('sequence %s as p0 %s' % (event0, event1))
             parse_query('sequence by user.name %s as p0 %s' % (event0, event1))
             parse_query('sequence with maxspan=1m %s by user.name as p0 %s by user.name' % (event0, event1))
