@@ -897,7 +897,7 @@ class SubqueryBy(EqlNode):
 
         :param EventQuery query: The event query enclosed in the term
         :param list[Expression] join_values: The field to join values on
-        :param bool data: Toggle for copying instead of moving a sequence on match
+        :param dict data: Fork (copying instead of moving a sequence on match) and is_negated params
         """
         self.query = query
         self.join_values = join_values or []
