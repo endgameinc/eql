@@ -202,6 +202,8 @@ class CidrMatch(FunctionSignature):
     masks = [struct.unpack(">L", struct.pack(">L", MAX_IP & ~(MAX_IP >> b)))[0] for b in range(33)]
     mask_addresses = [socket.inet_ntoa(struct.pack(">L", m)) for m in masks]
 
+    # TODO add support for IPv6
+
     @classmethod
     def to_mask(cls, cidr_string):
         """Split an IP address plus cidr block to the mask."""
