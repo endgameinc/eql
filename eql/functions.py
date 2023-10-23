@@ -12,6 +12,7 @@ from .utils import is_string, to_unicode, is_number, fold_case, is_insensitive
 _registry = {}
 REGEX_FLAGS = re.UNICODE | re.DOTALL
 MAX_IP = 0xffffffff
+MAX_IPV6 = 0xffffffffffffffffffffffffffffffff
 
 
 def regex_flags():
@@ -340,7 +341,7 @@ class CidrMatch(FunctionSignature):
             ip_bytes = socket.inet_pton(socket.AF_INET6, ip_string)
             ip_integer = int.from_bytes(ip_bytes, byteorder="big")
             mask = cls.masks6[prefix_len]
-            max_ip_integer = ip_integer | (MAX_IP6 ^ mask)
+            max_ip_integer = ip_integer | (MAX_IPV6 ^ mask)
             min_h16s = struct.unpack(">8H", struct.pack(">QQ", ip_integer >> 64, ip_integer & 0xFFFFFFFFFFFFFFFF))
             max_h16s = struct.unpack(
                 ">8H", struct.pack(">QQ", max_ip_integer >> 64, max_ip_integer & 0xFFFFFFFFFFFFFFFF)
@@ -365,9 +366,9 @@ class CidrMatch(FunctionSignature):
 
         def callback(source, *_):
             if is_string(source) and (
-                cls.ipv4_compiled.match(source)
-                or cls.ipv6_compiled.match(source)
-                or cls.ipv6_shorthand_compiled.match(source)
+                cls.ipv4_compiled.match(source) or
+                cls.ipv6_compiled.match(source) or
+                cls.ipv6_shorthand_compiled.match(source)
             ):
                 if cls.ipv4_compiled.match(source):
                     ip_integer, _ = cls.to_mask(source + "/32")
@@ -389,9 +390,9 @@ class CidrMatch(FunctionSignature):
     def run(cls, ip_address, *cidr_matches):
         """Compare an IP address against a list of cidr blocks."""
         if is_string(ip_address) and (
-            cls.ipv4_compiled.match(ip_address)
-            or cls.ipv6_compiled.match(ip_address)
-            or cls.ipv6_shorthand_compiled.match(ip_address)
+            cls.ipv4_compiled.match(ip_address) or
+            cls.ipv6_compiled.match(ip_address) or
+            cls.ipv6_shorthand_compiled.match(ip_address)
         ):
             if cls.ipv4_compiled.match(ip_address):
                 ip_integer, _ = cls.to_mask(ip_address + "/32")
