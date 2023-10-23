@@ -273,7 +273,7 @@ class CidrMatch(FunctionSignature):
             ip_bytes = socket.inet_pton(socket.AF_INET6, ip_string)
             # TODO remove x if possible
             subnet_int, x = struct.unpack(">QQ", ip_bytes)
-            mask = cls.masks6[size]
+            mask = cls.masks6[size] & cls.masks6[size]
         else:
             raise ValueError("Invalid IP address")
 
@@ -283,9 +283,6 @@ class CidrMatch(FunctionSignature):
     def make_octet_re(cls, start, end):
         """Convert an octet-range into a regular expression."""
         combos = []
-
-        if start == end:
-            return "{:x}".format(start)
 
         if start == 0 and end == 255:
             return cls.octet_re
@@ -327,27 +324,27 @@ class CidrMatch(FunctionSignature):
     def to_range(cls, cidr):
         """Get the IP range for a list of IP addresses."""
         if cls.cidrv4_compiled.match(cidr):
-            ip_string, prefix_len = cidr.split("/")
-            prefix_len = int(prefix_len)
-            ip_integer = struct.unpack(">L", socket.inet_aton(ip_string))[0]
-            mask = cls.masks4[prefix_len]
+            ip_integer, mask = cls.to_mask(cidr)
             max_ip_integer = ip_integer | (MAX_IP ^ mask)
+
             min_octets = struct.unpack("BBBB", struct.pack(">L", ip_integer))
             max_octets = struct.unpack("BBBB", struct.pack(">L", max_ip_integer))
         elif cls.cidrv6_compiled.match(cidr) or cls.cidrv6_shorthand_compiled.match(cidr):
             cidr = cls.expand_ipv6(cidr)
-            ip_string, prefix_len = cidr.split("/")
-            prefix_len = int(prefix_len)
-            ip_bytes = socket.inet_pton(socket.AF_INET6, ip_string)
-            ip_integer = int.from_bytes(ip_bytes, byteorder="big")
-            mask = cls.masks6[prefix_len]
+            ip_integer, mask = cls.to_mask(cidr)
             max_ip_integer = ip_integer | (MAX_IPV6 ^ mask)
-            min_h16s = struct.unpack(">8H", struct.pack(">QQ", ip_integer >> 64, ip_integer & 0xFFFFFFFFFFFFFFFF))
-            max_h16s = struct.unpack(
-                ">8H", struct.pack(">QQ", max_ip_integer >> 64, max_ip_integer & 0xFFFFFFFFFFFFFFFF)
-            )
-            min_octets = [h16 >> 8 for h16 in min_h16s] + [h16 & 0xFF for h16 in min_h16s[6:]]
-            max_octets = [h16 >> 8 for h16 in max_h16s] + [h16 & 0xFF for h16 in max_h16s[6:]]
+
+            # Convert the subnet integer to a tuple of 8 16-bit integers
+            subnet_ints = struct.unpack(">8H", struct.pack(">QQ", (ip_integer >> 64), (ip_integer & 0xFFFFFFFFFFFFFFFF)))
+            # Convert the mask to a tuple of 8 16-bit integers
+            mask_ints = struct.unpack(">8H", struct.pack(">QQ", (mask >> 64), (mask & 0xFFFFFFFFFFFFFFFF)))
+            # Apply the mask to the subnet integer to get the network address
+            network_ints = tuple([subnet_ints[i] & mask_ints[i] for i in range(8)])
+            # Calculate the maximum IP integer
+            max_ip_ints = tuple([network_ints[i] | (0xFFFF ^ mask_ints[i]) for i in range(8)])
+            # Convert the network and maximum IP integers to a tuple of 4 32-bit integers
+            min_octets = struct.unpack(">BBBB", struct.pack(">8H", *network_ints))
+            max_octets = struct.unpack(">BBBB", struct.pack(">8H", *max_ip_ints))
         else:
             raise ValueError("Invalid CIDR notation")
 
