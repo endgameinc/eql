@@ -578,4 +578,3 @@ class TestPythonEngine(TestEngine):
         output = self.get_output(queries=[parsed_query], config=config, events=events)
 
         self.assertEqual(len(output), 3, "Missing or extra results")
-
