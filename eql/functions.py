@@ -356,9 +356,9 @@ class CidrMatch(FunctionSignature):
         ipv4_masks = []
         ipv6_masks = []
         for cidr in cidr_matches:
-            if cls.ipv4_compiled.match(cidr.value):
+            if cls.cidrv4_compiled.match(cidr.value):
                 ipv4_masks.append(cls.to_mask(cidr.value))
-            elif cls.ipv6_compiled.match(cidr.value) or cls.ipv6_shorthand_compiled.match(cidr.value):
+            elif cls.cidrv4_compiled.match(cidr.value) or cls.cidrv6_shorthand_compiled.match(cidr.value):
                 ipv6_masks.append(cls.to_mask(cidr.value))
 
         def callback(source, *_):
@@ -382,7 +382,6 @@ class CidrMatch(FunctionSignature):
 
         return callback
 
-    # TODO maybe only need to run expansions here
     @classmethod
     def run(cls, ip_address, *cidr_matches):
         """Compare an IP address against a list of cidr blocks."""
@@ -437,7 +436,7 @@ class CidrMatch(FunctionSignature):
             if cls.cidrv4_compiled.match(argument.node.value):
                 subnet_bytes = struct.pack(">L", subnet_integer)
                 subnet_base = socket.inet_ntoa(subnet_bytes)
-            elif cls.cidrv6_compiled.match(argument.node.value):
+            elif cls.cidrv6_compiled.match(argument.node.value) or cls.cidrv6_shorthand_compiled.match(argument.node.value):
                 subnet_bytes = struct.pack(">QQ", subnet_integer >> 64, subnet_integer & 0xFFFFFFFFFFFFFFFF)
                 subnet_base = socket.inet_ntop(socket.AF_INET6, subnet_bytes)
 
