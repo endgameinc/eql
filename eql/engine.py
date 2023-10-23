@@ -983,11 +983,16 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         get_join_value = self._convert_key(subquery.join_values, scoped=True)
         last_position = size - 1
         fork = bool(subquery.params.kv.get('fork', Boolean(False)).value)
+        is_negated = bool(subquery.params.kv.get('is_negated', Boolean(False)).value)
 
         if position == 0:
             @self.event_callback(subquery.query.event_type)
             def start_sequence_callback(event):  # type: (Event) -> None
-                if check_event(event):
+                condition = (
+                    (check_event(event) and not is_negated) or
+                    (not check_event(event) and is_negated)
+                )
+                if condition:
                     join_value = get_join_value(event)
                     sequence = [event]
                     lookups[1][join_value] = sequence
@@ -997,7 +1002,12 @@ class PythonEngine(BaseEngine, BaseTranspiler):
 
             @self.event_callback(subquery.query.event_type)
             def continue_sequence_callback(event):  # type: (Event) -> None
-                if len(lookups[position]) and check_event(event):
+                condition = (
+                    len(lookups[position]) and
+                    ((check_event(event) and not is_negated) or
+                     (not check_event(event) and is_negated))
+                )
+                if condition:
                     join_value = get_join_value(event)
                     if join_value in lookups[position]:
                         if fork:
@@ -1010,13 +1020,20 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         else:
             @self.event_callback(subquery.query.event_type)
             def finish_sequence(event):  # type: (Event) -> None
-                if len(lookups[position]) and check_event(event):
+                condition = (
+                    len(lookups[position]) and
+                    ((check_event(event) and not is_negated) or
+                     (not check_event(event) and is_negated))
+                )
+                if condition:
                     join_value = get_join_value(event)
                     if join_value in lookups[position]:
                         if fork:
                             sequence = list(lookups[position].get(join_value))
                         else:
                             sequence = lookups[position].pop(join_value)
+                        if is_negated:
+                            pass
                         sequence.append(event)
                         next_pipe(sequence)
 

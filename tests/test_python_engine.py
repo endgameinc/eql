@@ -6,7 +6,7 @@ from collections import defaultdict
 from eql import *  # noqa: F403
 from eql.ast import *  # noqa: F403
 from eql.engine import Scope
-from eql.parser import ignore_missing_functions, allow_sample, elasticsearch_syntax
+from eql.parser import ignore_missing_functions, allow_sample, elasticsearch_syntax, allow_negation
 from eql.schema import EVENT_TYPE_GENERIC
 from eql.tests.base import TestEngine
 
@@ -526,3 +526,56 @@ class TestPythonEngine(TestEngine):
         self.assertEqual(evaluate("`a.b`", {"a.b": 1}), 1)
         self.assertEqual(evaluate("a.`b.c`[0]", {"a": {"b.c": [1]}}), 1)
         self.assertEqual(evaluate("`!@#$%^&*().`", {"!@#$%^&*().": 1}), 1)
+
+    def test_missing_events(self):
+        """Test the missing event feature."""
+        config = {'flatten': True}
+        events = [Event.from_data(d) for d in [
+            {
+                "event_type": "process",
+                "process_name": "malicious.exe",
+                "unique_pid": "host1-1",
+                "@timestamp": "2023-10-23T00:00:00"
+            },
+            {
+                "event_type": "process",
+                "process_name": "missing.exe",
+                "unique_pid": "host1-1",
+                "@timestamp": "2023-10-23T00:00:00"
+            },
+            {
+                "event_type": "file",
+                "file_name": "suspicious.txt",
+                "unique_pid": "host1-1",
+                "@timestamp": "2023-10-23T00:01:00"
+            }
+        ]]
+
+        # Should return no results since the malicious2.exe event is not missing
+        query = '''
+        sequence by unique_pid with maxspan=1m
+            [ process where process_name == "malicious.exe" ]
+            ![ process where process_name == "missing.exe" ]
+            [ file where file_name == "suspicious.txt" ]
+        '''
+        with elasticsearch_syntax, allow_negation:
+            parsed_query = parse_query(query)
+
+        output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+        self.assertEqual(len(output), 0, "Missing or extra results")
+
+        # Should return results since the second malicious.exe event is missing
+        query = '''
+        sequence by unique_pid with maxspan=1m
+            [ process where process_name == "malicious.exe" ]
+            ![ process where process_name == "malicious.exe" ]
+            [ file where file_name == "suspicious.txt" ]
+        '''
+        with elasticsearch_syntax, allow_negation:
+            parsed_query = parse_query(query)
+
+        output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+        self.assertEqual(len(output), 3, "Missing or extra results")
+
