@@ -535,25 +535,25 @@ class TestPythonEngine(TestEngine):
                 "event_type": "process",
                 "process_name": "malicious.exe",
                 "unique_pid": "host1-1",
-                "@timestamp": 116444736000000000
+                "timestamp": 116444736000000000
             },
             {
                 "event_type": "process",
                 "process_name": "missing.exe",
                 "unique_pid": "host1-1",
-                "@timestamp": 116444738000000000
+                "timestamp": 116444738000000000
             },
             {
                 "event_type": "file",
                 "file_name": "suspicious.txt",
                 "unique_pid": "host1-1",
-                "@timestamp": 116444740000000000
+                "timestamp": 116444740000000000
             }
         ]]
 
         # Should return no results since the malicious2.exe event is not missing
         query = '''
-        sequence by unique_pid with maxspan=1m
+        sequence by unique_pid with maxspan=7m
             [ process where process_name == "malicious.exe" ]
             ![ process where process_name == "missing.exe" ]
             [ file where file_name == "suspicious.txt" ]
@@ -567,7 +567,7 @@ class TestPythonEngine(TestEngine):
 
         # Should return results since the second malicious.exe event is missing
         query = '''
-        sequence by unique_pid with maxspan=1m
+        sequence by unique_pid with maxspan=7m
             [ process where process_name == "malicious.exe" ]
             ![ process where process_name == "malicious.exe" ]
             [ file where file_name == "suspicious.txt" ]
@@ -582,7 +582,7 @@ class TestPythonEngine(TestEngine):
 
         # Should return results since the last suspicious_file.txt event is missing
         query = '''
-        sequence by unique_pid with maxspan=1m
+        sequence by unique_pid with maxspan=7m
             [ process where process_name == "malicious.exe" ]
             [ process where process_name == "missing.exe" ]
             ![ file where file_name == "suspicious_file.txt" ]
@@ -596,7 +596,7 @@ class TestPythonEngine(TestEngine):
 
         # Should return no results since the last suspicious.txt event is not missing
         query = '''
-        sequence by unique_pid with maxspan=1m
+        sequence by unique_pid with maxspan=7m
             [ process where process_name == "malicious.exe" ]
             [ process where process_name == "missing.exe" ]
             ![ file where file_name == "suspicious.txt" ]
@@ -610,7 +610,7 @@ class TestPythonEngine(TestEngine):
 
         # Should return no results since the first malicious.exe event is not missing
         query = '''
-        sequence by unique_pid with maxspan=1m
+        sequence by unique_pid with maxspan=7m
             ![ process where process_name == "malicious.exe" ]
             [ process where process_name == "missing.exe" ]
             [ file where file_name == "suspicious.txt" ]
@@ -624,7 +624,7 @@ class TestPythonEngine(TestEngine):
 
         # Should return results since the first malicious2.exe event is missing
         query = '''
-        sequence by unique_pid with maxspan=1m
+        sequence by unique_pid with maxspan=7m
             ![ process where process_name == "malicious2.exe" ]
             [ process where process_name == "missing.exe" ]
             [ file where file_name == "suspicious.txt" ]
