@@ -335,7 +335,9 @@ class CidrMatch(FunctionSignature):
             max_ip_integer = ip_integer | (MAX_IPV6 ^ mask)
 
             # Convert the subnet integer to a tuple of 8 16-bit integers
-            subnet_ints = struct.unpack(">8H", struct.pack(">QQ", (ip_integer >> 64), (ip_integer & 0xFFFFFFFFFFFFFFFF)))
+            subnet_ints = struct.unpack(
+                ">8H", struct.pack(">QQ", (ip_integer >> 64), (ip_integer & 0xFFFFFFFFFFFFFFFF))
+            )
             # Convert the mask to a tuple of 8 16-bit integers
             mask_ints = struct.unpack(">8H", struct.pack(">QQ", (mask >> 64), (mask & 0xFFFFFFFFFFFFFFFF)))
             # Apply the mask to the subnet integer to get the network address
@@ -436,7 +438,9 @@ class CidrMatch(FunctionSignature):
             if cls.cidrv4_compiled.match(argument.node.value):
                 subnet_bytes = struct.pack(">L", subnet_integer)
                 subnet_base = socket.inet_ntoa(subnet_bytes)
-            elif cls.cidrv6_compiled.match(argument.node.value) or cls.cidrv6_shorthand_compiled.match(argument.node.value):
+            elif cls.cidrv6_compiled.match(argument.node.value) or cls.cidrv6_shorthand_compiled.match(
+                argument.node.value
+            ):
                 subnet_bytes = struct.pack(">QQ", subnet_integer >> 64, subnet_integer & 0xFFFFFFFFFFFFFFFF)
                 subnet_base = socket.inet_ntop(socket.AF_INET6, subnet_bytes)
 
