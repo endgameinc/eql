@@ -199,16 +199,6 @@ class CidrMatch(FunctionSignature):
     ipv4_compiled = re.compile(r"^{}$".format(ipv4_re))
     cidrv4_compiled = re.compile(r"^{}/(?:3[0-2]|2[0-9]|1[0-9]|[0-9])$".format(ipv4_re))
 
-    h16_re = r"[a-fA-F0-9]{1,4}"
-    ipv6_re = r"^(?:[a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}$"
-    ipv6_compiled = re.compile(ipv6_re)
-    ipv6_shorthand_re = r"^([a-fA-F0-9]{1,4}:){0,6}(:[a-fA-F0-9]{1,4}){0,6}$"
-    ipv6_shorthand_compiled = re.compile(ipv6_shorthand_re)
-    cidrv6_re = r"(?:[a-fA-F0-9]{1,4}:){0,7}[a-fA-F0-9]{1,4}/(?:12[0-8]|1[01][0-9]|[0-9]{1,2})"
-    cidrv6_compiled = re.compile("^{}$".format(cidrv6_re))
-    cidrv6_shorthand_re = r"^([a-fA-F0-9]{1,4}:){0,7}(:[a-fA-F0-9]{1,4}){0,7}/\d{1,3}$"
-    cidrv6_shorthand_compiled = re.compile(cidrv6_shorthand_re)
-
     # store it in native representation, then recover it in network order
     masks4 = [struct.unpack(">L", struct.pack(">L", MAX_IP & ~(MAX_IP >> b)))[0] for b in range(33)]
     mask_addresses4 = [socket.inet_ntoa(struct.pack(">L", m)) for m in masks4]
@@ -217,6 +207,31 @@ class CidrMatch(FunctionSignature):
     mask_addresses6 = [
         socket.inet_ntop(socket.AF_INET6, struct.pack(">QQ", m >> 64, m & 0xFFFFFFFFFFFFFFFF)) for m in masks6
     ]
+
+    @classmethod
+    def check_ipv6(cls, n):
+        try:
+            socket.inet_pton(socket.AF_INET6, n)
+            return True
+        except socket.error:
+            return False
+
+    @classmethod
+    def check_ipv6_cidr(cls, cidr):
+        try:
+            # Split the CIDR range into the address and prefix length
+            address, prefix_length = cidr.split("/")
+            # Check if the address is a valid IPv6 address
+            socket.inet_pton(socket.AF_INET6, address)
+            # Check if the prefix length is a valid integer between 0 and 128
+            prefix_length = int(prefix_length)
+            if prefix_length < 0 or prefix_length > 128:
+                raise ValueError("Invalid prefix length")
+            # The CIDR range is valid
+            return True
+        except (socket.error, ValueError):
+            # The CIDR range is invalid
+            return False
 
     @classmethod
     def expand_ipv6(cls, cidr):
@@ -255,7 +270,10 @@ class CidrMatch(FunctionSignature):
             full_address = ipv6_address
 
         # Add leading zeros to each group
-        full_address = re.sub(r"(^|:)([0-9a-fA-F]{1,3})(:|$)", r"\g<1>0\2\3", full_address)
+        full_groups = []
+        for group in full_address.split(":"):
+            full_groups.append(group.zfill(4))
+        full_address = ":".join(full_groups)
 
         return full_address
 
@@ -268,7 +286,7 @@ class CidrMatch(FunctionSignature):
             ip_bytes = socket.inet_aton(ip_string)
             (subnet_int,) = struct.unpack(">L", ip_bytes)
             mask = cls.masks4[size]
-        elif cls.ipv6_compiled.match(ip_string) or cls.ipv6_shorthand_compiled.match(ip_string):
+        elif cls.check_ipv6(ip_string):
             ip_string = cls.expand_ipv6_address(ip_string)
             ip_bytes = socket.inet_pton(socket.AF_INET6, ip_string)
             # TODO remove x if possible
@@ -306,7 +324,7 @@ class CidrMatch(FunctionSignature):
         if cls.cidrv4_compiled.match(cidr):
             min_octets, max_octets = cls.to_range(cidr)
             return r"\.".join(cls.make_octet_re(*pair) for pair in zip(min_octets, max_octets))
-        elif cls.cidrv6_compiled.match(cidr) or cls.cidrv6_shorthand_compiled.match(cidr):
+        elif cls.check_ipv6_cidr(cidr):
             cidr = cls.expand_ipv6(cidr)
             h16s, prefix_len = cidr.split("/")
             h16s = h16s.split(":")
@@ -329,7 +347,7 @@ class CidrMatch(FunctionSignature):
 
             min_octets = struct.unpack("BBBB", struct.pack(">L", ip_integer))
             max_octets = struct.unpack("BBBB", struct.pack(">L", max_ip_integer))
-        elif cls.cidrv6_compiled.match(cidr) or cls.cidrv6_shorthand_compiled.match(cidr):
+        elif cls.check_ipv6_cidr(cidr):
             cidr = cls.expand_ipv6(cidr)
             ip_integer, mask = cls.to_mask(cidr)
             max_ip_integer = ip_integer | (MAX_IPV6 ^ mask)
@@ -360,7 +378,7 @@ class CidrMatch(FunctionSignature):
         for cidr in cidr_matches:
             if cls.cidrv4_compiled.match(cidr.value):
                 ipv4_masks.append(cls.to_mask(cidr.value))
-            elif cls.cidrv4_compiled.match(cidr.value) or cls.cidrv6_shorthand_compiled.match(cidr.value):
+            elif cls.check_ipv6_cidr(cidr.value):
                 ipv6_masks.append(cls.to_mask(cidr.value))
 
         def callback(source, *_):
@@ -374,7 +392,7 @@ class CidrMatch(FunctionSignature):
                     for subnet, mask in ipv4_masks:
                         if ip_integer & mask == subnet:
                             return True
-                elif cls.ipv6_compiled.match(source) or cls.ipv6_shorthand_compiled.match(source):
+                elif cls.check_ipv6(source):
                     ip_integer, _ = cls.to_mask(source + "/128")
                     for subnet, mask in ipv6_masks:
                         if ip_integer & mask == subnet:
@@ -389,8 +407,7 @@ class CidrMatch(FunctionSignature):
         """Compare an IP address against a list of cidr blocks."""
         if is_string(ip_address) and (
             cls.ipv4_compiled.match(ip_address) or
-            cls.ipv6_compiled.match(ip_address) or
-            cls.ipv6_shorthand_compiled.match(ip_address)
+            cls.check_ipv6(ip_address)
         ):
             if cls.ipv4_compiled.match(ip_address):
                 ip_integer, _ = cls.to_mask(ip_address + "/32")
@@ -399,12 +416,12 @@ class CidrMatch(FunctionSignature):
                         subnet, mask = cls.to_mask(cidr)
                         if ip_integer & mask == subnet:
                             return True
-            elif cls.ipv6_compiled.match(ip_address) or cls.ipv6_shorthand_compiled.match(ip_address):
+            elif cls.check_ipv6(ip_address):
                 ip_address = cls.expand_ipv6_address(ip_address)
                 ip_integer, _ = cls.to_mask(ip_address + "/128")
                 for cidr in cidr_matches:
                     if is_string(cidr) and (
-                        cls.cidrv6_compiled.match(cidr) or cls.cidrv6_shorthand_compiled.match(cidr)
+                        cls.check_ipv6_cidr(cidr)
                     ):
                         cidr = cls.expand_ipv6(cidr)
                         subnet, mask = cls.to_mask(cidr)
@@ -429,7 +446,7 @@ class CidrMatch(FunctionSignature):
             # overwrite the original node
             text = argument.node.value.strip()
 
-            if not (cls.cidrv4_compiled.match(argument.node.value) or cls.cidrv6_compiled.match(argument.node.value)):
+            if not (cls.cidrv4_compiled.match(argument.node.value) or cls.check_ipv6_cidr(argument.node.value)):
                 return pos
 
             # Since it does match, we should also rewrite the string to align to the base of the subnet
@@ -438,9 +455,7 @@ class CidrMatch(FunctionSignature):
             if cls.cidrv4_compiled.match(argument.node.value):
                 subnet_bytes = struct.pack(">L", subnet_integer)
                 subnet_base = socket.inet_ntoa(subnet_bytes)
-            elif cls.cidrv6_compiled.match(argument.node.value) or cls.cidrv6_shorthand_compiled.match(
-                argument.node.value
-            ):
+            elif cls.check_ipv6_cidr(argument.node.value):
                 subnet_bytes = struct.pack(">QQ", subnet_integer >> 64, subnet_integer & 0xFFFFFFFFFFFFFFFF)
                 subnet_base = socket.inet_ntop(socket.AF_INET6, subnet_bytes)
 
