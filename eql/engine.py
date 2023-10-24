@@ -988,54 +988,52 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         if position == 0:
             @self.event_callback(subquery.query.event_type)
             def start_sequence_callback(event):  # type: (Event) -> None
-                condition = (
-                    (check_event(event) and not is_negated) or
-                    (not check_event(event) and is_negated)
-                )
-                if condition:
+                event_check = check_event(event)
+                if event_check or is_negated:
                     join_value = get_join_value(event)
-                    sequence = [event]
-                    lookups[1][join_value] = sequence
+                    if event_check and not is_negated:
+                        sequence = [event]
+                        lookups[1][join_value] = sequence
+                    elif is_negated and not event_check:
+                        sequence = []
+                        lookups[1][join_value] = sequence
 
         elif position < last_position:
             next_position = position + 1
 
             @self.event_callback(subquery.query.event_type)
             def continue_sequence_callback(event):  # type: (Event) -> None
-                condition = (
-                    len(lookups[position]) and
-                    ((check_event(event) and not is_negated) or
-                     (not check_event(event) and is_negated))
-                )
-                if condition:
+                event_check = check_event(event)
+                if len(lookups[position]) and (check_event(event) or is_negated):
                     join_value = get_join_value(event)
                     if join_value in lookups[position]:
                         if fork:
                             sequence = list(lookups[position].get(join_value))
                         else:
                             sequence = lookups[position].pop(join_value)
-                        sequence.append(event)
-                        lookups[next_position][join_value] = sequence
+
+                        if is_negated and not event_check:
+                            lookups[next_position][join_value] = sequence
+                        elif not is_negated:
+                            sequence.append(event)
+                            lookups[next_position][join_value] = sequence
 
         else:
             @self.event_callback(subquery.query.event_type)
             def finish_sequence(event):  # type: (Event) -> None
-                condition = (
-                    len(lookups[position]) and
-                    ((check_event(event) and not is_negated) or
-                     (not check_event(event) and is_negated))
-                )
-                if condition:
+                event_check = check_event(event)
+                if len(lookups[position]) and (check_event(event) or is_negated):
                     join_value = get_join_value(event)
                     if join_value in lookups[position]:
                         if fork:
                             sequence = list(lookups[position].get(join_value))
                         else:
                             sequence = lookups[position].pop(join_value)
-                        if is_negated:
-                            pass
-                        sequence.append(event)
-                        next_pipe(sequence)
+
+                        if not is_negated or (is_negated and not event_check):
+                            if not is_negated:
+                                sequence.append(event)
+                            next_pipe(sequence)
 
     def _convert_sequence(self, node, next_pipe):  # type: (Sequence, callable) -> callable
         # Two lookups can help avoid unnecessary calls
@@ -1051,8 +1049,10 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                 minimum_start = event.time - max_span
                 for sub_lookup in lookups:
                     for join_key, sequence in list(sub_lookup.items()):
-                        if sequence[0].time < minimum_start:
+                        if sequence and sequence[0].time < minimum_start:
                             sub_lookup.pop(join_key)
+                        else:
+                            pass
 
         if node.close:
             check_close_event = self.convert(node.close.query)
