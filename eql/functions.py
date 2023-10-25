@@ -210,6 +210,7 @@ class CidrMatch(FunctionSignature):
 
     @classmethod
     def check_ipv6(cls, n):
+        """Check if a string is a valid IPv6 address."""
         try:
             socket.inet_pton(socket.AF_INET6, n)
             return True
@@ -218,6 +219,7 @@ class CidrMatch(FunctionSignature):
 
     @classmethod
     def check_ipv6_cidr(cls, cidr):
+        """Check if a string is a valid IPv6 CIDR range."""
         try:
             # Split the CIDR range into the address and prefix length
             address, prefix_length = cidr.split("/")
@@ -326,7 +328,6 @@ class CidrMatch(FunctionSignature):
     @classmethod
     def make_hex_re(cls, start, end):
         """Create a regex pattern for a range of hexadecimal values."""
-
         def generate_hex_range_pattern(min_value, max_value):
             """Generate a regex pattern for a range of hexadecimal values."""
             pattern = ""
@@ -439,7 +440,7 @@ class CidrMatch(FunctionSignature):
                 for cidr in cidr_matches:
                     if is_string(cidr) and (cls.check_ipv6_cidr(cidr)):
                         cidr = cls.expand_ipv6(cidr)
-                        subnet, mask = cls.to_mask(cidr)
+                        subnet, mask = cls.to_mask_ipv6(cidr)
                         if ip_integer & mask == subnet:
                             return True
 
