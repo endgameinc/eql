@@ -298,11 +298,12 @@ class CidrMatch(FunctionSignature):
         size = int(size)
         ip_string = cls.expand_ipv6_address(ip_string)
         ip_bytes = socket.inet_pton(socket.AF_INET6, ip_string)
+        high, low = struct.unpack('>QQ', ip_bytes)
+        address_int = (high << 64) | low
 
-        # modify to return int with mask applied, and mask
-        address_int = int.from_bytes(ip_bytes, byteorder="big")
+        mask = cls.masks6[size]
 
-        return address_int & cls.masks6[size], cls.masks6[size]
+        return address_int & mask, mask
 
     @classmethod
     def make_octet_re(cls, start, end):
