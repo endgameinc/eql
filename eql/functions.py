@@ -296,10 +296,11 @@ class CidrMatch(FunctionSignature):
         size = int(size)
         ip_string = cls.expand_ipv6_address(ip_string)
         ip_bytes = socket.inet_pton(socket.AF_INET6, ip_string)
-        most, least = struct.unpack(">QQ", ip_bytes)
-        mask = cls.masks6[size] & cls.masks6[size]
 
-        return most, least, mask
+        # modify to return int with mask applied, and mask
+        address_int = int.from_bytes(ip_bytes, byteorder='big')
+
+        return address_int & cls.masks6[size], cls.masks6[size]
 
     @classmethod
     def make_octet_re(cls, start, end):
@@ -310,13 +311,15 @@ class CidrMatch(FunctionSignature):
             return cls.octet_re
 
         # IPv4 octet range
-        if end <= 255:
+        if start >= 0 and start < 255 and end <= 255:
             for o in range(start, end + 1):
                 combos.append("{:d}".format(o))
         # IPv6 h16 range
+        # NOTE this should never be used outside of a unit test
+        # NOTE something may be wrong with this for 39e1 number? appears to -> 0 
         elif start >= 0 and end <= 65535:
             for h16 in range(start, end + 1):
-                combos.append("{:x}".format(h16))
+                combos.append("{:d}".format(h16))
         else:
             raise ValueError("Invalid octet range")
 
@@ -325,16 +328,37 @@ class CidrMatch(FunctionSignature):
     @classmethod
     def make_hex_re(cls, start, end):
         """Create a regex pattern for a range of hexadecimal values."""
+        def generate_hex_range_pattern(min_value, max_value):
+            """Generate a regex pattern for a range of hexadecimal values."""
+            pattern = ''
+            leading_zero = True
+            for pair in zip(min_value, max_value):
+                if pair[0] != '0':
+                    leading_zero = False
+                if pair[0] == pair[1]:
+                    if leading_zero:
+                        pattern += '{}?'.format(pair[0])
+                    else:
+                        pattern += pair[0]
+                else:
+                    if leading_zero:
+                        pattern += '[{}-{}]?'.format(pair[0], pair[1])
+                    else:
+                        pattern += '[{}-{}]'.format(pair[0], pair[1])
+            return pattern
+
         if start == end:
-            return "{:04x}".format(start)
+            base = "{:04x}".format(start)
+            compressed = '{:x}'.format(int(base, 16))
+            while len(compressed) < 4:
+                # Support optional leading zeros
+                compressed = r'0?' + compressed
+            return compressed
 
         if start == 0 and end == 65535:
             return r"[0-9a-fA-F]{1,4}"
 
-        if start & 0xff == 0 and end & 0xff == 0xff:
-            return "{:02x}{:02x}".format(start >> 8, end >> 8)
-
-        return "{:02x}{:02x}-{:02x}{:02x}".format(start >> 8, start & 0xff, end >> 8, end & 0xff)
+        return generate_hex_range_pattern("{:04x}".format(start),"{:04x}".format(end))
 
     @classmethod
     def make_cidr_regex(cls, cidr):
@@ -344,7 +368,7 @@ class CidrMatch(FunctionSignature):
             return r"\.".join(cls.make_octet_re(*pair) for pair in zip(min_octets, max_octets))
         elif cls.check_ipv6_cidr(cidr):
             min_octets, max_octets = cls.to_range(cidr)
-            return ":".join(cls.make_hex_re(*pair) for pair in zip(min_octets, max_octets))
+            return r":".join(cls.make_hex_re(*pair) for pair in zip(min_octets, max_octets))
         else:
             raise ValueError("Invalid CIDR notation")
 
@@ -359,19 +383,11 @@ class CidrMatch(FunctionSignature):
             max_octets = struct.unpack("BBBB", struct.pack(">L", max_ip_integer))
         elif cls.check_ipv6_cidr(cidr):
             cidr = cls.expand_ipv6(cidr)
-            most, least, mask = cls.to_mask_ipv6(cidr)
+            ip_integer, mask = cls.to_mask_ipv6(cidr)
+            max_ip_integer = ip_integer | (MAX_IPV6 ^ mask)
 
-            subnet_ints = struct.unpack(">8H", struct.pack(">QQ", most & 0xFFFFFFFFFFFFFFFF, least >> 64))
-
-            # Convert the mask to a tuple of 8 16-bit integers
-            mask_ints = struct.unpack(">8H", struct.pack(">QQ", (mask >> 64), (mask & 0xFFFFFFFFFFFFFFFF)))
-            # Apply the mask to the subnet integer to get the network address
-            network_ints = tuple([subnet_ints[i] & mask_ints[i] for i in range(8)])
-            # Calculate the maximum IP integer
-            max_ip_ints = tuple([network_ints[i] | (0xFFFF ^ mask_ints[i]) for i in range(8)])
-            # Convert the network and maximum IP integers to a tuple of 8 16-bit integers
-            min_octets = struct.unpack(">8H", struct.pack(">8H", *network_ints))
-            max_octets = struct.unpack(">8H", struct.pack(">8H", *max_ip_ints))
+            min_octets = struct.unpack(">8H", struct.pack(">QQ", (ip_integer >> 64), (ip_integer & 0xFFFFFFFFFFFFFFFF)))
+            max_octets = struct.unpack(">8H", struct.pack(">QQ", (max_ip_integer >> 64), (max_ip_integer & 0xFFFFFFFFFFFFFFFF)))       
         else:
             raise ValueError("Invalid CIDR notation")
 
@@ -399,9 +415,9 @@ class CidrMatch(FunctionSignature):
                         if ip_integer & mask == subnet:
                             return True
                 elif cls.check_ipv6(source):
-                    most, least, _ = cls.to_mask_ipv6(source + "/128")
-                    for subnet_most, subnet_least, mask in ipv6_masks:
-                        if most & mask == subnet_most and least & mask == subnet_least:
+                    ip_integer, _ = cls.to_mask_ipv6(source + "/128")
+                    for subnet, mask in ipv6_masks:
+                        if ip_integer & mask == subnet:
                             return True
 
             return False
@@ -424,7 +440,7 @@ class CidrMatch(FunctionSignature):
                             return True
             elif cls.check_ipv6(ip_address):
                 ip_address = cls.expand_ipv6_address(ip_address)
-                ip_integer, _ = cls.to_mask(ip_address + "/128")
+                ip_integer, _ = cls.to_mask_ipv6(ip_address + "/128")
                 for cidr in cidr_matches:
                     if is_string(cidr) and (
                         cls.check_ipv6_cidr(cidr)
@@ -462,8 +478,8 @@ class CidrMatch(FunctionSignature):
                 subnet_bytes = struct.pack(">L", subnet_integer)
                 subnet_base = socket.inet_ntoa(subnet_bytes)
             elif cls.check_ipv6_cidr(argument.node.value):
-                most, least, _ = cls.to_mask_ipv6(text)
-                subnet_bytes = struct.pack(">QQ", most & 0xFFFFFFFFFFFFFFFF, least >> 64)
+                subnet_integer, _ = cls.to_mask_ipv6(text)
+                subnet_bytes = struct.pack(">QQ", (subnet_integer >> 64), (subnet_integer & 0xFFFFFFFFFFFFFFFF))
                 subnet_base = socket.inet_ntop(socket.AF_INET6, subnet_bytes)
 
             # overwrite the original argument so it becomes the subnet
