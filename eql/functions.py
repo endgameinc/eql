@@ -279,20 +279,19 @@ class CidrMatch(FunctionSignature):
 
     @classmethod
     def to_mask(cls, cidr_string):
-        """Split an IP address plus cidr block to the mask."""
+        """Split an IPv4 address plus cidr block to the mask."""
         ip_string, size = cidr_string.split("/")
         size = int(size)
         ip_bytes = socket.inet_aton(ip_string)
         subnet_int, = struct.unpack(">L", ip_bytes)
 
-        mask = cls.masks[size]
+        mask = cls.masks4[size]
 
         return subnet_int & mask, mask
 
-
     @classmethod
     def to_mask_ipv6(cls, cidr_string):
-        """Split an IP address plus cidr block to the mask."""
+        """Split an IPv6 address plus cidr block to the mask."""
         ip_string, size = cidr_string.split("/")
         size = int(size)
         ip_string = cls.expand_ipv6_address(ip_string)
