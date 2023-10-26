@@ -289,9 +289,6 @@ class TestFunctions(unittest.TestCase):
 
     def test_ipv6_cidr_regex(self):
         """Test that octet regex are correctly matching the range."""
-
-        test = CidrMatch.make_cidr_regex("7ccd:f50:96ad:b6c1:1855:ddb7:6fa7:471/126")
-        # Test address e7b:d8c7:ae35:ee5e:626f:eb5a:cb2:8273
         for _ in range(200):
             # make an ip address
             ip_addr = tuple(random.randrange(65536) for _ in range(8))
