@@ -220,12 +220,12 @@ class CidrMatch(FunctionSignature):
         """Check if a string is a valid IPv6 CIDR range."""
         try:
             # Split the CIDR range into the address and prefix length
-            address, prefix_length = cidr.split("/")
+            address, size = cidr.split("/")
             # Check if the address is a valid IPv6 address
             socket.inet_pton(socket.AF_INET6, address)
             # Check if the prefix length is a valid integer between 0 and 128
-            prefix_length = int(prefix_length)
-            if 0 < prefix_length <= 128:
+            size = int(size)
+            if 0 < size <= 128:
                 raise ValueError("Invalid prefix length")
             # The CIDR range is valid
             return True
@@ -238,11 +238,11 @@ class CidrMatch(FunctionSignature):
         """Expand a shorthand IPv6 address or CIDR range to full notation."""
         if "/" in cidr:
             # Split the CIDR range into the address and prefix length
-            address, prefix_length = cidr.split("/")
+            address, size = cidr.split("/")
             # Expand the address
             address = cls.expand_ipv6_address(address)
             # Construct the full notation CIDR range
-            full_cidr = "{}/{}".format(address, prefix_length)
+            full_cidr = "{}/{}".format(address, size)
         else:
             # Expand the address
             full_cidr = cls.expand_ipv6_address(cidr)
