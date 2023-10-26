@@ -201,7 +201,7 @@ class CidrMatch(FunctionSignature):
 
     # store it in native representation, then recover it in network order
     masks = [struct.unpack(">L", struct.pack(">L", MAX_IP & ~(MAX_IP >> b)))[0] for b in range(33)]
-    mask_addresses4 = [socket.inet_ntoa(struct.pack(">L", m)) for m in masks]
+    mask_addresses = [socket.inet_ntoa(struct.pack(">L", m)) for m in masks]
 
     # IPv6 masks
     masks6 = [int("1" * i + "0" * (128 - i), 2) for i in range(129)]
@@ -279,7 +279,7 @@ class CidrMatch(FunctionSignature):
 
     @classmethod
     def to_mask(cls, cidr_string):
-        """Split an IPv4 address plus cidr block to the mask."""
+        """Split an IPv4 or IPv6 address plus cidr block to the mask."""
         ip_string, size = cidr_string.split("/")
         size = int(size)
         if cls.ip_compiled.match(ip_string):
