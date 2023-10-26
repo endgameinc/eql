@@ -225,7 +225,7 @@ class CidrMatch(FunctionSignature):
             socket.inet_pton(socket.AF_INET6, address)
             # Check if the prefix length is a valid integer between 0 and 128
             size = int(size)
-            if 0 < size <= 128:
+            if 0 <= size <= 128:
                 raise ValueError("Invalid prefix length")
             # The CIDR range is valid
             return True
