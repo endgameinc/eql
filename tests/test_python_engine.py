@@ -389,6 +389,65 @@ class TestPythonEngine(TestEngine):
             event_ids = [event.data['serial_event_id'] for event in output]
             self.validate_results(event_ids, [43, 45, 52], "Custom function 'reverse'")
 
+    def test_cidrmatch_ipv6(self):
+        """Test the cidrMatch custom function."""
+        config = {"flatten": True}
+        events = [
+            Event.from_data(d)
+            for d in [
+                {
+                    "event_type": "process",
+                    "process_name": "malicious.exe",
+                    "unique_pid": "host1-1",
+                    "timestamp": 116444736000000000,
+                    "source": {"ip": "2001:0db8:0000:0000:0000:0000:0000:0001"},
+                },
+                {
+                    "event_type": "process",
+                    "process_name": "missing.exe",
+                    "unique_pid": "host1-1",
+                    "timestamp": 116444738000000000,
+                    "source": {"ip": "2001:db8::1"},
+                },
+                {
+                    "event_type": "file",
+                    "file_name": "suspicious.txt",
+                    "unique_pid": "host1-1",
+                    "timestamp": 116444740000000000,
+                    "source": {"ip": "fe80::1"},
+                },
+            ]
+        ]
+
+        # Should return no results none of the CIDR ranges contain those IPs
+        query = """
+        sequence by unique_pid with maxspan=7m
+            [ process where cidrMatch(source.ip, "10.0.0.1/8") ]
+            [ process where cidrMatch(source.ip, "10.0.0.1/16") ]
+            [ file where cidrMatch(source.ip, "10.0.0.1/32") ]
+        """
+        with elasticsearch_syntax:
+            parsed_query = parse_query(query)
+
+        output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+        self.assertEqual(len(output), 0, "Missing or extra results")
+
+        # Should return results since the cidr ranges match the addresses in the events
+        query = """
+        sequence by unique_pid with maxspan=7m
+            [ process where cidrMatch(source.ip, "2001:0db8::/32") ]
+            [ process where cidrMatch(source.ip, "2001:0db8:0000:0000:0000:0000:0000:0000/32") ]
+            [ file where cidrMatch(source.ip, "fe80::/10") ]
+        """
+
+        with elasticsearch_syntax:
+            parsed_query = parse_query(query)
+
+        output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+        self.assertEqual(len(output), 3, "Missing or extra results")
+
     def test_analytic_output(self):
         """Confirm that analytics return the same results as queries."""
         analytics = [q['analytic'] for q in self.get_example_queries()]
