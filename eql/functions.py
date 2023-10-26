@@ -260,8 +260,9 @@ class CidrMatch(FunctionSignature):
             right_groups = right.split(":")
             num_left_groups = len(left_groups)
             num_right_groups = len(right_groups)
+            max_groups = 8
             # Calculate the number of groups in the middle part
-            num_middle_groups = 8 - num_left_groups - num_right_groups
+            num_middle_groups = max_groups - num_left_groups - num_right_groups
             # Construct the full notation address
             middle_groups = ["0000"] * num_middle_groups
             full_groups = left_groups + middle_groups + right_groups
