@@ -393,15 +393,16 @@ class TestPythonEngine(TestEngine):
 
     def test_cidrmatch(self):
         """Test the cidrMatch custom function."""
+
         def to_range(cidr):
             """Convert a CIDR notation to a tuple of the minimum and maximum IP addresses in the range."""
-
             ip_network = ipaddress.ip_network(cidr, strict=False)
 
             min_ip_address = ip_network.network_address
             max_ip_address = ip_network.broadcast_address
 
             return min_ip_address, max_ip_address
+
         def generate_random_ip_from_range(min_ip_address, max_ip_address):
             """Generate a random IP address from a given range."""
             ip_constructor = type(min_ip_address)
@@ -418,12 +419,10 @@ class TestPythonEngine(TestEngine):
 
             return random_ip_address
 
-
-        def generate_random_ip_address_not_in_range(min_ip_address, max_ip_address, max_tries = 2):
+        def generate_random_ip_address_not_in_range(min_ip_address, max_ip_address, max_tries=2):
             """Generate a random IP address NOT in a given range."""
             ip_constructor = type(min_ip_address)
-            max_int = 2**32-1 if type(min_ip_address) == ipaddress.IPv4Address else 2**128-1
-
+            max_int = 2**32 - 1 if type(min_ip_address) == ipaddress.IPv4Address else 2**128 - 1
 
             min_ip_address_int = int(min_ip_address)
             max_ip_address_int = int(max_ip_address)
@@ -433,7 +432,7 @@ class TestPythonEngine(TestEngine):
                 random_ip_address = ip_constructor(random.randint(0, min_ip_address_int))
             else:
                 random_ip_address = ip_constructor(random.randint(max_ip_address_int, max_int))
-            
+
             # Check if the random IP address is within the provided range.
             while random_ip_address >= min_ip_address and random_ip_address <= max_ip_address:
                 # Generate another random IP address.

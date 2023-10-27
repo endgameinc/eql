@@ -1,8 +1,6 @@
 """EQL functions."""
 import ipaddress
 import re
-import socket
-import struct
 
 from .errors import EqlError
 from .signatures import SignatureMixin
@@ -182,6 +180,7 @@ class Between(FunctionSignature):
             except ValueError:
                 return
 
+
 @register
 class CidrMatch(FunctionSignature):
     """Math an IP address against a list of IPv4 subnets in CIDR notation."""
@@ -194,7 +193,6 @@ class CidrMatch(FunctionSignature):
     @classmethod
     def get_callback(cls, _, *cidr_matches):
         """Get the callback function with all the masks converted."""
-
         cidr_networks = [ipaddress.ip_network(cidr.value, strict=False) for cidr in cidr_matches]
 
         def callback(source, *_):
@@ -212,7 +210,6 @@ class CidrMatch(FunctionSignature):
     @classmethod
     def run(cls, ip_address, *cidr_matches):
         """Compare an IP address against a list of cidr blocks."""
-
         if is_string(ip_address):
             ip_address = ipaddress.ip_address(ip_address)
 
@@ -265,6 +262,8 @@ class CidrMatch(FunctionSignature):
             argument.node = String("{}/{}".format(subnet_base, size))
 
         return None
+
+
 @register
 class Concat(FunctionSignature):
     """Concatenate multiple values as strings."""
