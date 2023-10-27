@@ -196,7 +196,7 @@ class CidrMatch(FunctionSignature):
         """Get the callback function with all the masks converted."""
         # Python 2 support
         if sys.version_info.major == 2:
-            cidr_networks = [ipaddress.ip_network(unicode(cidr.value, "utf-8"), strict=False) for cidr in cidr_matches]  # noqa: F821 
+            cidr_networks = [ipaddress.ip_network(unicode(cidr.value, "utf-8"), strict=False) for cidr in cidr_matches]  # noqa: F821
         else:
             cidr_networks = [ipaddress.ip_network(cidr.value, strict=False) for cidr in cidr_matches]
 
