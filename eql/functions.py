@@ -221,7 +221,7 @@ class CidrMatch(FunctionSignature):
         if is_string(ip_address):
             # Python 2 support
             if sys.version_info.major == 2:
-                ip_address = ip_address.decode("utf-8") # noqa: F821
+                ip_address = ip_address.decode("utf-8")  # noqa: F821
             ip_address = ipaddress.ip_address(ip_address)
 
             for cidr in cidr_matches:
