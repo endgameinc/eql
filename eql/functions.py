@@ -1,18 +1,16 @@
 """EQL functions."""
+import ipaddress
 import re
 import socket
 import struct
 
-from .signatures import SignatureMixin
 from .errors import EqlError
+from .signatures import SignatureMixin
 from .types import TypeHint
-from .utils import is_string, to_unicode, is_number, fold_case, is_insensitive
-
+from .utils import fold_case, is_insensitive, is_number, is_string, to_unicode
 
 _registry = {}
 REGEX_FLAGS = re.UNICODE | re.DOTALL
-MAX_IP = 0xffffffff
-MAX_IPV6 = 0xffffffffffffffffffffffffffffffff
 
 
 def regex_flags():
@@ -184,290 +182,28 @@ class Between(FunctionSignature):
             except ValueError:
                 return
 
-
 @register
 class CidrMatch(FunctionSignature):
-    """Math an IP address against a list of IPv4 or IPv6 subnets in CIDR notation."""
+    """Math an IP address against a list of IPv4 subnets in CIDR notation."""
 
     name = "cidrMatch"
     argument_types = [TypeHint.String, TypeHint.String.require_literal()]
     additional_types = TypeHint.String.require_literal()
     return_value = TypeHint.Boolean
 
-    octet_re = r"(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])"
-    ip_re = r"\.".join([octet_re, octet_re, octet_re, octet_re])
-    ip_compiled = re.compile(r"^{}$".format(ip_re))
-    cidr_compiled = re.compile(r"^{}/(?:3[0-2]|2[0-9]|1[0-9]|[0-9])$".format(ip_re))
-
-    # store it in native representation, then recover it in network order
-    masks = [struct.unpack(">L", struct.pack(">L", MAX_IP & ~(MAX_IP >> b)))[0] for b in range(33)]
-    mask_addresses = [socket.inet_ntoa(struct.pack(">L", m)) for m in masks]
-
-    # IPv6 masks
-    masks6 = [int("1" * i + "0" * (128 - i), 2) for i in range(129)]
-
-    @classmethod
-    def check_ipv6(cls, n):
-        """Check if a string is a valid IPv6 address."""
-        try:
-            socket.inet_pton(socket.AF_INET6, n)
-            return True
-        except socket.error:
-            return False
-
-    @classmethod
-    def check_ipv6_cidr(cls, cidr):
-        """Check if a string is a valid IPv6 CIDR range."""
-        try:
-            # Split the CIDR range into the address and prefix length
-            address, size = cidr.split("/")
-            # Check if the address is a valid IPv6 address
-            socket.inet_pton(socket.AF_INET6, address)
-            # Check if the prefix length is a valid integer between 0 and 128
-            size = int(size)
-            if 0 < size > 128:
-                raise ValueError("Invalid prefix length")
-            # The CIDR range is valid
-            return True
-        except (socket.error, ValueError):
-            # The CIDR range is invalid
-            return False
-
-    @classmethod
-    def expand_ipv6(cls, cidr):
-        """Expand a shorthand IPv6 address or CIDR range to full notation."""
-        if "/" in cidr:
-            # Split the CIDR range into the address and prefix length
-            address, size = cidr.split("/")
-            # Expand the address
-            address = cls.expand_ipv6_address(address)
-            # Construct the full notation CIDR range
-            full_cidr = "{}/{}".format(address, size)
-        else:
-            # Expand the address
-            full_cidr = cls.expand_ipv6_address(cidr)
-
-        return full_cidr
-
-    @classmethod
-    def expand_ipv6_address(cls, ipv6_address):
-        """Expand a shorthand IPv6 address to full notation."""
-        if "::" in ipv6_address:
-            # Split the address into the left and right parts
-            left, right = ipv6_address.split("::")
-            # Count the number of groups in each part
-            left_groups = left.split(":")
-            right_groups = right.split(":")
-            num_left_groups = len(left_groups)
-            num_right_groups = len(right_groups)
-            max_groups = 8
-            # Calculate the number of groups in the middle part
-            num_middle_groups = max_groups - num_left_groups - num_right_groups
-            # Construct the full notation address
-            middle_groups = ["0000"] * num_middle_groups
-            full_groups = left_groups + middle_groups + right_groups
-            full_address = ":".join(full_groups)
-        else:
-            full_address = ipv6_address
-
-        # Add leading zeros to each group
-        full_groups = []
-        for group in full_address.split(":"):
-            full_groups.append(group.zfill(4))
-        full_address = ":".join(full_groups)
-
-        return full_address
-
-    @classmethod
-    def to_mask(cls, cidr_string):
-        """Split an IPv4 or IPv6 address plus cidr block to the mask."""
-        ip_string, size = cidr_string.split("/")
-        size = int(size)
-        if cls.ip_compiled.match(ip_string):
-            ip_bytes = socket.inet_aton(ip_string)
-            (subnet_int,) = struct.unpack(">L", ip_bytes)
-
-            mask = cls.masks[size]
-        elif cls.check_ipv6(ip_string):
-            ip_string = cls.expand_ipv6_address(ip_string)
-            ip_bytes = socket.inet_pton(socket.AF_INET6, ip_string)
-            high, low = struct.unpack(">QQ", ip_bytes)
-            subnet_int = (high << 64) | low
-
-            mask = cls.masks6[size]
-
-        return subnet_int & mask, mask
-
-    @classmethod
-    def make_octet_re(cls, start, end):
-        """Convert an octet-range into a regular expression."""
-        combos = []
-
-        if start == 0 and end == 255:
-            return cls.octet_re
-
-        # IPv4 octet range
-        if start >= 0 and start < 255 and end <= 255:
-            # 0xx, 1xx, 2xx
-            for hundreds in (0, 100, 200):
-                h = int(hundreds / 100)
-                h_digit = "0?" if h == 0 else "{:d}".format(h)
-
-                # if the whole range is included, then add it
-                if start <= hundreds < hundreds + 99 <= end:
-                    # allow for leading zeros
-                    if h == 0:
-                        combos.append("{:s}[0-9]?[0-9]".format(h_digit))
-                    else:
-                        combos.append("{:s}[0-9][0-9]".format(h_digit))
-                    continue
-
-                # determine which of the tens ranges are entirely included
-                # so that we can do "h[a-b][0-9]"
-                hundreds_matches = []
-                full_tens = []
-
-                # now loop over h00, h10, h20
-                for tens in range(hundreds, hundreds + 100, 10):
-                    t = int(tens / 10) % 10
-                    t_digit = "0?" if (h == 0 and t == 0) else "{:d}".format(t)
-
-                    if start <= tens < tens + 9 <= end:
-                        # fully included, add to the list
-                        full_tens.append(t)
-                        continue
-
-                    # now add the final [a-b]
-                    matching_ones = [one % 10 for one in range(tens, tens + 10) if start <= one <= end]
-
-                    if matching_ones:
-                        ones_match = t_digit
-                        if len(matching_ones) == 1:
-                            ones_match += "{:d}".format(matching_ones[0])
-                        else:
-                            ones_match += "[{:d}-{:d}]".format(min(matching_ones), max(matching_ones))
-                        hundreds_matches.append(ones_match)
-
-                if full_tens:
-                    if len(full_tens) == 1:
-                        tens_match = "{:d}".format(full_tens[0])
-                    else:
-                        tens_match = "[{:d}-{:d}]".format(min(full_tens), max(full_tens))
-
-                    # allow for 001 - 009
-                    if h == 0 and 0 in full_tens:
-                        tens_match += "?"
-
-                    tens_match += "[0-9]"
-                    hundreds_matches.append(tens_match)
-
-                if len(hundreds_matches) == 1:
-                    combos.append("{:s}{:s}".format(h_digit, hundreds_matches[0]))
-                elif len(hundreds_matches) > 1:
-                    combos.append("{:s}(?:{:s})".format(h_digit, "|".join(hundreds_matches)))
-
-        # IPv6 h16 range
-        elif start >= 0 and end <= 65535:
-            for h16 in range(start, end + 1):
-                combos.append("{:d}".format(h16))
-        else:
-            raise ValueError("Invalid octet range")
-
-        return "(?:{})".format("|".join(combos))
-
-    @classmethod
-    def make_hex_re(cls, start, end):
-        """Create a regex pattern for a range of hexadecimal values."""
-        def generate_hex_range_pattern(min_value, max_value):
-            """Generate a regex pattern for a range of hexadecimal values."""
-            pattern = ""
-            leading_zero = True
-            for pair in zip(min_value, max_value):
-                if pair[0] != "0":
-                    leading_zero = False
-                if pair[0] == pair[1]:
-                    if leading_zero:
-                        pattern += "{}?".format(pair[0])
-                    else:
-                        pattern += pair[0]
-                else:
-                    if leading_zero:
-                        pattern += "[{}-{}]?".format(pair[0], pair[1])
-                    else:
-                        pattern += "[{}-{}]".format(pair[0], pair[1])
-            return pattern
-
-        if start == end:
-            base = "{:04x}".format(start)
-            compressed = "{:x}".format(int(base, 16))
-            while len(compressed) < 4:
-                # Support optional leading zeros
-                compressed = r"0?" + compressed
-            return compressed
-
-        if start == 0 and end == 65535:
-            return r"[0-9a-fA-F]{1,4}"
-
-        return generate_hex_range_pattern("{:04x}".format(start), "{:04x}".format(end))
-
-    @classmethod
-    def make_cidr_regex(cls, cidr):
-        """Convert a list of wildcards strings for matching a cidr."""
-        if cls.cidr_compiled.match(cidr):
-            min_octets, max_octets = cls.to_range(cidr)
-            return r"\.".join(cls.make_octet_re(*pair) for pair in zip(min_octets, max_octets))
-        elif cls.check_ipv6_cidr(cidr):
-            min_octets, max_octets = cls.to_range(cidr)
-            return r":".join(cls.make_hex_re(*pair) for pair in zip(min_octets, max_octets))
-        else:
-            raise ValueError("Invalid CIDR notation")
-
-    @classmethod
-    def to_range(cls, cidr):
-        """Get the IP range for a list of IP addresses."""
-        if cls.cidr_compiled.match(cidr):
-            ip_integer, mask = cls.to_mask(cidr)
-            max_ip_integer = ip_integer | (MAX_IP ^ mask)
-
-            min_octets = struct.unpack("BBBB", struct.pack(">L", ip_integer))
-            max_octets = struct.unpack("BBBB", struct.pack(">L", max_ip_integer))
-        elif cls.check_ipv6_cidr(cidr):
-            cidr = cls.expand_ipv6(cidr)
-            ip_integer, mask = cls.to_mask(cidr)
-            max_ip_integer = ip_integer | (MAX_IPV6 ^ mask)
-
-            min_octets = struct.unpack(">8H", struct.pack(">QQ", (ip_integer >> 64), (ip_integer & 0xFFFFFFFFFFFFFFFF)))
-            max_octets = struct.unpack(
-                ">8H", struct.pack(">QQ", (max_ip_integer >> 64), (max_ip_integer & 0xFFFFFFFFFFFFFFFF))
-            )
-        else:
-            raise ValueError("Invalid CIDR notation")
-
-        return min_octets, max_octets
-
     @classmethod
     def get_callback(cls, _, *cidr_matches):
         """Get the callback function with all the masks converted."""
-        ipv4_masks = []
-        ipv6_masks = []
-        for cidr in cidr_matches:
-            if cls.cidr_compiled.match(cidr.value):
-                ipv4_masks.append(cls.to_mask(cidr.value))
-            elif cls.check_ipv6_cidr(cidr.value):
-                ipv6_masks.append(cls.to_mask(cidr.value))
+
+        cidr_networks = [ipaddress.ip_network(cidr.value, strict=False) for cidr in cidr_matches]
 
         def callback(source, *_):
-            if is_string(source) and (cls.ip_compiled.match(source) or cls.check_ipv6(source)):
-                if cls.ip_compiled.match(source):
-                    ip_integer, _ = cls.to_mask(source + "/32")
-                    for subnet, mask in ipv4_masks:
-                        if ip_integer & mask == subnet:
-                            return True
-                elif cls.check_ipv6(source):
-                    ip_integer, _ = cls.to_mask(source + "/128")
-                    for subnet, mask in ipv6_masks:
-                        if ip_integer & mask == subnet:
-                            return True
+            if is_string(source):
+                ip_address = ipaddress.ip_address(source)
+
+                for subnet in cidr_networks:
+                    if ip_address in subnet:
+                        return True
 
             return False
 
@@ -476,25 +212,29 @@ class CidrMatch(FunctionSignature):
     @classmethod
     def run(cls, ip_address, *cidr_matches):
         """Compare an IP address against a list of cidr blocks."""
-        if is_string(ip_address) and (cls.ip_compiled.match(ip_address) or cls.check_ipv6(ip_address)):
-            if cls.ip_compiled.match(ip_address):
-                ip_integer, _ = cls.to_mask(ip_address + "/32")
-                for cidr in cidr_matches:
-                    if is_string(cidr) and cls.cidr_compiled.match(cidr):
-                        subnet, mask = cls.to_mask(cidr)
-                        if ip_integer & mask == subnet:
-                            return True
-            elif cls.check_ipv6(ip_address):
-                ip_address = cls.expand_ipv6_address(ip_address)
-                ip_integer, _ = cls.to_mask(ip_address + "/128")
-                for cidr in cidr_matches:
-                    if is_string(cidr) and (cls.check_ipv6_cidr(cidr)):
-                        cidr = cls.expand_ipv6(cidr)
-                        subnet, mask = cls.to_mask(cidr)
-                        if ip_integer & mask == subnet:
-                            return True
+
+        if is_string(ip_address):
+            ip_address = ipaddress.ip_address(ip_address)
+
+            for cidr in cidr_matches:
+                if is_string(cidr):
+                    subnet = ipaddress.ip_network(cidr, strict=False)
+
+                    if ip_address in subnet:
+                        return True
 
         return False
+
+    @classmethod
+    def is_cidr(cls, cidr):
+        """Check if a string is a valid CIDR notation."""
+        if "/" not in cidr:
+            return False
+        try:
+            ipaddress.ip_network(cidr, strict=False)
+            return True
+        except ValueError:
+            return False
 
     @classmethod
     def validate(cls, arguments):
@@ -512,25 +252,19 @@ class CidrMatch(FunctionSignature):
             # overwrite the original node
             text = argument.node.value.strip()
 
-            if not (cls.cidr_compiled.match(argument.node.value) or cls.check_ipv6_cidr(argument.node.value)):
+            if not cls.is_cidr(text):
                 return pos
 
             # Since it does match, we should also rewrite the string to align to the base of the subnet
+
             ip_address, size = text.split("/")
-            subnet_integer, _ = cls.to_mask(text)
-            if cls.cidr_compiled.match(argument.node.value):
-                subnet_bytes = struct.pack(">L", subnet_integer)
-                subnet_base = socket.inet_ntoa(subnet_bytes)
-            elif cls.check_ipv6_cidr(argument.node.value):
-                subnet_bytes = struct.pack(">QQ", (subnet_integer >> 64), (subnet_integer & 0xFFFFFFFFFFFFFFFF))
-                subnet_base = socket.inet_ntop(socket.AF_INET6, subnet_bytes)
+            subnet = ipaddress.ip_network(text, strict=False)
+            subnet_base = subnet.network_address
 
             # overwrite the original argument so it becomes the subnet
             argument.node = String("{}/{}".format(subnet_base, size))
 
         return None
-
-
 @register
 class Concat(FunctionSignature):
     """Concatenate multiple values as strings."""
@@ -871,4 +605,4 @@ class Wildcard(FunctionSignature):
 
 
 # circular dependency
-from .ast import MathOperation, FunctionCall, Comparison, String  # noqa: E402
+from .ast import Comparison, FunctionCall, MathOperation, String  # noqa: E402

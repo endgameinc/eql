@@ -1,4 +1,5 @@
 """Test Python Engine for EQL."""
+import ipaddress
 import random
 import uuid
 from collections import defaultdict
@@ -6,7 +7,8 @@ from collections import defaultdict
 from eql import *  # noqa: F403
 from eql.ast import *  # noqa: F403
 from eql.engine import Scope
-from eql.parser import ignore_missing_functions, allow_sample, elasticsearch_syntax
+from eql.parser import (allow_sample, elasticsearch_syntax,
+                        ignore_missing_functions)
 from eql.schema import EVENT_TYPE_GENERIC
 from eql.tests.base import TestEngine
 
@@ -389,8 +391,61 @@ class TestPythonEngine(TestEngine):
             event_ids = [event.data['serial_event_id'] for event in output]
             self.validate_results(event_ids, [43, 45, 52], "Custom function 'reverse'")
 
-    def test_cidrmatch_ipv6(self):
+    def test_cidrmatch(self):
         """Test the cidrMatch custom function."""
+        def to_range(cidr):
+            """Convert a CIDR notation to a tuple of the minimum and maximum IP addresses in the range."""
+
+            ip_network = ipaddress.ip_network(cidr, strict=False)
+
+            min_ip_address = ip_network.network_address
+            max_ip_address = ip_network.broadcast_address
+
+            return min_ip_address, max_ip_address
+        def generate_random_ip_from_range(min_ip_address, max_ip_address):
+            """Generate a random IP address from a given range."""
+            ip_constructor = type(min_ip_address)
+
+            # Convert the ipaddress.IPv4Address or ipaddress.IPv6 to integers before passing them to the random.randint() function.
+            min_ip_address_int = int(min_ip_address)
+            max_ip_address_int = int(max_ip_address)
+
+            # Generate a random IP address within the range.
+            random_ip_address_int = random.randint(min_ip_address_int, max_ip_address_int)
+
+            # Convert the random integer back to an ipaddress.IPv4Address or ipaddress.IPv6Address object.
+            random_ip_address = ip_constructor(random_ip_address_int)
+
+            return random_ip_address
+
+
+        def generate_random_ip_address_not_in_range(min_ip_address, max_ip_address, max_tries = 2):
+            """Generate a random IP address NOT in a given range."""
+            ip_constructor = type(min_ip_address)
+            max_int = 2**32-1 if type(min_ip_address) == ipaddress.IPv4Address else 2**128-1
+
+
+            min_ip_address_int = int(min_ip_address)
+            max_ip_address_int = int(max_ip_address)
+
+            # Generate a random IP address.
+            if random.random() < 0.5:
+                random_ip_address = ip_constructor(random.randint(0, min_ip_address_int))
+            else:
+                random_ip_address = ip_constructor(random.randint(max_ip_address_int, max_int))
+            
+            # Check if the random IP address is within the provided range.
+            while random_ip_address >= min_ip_address and random_ip_address <= max_ip_address:
+                # Generate another random IP address.
+                random_ip_address = ip_constructor(random.randint(0, min_ip_address_int))
+                if random_ip_address >= min_ip_address and random_ip_address <= max_ip_address:
+                    random_ip_address = ip_constructor(random.randint(max_ip_address_int, max_int))
+                max_tries -= 1
+                if max_tries == 0:
+                    return random_ip_address
+
+            return random_ip_address
+
         config = {"flatten": True}
         events = [
             Event.from_data(d)
@@ -448,21 +503,28 @@ class TestPythonEngine(TestEngine):
 
         self.assertEqual(len(output), 3, "Missing or extra results")
 
-        # Randomized testing
+        # Randomized IPv4 testing
         for _ in range(200):
             # make an ip address
-            ip_addr = tuple(random.randrange(65536) for _ in range(8))
-            size = random.randrange(129)
-            total_ips = 2 ** (128 - size)
+            ip_addr = (
+                random.randrange(256),
+                random.randrange(256),
+                random.randrange(256),
+                random.randrange(256),
+            )
+            size = random.randrange(33)
+            total_ips = 2 ** (32 - size)
 
-            cidr_mask = ":".join("{:x}".format(x) for x in ip_addr) + "/{:d}".format(size)
+            args = list(ip_addr)
+            args.append(size)
+            cidr_mask = "{:d}.{:d}.{:d}.{:d}/{:d}".format(*args)
 
-            min_ip, max_ip = functions.CidrMatch.to_range(cidr_mask)
+            min_ip, max_ip = to_range(cidr_mask)
 
             # randomly pick IPs that *are* in the range
             for _ in range(min(200, total_ips)):
-                rand_addr = [random.randrange(mn, mx + 1) for mn, mx in zip(min_ip, max_ip)]
-                rand_ip = ":".join("{:x}".format(x) for x in rand_addr)
+                rand_addr = generate_random_ip_from_range(min_ip, max_ip)
+                rand_ip = str(rand_addr)
                 events = [
                     Event.from_data(d)
                     for d in [
@@ -507,9 +569,115 @@ class TestPythonEngine(TestEngine):
 
             # pick IPs that are definitely not in the range
             for _ in range(200):
-                rand_addr = [random.randrange(65536) for _ in range(8)]
-                in_subnet = all(mn <= o <= mx for o, mn, mx in zip(rand_addr, min_ip, max_ip))
-                rand_ip = ":".join("{:x}".format(x) for x in rand_addr)
+                rand_addr = generate_random_ip_address_not_in_range(min_ip, max_ip)
+                in_subnet = rand_addr >= min_ip and rand_addr <= max_ip
+                rand_ip = str(rand_addr)
+                events = [
+                    Event.from_data(d)
+                    for d in [
+                        {
+                            "event_type": "process",
+                            "process_name": "malicious.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444736000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "process",
+                            "process_name": "missing.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444738000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "file",
+                            "file_name": "suspicious.txt",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444740000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                    ]
+                ]
+
+                query = """
+                sequence by unique_pid with maxspan=7m
+                    [ process where cidrMatch(source.ip, "{}") ]
+                    [ process where cidrMatch(source.ip, "{}") ]
+                """.format(
+                    cidr_mask, cidr_mask
+                )
+
+                with elasticsearch_syntax:
+                    parsed_query = parse_query(query)
+
+                output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+                # Check against known truth if is in_subnet
+                rv = len(output) != 0
+                self.assertEqual(rv, in_subnet, "Missing or extra results")
+
+        # Randomized IPv6 testing
+        for _ in range(200):
+            # make an ip address
+            ip_addr = tuple(random.randrange(65536) for _ in range(8))
+            size = random.randrange(129)
+            total_ips = 2 ** (128 - size)
+
+            cidr_mask = ":".join("{:x}".format(x) for x in ip_addr) + "/{:d}".format(size)
+
+            min_ip, max_ip = to_range(cidr_mask)
+
+            # randomly pick IPs that *are* in the range
+            for _ in range(min(200, total_ips)):
+                rand_addr = generate_random_ip_from_range(min_ip, max_ip)
+                rand_ip = str(rand_addr)
+                events = [
+                    Event.from_data(d)
+                    for d in [
+                        {
+                            "event_type": "process",
+                            "process_name": "malicious.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444736000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "process",
+                            "process_name": "missing.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444738000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "file",
+                            "file_name": "suspicious.txt",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444740000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                    ]
+                ]
+
+                query = """
+                sequence by unique_pid with maxspan=7m
+                    [ process where cidrMatch(source.ip, "{}") ]
+                    [ process where cidrMatch(source.ip, "{}") ]
+                """.format(
+                    cidr_mask, cidr_mask
+                )
+
+                with elasticsearch_syntax:
+                    parsed_query = parse_query(query)
+
+                output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+                self.assertEqual(len(output), 2, "Missing or extra results")
+
+            # pick IPs that are definitely not in the range
+            for _ in range(200):
+                rand_addr = generate_random_ip_address_not_in_range(min_ip, max_ip)
+                in_subnet = rand_addr >= min_ip and rand_addr <= max_ip
+                rand_ip = str(rand_addr)
                 events = [
                     Event.from_data(d)
                     for d in [
