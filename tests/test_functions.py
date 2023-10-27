@@ -1,6 +1,4 @@
 """Test Python Engine for EQL."""
-import random
-import re
 import unittest
 
 from eql.ast import String, Field

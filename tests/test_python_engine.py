@@ -393,7 +393,6 @@ class TestPythonEngine(TestEngine):
 
     def test_cidrmatch(self):
         """Test the cidrMatch custom function."""
-
         def to_range(cidr):
             """Convert a CIDR notation to a tuple of the minimum and maximum IP addresses in the range."""
             ip_network = ipaddress.ip_network(cidr, strict=False)
@@ -407,7 +406,7 @@ class TestPythonEngine(TestEngine):
             """Generate a random IP address from a given range."""
             ip_constructor = type(min_ip_address)
 
-            # Convert the ipaddress.IPv4Address or ipaddress.IPv6 to integers before passing them to the random.randint() function.
+            # Convert the ipaddress.IPv4Address or ipaddress.IPv6 to integers
             min_ip_address_int = int(min_ip_address)
             max_ip_address_int = int(max_ip_address)
 
