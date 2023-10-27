@@ -196,7 +196,7 @@ class CidrMatch(FunctionSignature):
         """Get the callback function with all the masks converted."""
         # Python 2 support
         if sys.version_info.major == 2:
-            cidr_networks = [ipaddress.ip_network(unicode(cidr.value, "utf-8"), strict=False) for cidr in cidr_matches]
+            cidr_networks = [ipaddress.ip_network(unicode(cidr.value, "utf-8"), strict=False) for cidr in cidr_matches]  # noqa: F821 
         else:
             cidr_networks = [ipaddress.ip_network(cidr.value, strict=False) for cidr in cidr_matches]
 
@@ -204,7 +204,7 @@ class CidrMatch(FunctionSignature):
             if is_string(source):
                 # Python 2 support
                 if sys.version_info.major == 2:
-                    source = unicode(source, "utf-8")
+                    source = unicode(source, "utf-8")  # noqa: F821
                 ip_address = ipaddress.ip_address(source)
 
                 for subnet in cidr_networks:
@@ -221,14 +221,14 @@ class CidrMatch(FunctionSignature):
         if is_string(ip_address):
             # Python 2 support
             if sys.version_info.major == 2:
-                ip_address = unicode(ip_address, "utf-8")
+                ip_address = unicode(ip_address, "utf-8")  # noqa: F821
             ip_address = ipaddress.ip_address(ip_address)
 
             for cidr in cidr_matches:
                 if is_string(cidr):
                     # Python 2 support
                     if sys.version_info.major == 2:
-                        subnet = ipaddress.ip_network(unicode(cidr, "utf-8"), strict=False)
+                        subnet = ipaddress.ip_network(unicode(cidr, "utf-8"), strict=False)  # noqa: F821
                     else:
                         subnet = ipaddress.ip_network(cidr, strict=False)
 
@@ -245,7 +245,7 @@ class CidrMatch(FunctionSignature):
         try:
             # Python 2 support
             if sys.version_info.major == 2:
-                ipaddress.ip_network(unicode(cidr, "utf-8"), strict=False)
+                ipaddress.ip_network(unicode(cidr, "utf-8"), strict=False)  # noqa: F821
             else:
                 ipaddress.ip_network(cidr, strict=False)
             return True
@@ -274,7 +274,11 @@ class CidrMatch(FunctionSignature):
             # Since it does match, we should also rewrite the string to align to the base of the subnet
 
             ip_address, size = text.split("/")
-            subnet = ipaddress.ip_network(text, strict=False)
+            # Python 2 support
+            if sys.version_info.major == 2:
+                subnet = ipaddress.ip_network(unicode(text, "utf-8"), strict=False)  # noqa: F821
+            else:
+                subnet = ipaddress.ip_network(text, strict=False)
             subnet_base = subnet.network_address
 
             # overwrite the original argument so it becomes the subnet
