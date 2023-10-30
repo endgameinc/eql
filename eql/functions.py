@@ -4,8 +4,16 @@ import re
 from .errors import EqlError
 from .signatures import SignatureMixin
 from .types import TypeHint
-from .utils import (fold_case, get_ipaddress, get_subnet, is_insensitive,
-                    is_number, is_string, to_unicode)
+from .utils import (
+    fold_case,
+    get_ipaddress,
+    get_subnet,
+    is_cidr_pattern,
+    is_insensitive,
+    is_number,
+    is_string,
+    to_unicode,
+)
 
 _registry = {}
 REGEX_FLAGS = re.UNICODE | re.DOTALL
@@ -223,17 +231,6 @@ class CidrMatch(FunctionSignature):
         return False
 
     @classmethod
-    def is_cidr(cls, cidr):
-        """Check if a string is a valid CIDR notation."""
-        if "/" not in cidr:
-            return False
-        try:
-            get_subnet(cidr)
-            return True
-        except ValueError:
-            return False
-
-    @classmethod
     def validate(cls, arguments):
         """Validate the calling convention and change the argument order if necessary."""
         # used to have just two arguments and the pattern was on the left and expression on the right
@@ -249,7 +246,7 @@ class CidrMatch(FunctionSignature):
             # overwrite the original node
             text = argument.node.value.strip()
 
-            if not cls.is_cidr(text):
+            if not is_cidr_pattern(text):
                 return pos
 
             # Since it does match, we should also rewrite the string to align to the base of the subnet

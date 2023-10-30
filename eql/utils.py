@@ -68,6 +68,15 @@ def is_insensitive():
     """Check if insensitivity is enabled."""
     return CASE_INSENSITIVE
 
+def is_cidr_pattern(cidr):
+    """Check if a string is a valid CIDR notation."""
+    if "/" not in cidr:
+        return False
+    try:
+        get_subnet(cidr)
+        return True
+    except ValueError:
+        return False
 
 def fold_case(s):
     """Helper function for normalizing case for strings."""
