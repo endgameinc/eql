@@ -90,11 +90,11 @@ def get_ipaddress(ipaddr_string):
     return ipaddress.ip_address(ipaddr_string)
 
 
-def get_subnet(cidr_string):
+def get_subnet(cidr_string, strict=False):
     """Get an ipaddress ip_network object from a string containing an cidr range."""
     if py_version == 2:
         cidr_string = cidr_string.decode("utf-8")  # noqa: F821
-    return ipaddress.ip_network(cidr_string, strict=False)
+    return ipaddress.ip_network(cidr_string, strict=strict)
 
 
 def get_type_converter(items):
