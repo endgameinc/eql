@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 * Added IPv6 support for CidrMatch
+* Removed the regex support for testing CidrMatch in favor of the native ipaddress module testing
 
 # Version 0.9.18
 

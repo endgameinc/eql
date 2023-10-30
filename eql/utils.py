@@ -2,6 +2,7 @@
 import codecs
 import gzip
 import io
+import ipaddress
 import json
 import os
 import sys
@@ -10,6 +11,9 @@ import threading
 PLUGIN_PREFIX = "eql_"
 CASE_INSENSITIVE = True
 _loaded_plugins = False
+
+# Var to check if Python2 or Python3
+py_version = sys.version_info.major
 
 # Python2 and Python3 compatible type checking
 unicode_t = type(u"")
@@ -77,6 +81,19 @@ def str_presenter(dumper, data):
     if len(data.splitlines()) > 1:  # check for multiline string
         return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
     return dumper.represent_scalar('tag:yaml.org,2002:str', data)
+
+def get_ipaddress(ipaddr_string):
+    """Get an ipaddress ip_address object from a string containing an ipaddress"""
+    if py_version == 2:
+        ipaddr_string = ipaddr_string.decode("utf-8")  # noqa: F821
+    return ipaddress.ip_address(ipaddr_string)
+
+
+def get_subnet(cidr_string):
+    """Get an ipaddress ip_network object from a string containing an cidr range"""
+    if py_version == 2:
+        cidr_string = cidr_string.decode("utf-8")  # noqa: F821
+    return ipaddress.ip_network(cidr_string, strict=False)
 
 
 def get_type_converter(items):

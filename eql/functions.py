@@ -1,12 +1,11 @@
 """EQL functions."""
-import ipaddress
 import re
-import sys
 
 from .errors import EqlError
 from .signatures import SignatureMixin
 from .types import TypeHint
-from .utils import fold_case, is_insensitive, is_number, is_string, to_unicode
+from .utils import (fold_case, get_ipaddress, get_subnet, is_insensitive,
+                    is_number, is_string, to_unicode)
 
 _registry = {}
 REGEX_FLAGS = re.UNICODE | re.DOTALL
@@ -194,18 +193,11 @@ class CidrMatch(FunctionSignature):
     @classmethod
     def get_callback(cls, _, *cidr_matches):
         """Get the callback function with all the masks converted."""
-        # Python 2 support
-        if sys.version_info.major == 2:
-            cidr_networks = [ipaddress.ip_network(cidr.value.decode("utf-8"), strict=False) for cidr in cidr_matches]  # noqa: F821
-        else:
-            cidr_networks = [ipaddress.ip_network(cidr.value, strict=False) for cidr in cidr_matches]
+        cidr_networks = [get_subnet(cidr.value) for cidr in cidr_matches]
 
         def callback(source, *_):
             if is_string(source):
-                # Python 2 support
-                if sys.version_info.major == 2:
-                    source = source.decode("utf-8")  # noqa: F821
-                ip_address = ipaddress.ip_address(source)
+                ip_address = get_ipaddress(source)
 
                 for subnet in cidr_networks:
                     if ip_address in subnet:
@@ -219,18 +211,11 @@ class CidrMatch(FunctionSignature):
     def run(cls, ip_address, *cidr_matches):
         """Compare an IP address against a list of cidr blocks."""
         if is_string(ip_address):
-            # Python 2 support
-            if sys.version_info.major == 2:
-                ip_address = ip_address.decode("utf-8")  # noqa: F821
-            ip_address = ipaddress.ip_address(ip_address)
+            ip_address = get_ipaddress(ip_address)
 
             for cidr in cidr_matches:
                 if is_string(cidr):
-                    # Python 2 support
-                    if sys.version_info.major == 2:
-                        subnet = ipaddress.ip_network(cidr.decode("utf-8"), strict=False)  # noqa: F821
-                    else:
-                        subnet = ipaddress.ip_network(cidr, strict=False)
+                    subnet = get_subnet(cidr)
 
                     if ip_address in subnet:
                         return True
@@ -243,11 +228,7 @@ class CidrMatch(FunctionSignature):
         if "/" not in cidr:
             return False
         try:
-            # Python 2 support
-            if sys.version_info.major == 2:
-                ipaddress.ip_network(cidr.decode("utf-8"), strict=False)  # noqa: F821
-            else:
-                ipaddress.ip_network(cidr, strict=False)
+            get_subnet(cidr)
             return True
         except ValueError:
             return False
@@ -272,13 +253,8 @@ class CidrMatch(FunctionSignature):
                 return pos
 
             # Since it does match, we should also rewrite the string to align to the base of the subnet
-
-            ip_address, size = text.split("/")
-            # Python 2 support
-            if sys.version_info.major == 2:
-                subnet = ipaddress.ip_network(text.decode("utf-8"), strict=False)  # noqa: F821
-            else:
-                subnet = ipaddress.ip_network(text, strict=False)
+            _, size = text.split("/")
+            subnet = get_subnet(text)
             subnet_base = subnet.network_address
 
             # overwrite the original argument so it becomes the subnet
