@@ -890,30 +890,35 @@ class NamedParams(EqlNode):
 class SubqueryBy(EqlNode):
     """Node for holding the :class:`~EventQuery` and parameters to join on."""
 
-    __slots__ = 'query', 'join_values', 'fork',
+    __slots__ = 'query', 'join_values', 'data',
 
-    def __init__(self, query, join_values=None, fork=None):
+    def __init__(self, query, join_values=None, data=None):
         """Init.
 
         :param EventQuery query: The event query enclosed in the term
         :param list[Expression] join_values: The field to join values on
-        :param bool fork: Toggle for copying instead of moving a sequence on match
+        :param dict data: Fork (copying instead of moving a sequence on match) and is_negated params
         """
         self.query = query
         self.join_values = join_values or []
-        self.fork = fork
+        self.data = data
 
     @property
     def params(self):
         """Keep params for backwards compatibility."""
         params = {}
-        if self.fork is not None:
-            params["fork"] = Boolean(self.fork)
+        if self.data is not None:
+            if "fork" in self.data:
+                params["fork"] = Boolean(self.data["fork"])
+            if "is_negated" in self.data:
+                params["is_negated"] = Boolean(self.data["is_negated"])
         return NamedParams(params)
 
     def _render(self):
         text = "[{}]".format(self.query.render())
-        params = self.params.render()
+        param_copy = self.params
+        del param_copy.kv["is_negated"]
+        params = param_copy.render()
         if len(params):
             text += ' ' + params
 
