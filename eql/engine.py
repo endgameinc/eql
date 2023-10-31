@@ -1051,8 +1051,6 @@ class PythonEngine(BaseEngine, BaseTranspiler):
                     for join_key, sequence in list(sub_lookup.items()):
                         if sequence and sequence[0].time < minimum_start:
                             sub_lookup.pop(join_key)
-                        else:
-                            pass
 
         if node.close:
             check_close_event = self.convert(node.close.query)
