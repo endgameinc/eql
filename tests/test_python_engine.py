@@ -1,12 +1,15 @@
 """Test Python Engine for EQL."""
+import ipaddress
 import random
+import sys
 import uuid
 from collections import defaultdict
 
 from eql import *  # noqa: F403
 from eql.ast import *  # noqa: F403
 from eql.engine import Scope
-from eql.parser import ignore_missing_functions, allow_sample, elasticsearch_syntax
+from eql.parser import (allow_sample, elasticsearch_syntax,
+                        ignore_missing_functions)
 from eql.schema import EVENT_TYPE_GENERIC
 from eql.tests.base import TestEngine
 
@@ -388,6 +391,338 @@ class TestPythonEngine(TestEngine):
             output = self.get_output(queries=[parse_query(query)], config=config)
             event_ids = [event.data['serial_event_id'] for event in output]
             self.validate_results(event_ids, [43, 45, 52], "Custom function 'reverse'")
+
+    def test_cidrmatch(self):
+        """Test the cidrMatch custom function."""
+        def to_range(cidr):
+            """Convert a CIDR notation to a tuple of the minimum and maximum IP addresses in the range."""
+            # Python 2 support
+            if sys.version_info.major == 2:
+                cidr = unicode(cidr)
+            ip_network = ipaddress.ip_network(cidr, strict=False)
+
+            min_ip_address = ip_network.network_address
+            max_ip_address = ip_network.broadcast_address
+
+            return min_ip_address, max_ip_address
+
+        def generate_random_ip_from_range(min_ip_address, max_ip_address):
+            """Generate a random IP address from a given range."""
+            ip_constructor = type(min_ip_address)
+
+            # Convert the ipaddress.IPv4Address or ipaddress.IPv6 to integers
+            min_ip_address_int = int(min_ip_address)
+            max_ip_address_int = int(max_ip_address)
+
+            # Generate a random IP address within the range.
+            random_ip_address_int = random.randint(min_ip_address_int, max_ip_address_int)
+
+            # Convert the random integer back to an ipaddress.IPv4Address or ipaddress.IPv6Address object.
+            random_ip_address = ip_constructor(random_ip_address_int)
+
+            return random_ip_address
+
+        def generate_random_ip_address_not_in_range(min_ip_address, max_ip_address, max_tries=2):
+            """Generate a random IP address NOT in a given range."""
+            ip_constructor = type(min_ip_address)
+            max_int = 2**32 - 1 if type(min_ip_address) == ipaddress.IPv4Address else 2**128 - 1
+
+            min_ip_address_int = int(min_ip_address)
+            max_ip_address_int = int(max_ip_address)
+
+            # Generate a random IP address.
+            if random.random() < 0.5:
+                random_ip_address = ip_constructor(random.randint(0, min_ip_address_int))
+            else:
+                random_ip_address = ip_constructor(random.randint(max_ip_address_int, max_int))
+
+            # Check if the random IP address is within the provided range.
+            while random_ip_address >= min_ip_address and random_ip_address <= max_ip_address:
+                # Generate another random IP address.
+                random_ip_address = ip_constructor(random.randint(0, min_ip_address_int))
+                if random_ip_address >= min_ip_address and random_ip_address <= max_ip_address:
+                    random_ip_address = ip_constructor(random.randint(max_ip_address_int, max_int))
+                max_tries -= 1
+                if max_tries == 0:
+                    return random_ip_address
+
+            return random_ip_address
+
+        config = {"flatten": True}
+        events = [
+            Event.from_data(d)
+            for d in [
+                {
+                    "event_type": "process",
+                    "process_name": "malicious.exe",
+                    "unique_pid": "host1-1",
+                    "timestamp": 116444736000000000,
+                    "source": {"ip": "2001:0db8:0000:0000:0000:0000:0000:0001"},
+                },
+                {
+                    "event_type": "process",
+                    "process_name": "missing.exe",
+                    "unique_pid": "host1-1",
+                    "timestamp": 116444738000000000,
+                    "source": {"ip": "2001:db8::1"},
+                },
+                {
+                    "event_type": "file",
+                    "file_name": "suspicious.txt",
+                    "unique_pid": "host1-1",
+                    "timestamp": 116444740000000000,
+                    "source": {"ip": "fe80::1"},
+                },
+            ]
+        ]
+
+        # Should return no results none of the CIDR ranges contain those IPs
+        query = """
+        sequence by unique_pid with maxspan=7m
+            [ process where cidrMatch(source.ip, "10.0.0.1/8") ]
+            [ process where cidrMatch(source.ip, "10.0.0.1/16") ]
+            [ file where cidrMatch(source.ip, "10.0.0.1/32", "2001:0db8::/32") ]
+        """
+        with elasticsearch_syntax:
+            parsed_query = parse_query(query)
+
+        output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+        self.assertEqual(len(output), 0, "Missing or extra results")
+
+        # Should return results since the cidr ranges match the addresses in the events
+        query = """
+        sequence by unique_pid with maxspan=7m
+            [ process where cidrMatch(source.ip, "2001:0db8::/32") ]
+            [ process where cidrMatch(source.ip, "2001:0db8:0000:0000:0000:0000:0000:0000/32") ]
+            [ file where cidrMatch(source.ip, "fe80::/10", "2001:0db8::/32") ]
+        """
+
+        with elasticsearch_syntax:
+            parsed_query = parse_query(query)
+
+        output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+        self.assertEqual(len(output), 3, "Missing or extra results")
+
+        # Randomized IPv4 testing
+        for _ in range(200):
+            # make an ip address
+            ip_addr = (
+                random.randrange(256),
+                random.randrange(256),
+                random.randrange(256),
+                random.randrange(256),
+            )
+            size = random.randrange(33)
+            total_ips = 2 ** (32 - size)
+
+            args = list(ip_addr)
+            args.append(size)
+            cidr_mask = "{:d}.{:d}.{:d}.{:d}/{:d}".format(*args)
+
+            min_ip, max_ip = to_range(cidr_mask)
+
+            # randomly pick IPs that *are* in the range
+            for _ in range(min(200, total_ips)):
+                rand_addr = generate_random_ip_from_range(min_ip, max_ip)
+                rand_ip = str(rand_addr)
+                events = [
+                    Event.from_data(d)
+                    for d in [
+                        {
+                            "event_type": "process",
+                            "process_name": "malicious.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444736000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "process",
+                            "process_name": "missing.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444738000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "file",
+                            "file_name": "suspicious.txt",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444740000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                    ]
+                ]
+
+                query = """
+                sequence by unique_pid with maxspan=7m
+                    [ process where cidrMatch(source.ip, "{}") ]
+                    [ process where cidrMatch(source.ip, "{}") ]
+                """.format(
+                    cidr_mask, cidr_mask
+                )
+
+                with elasticsearch_syntax:
+                    parsed_query = parse_query(query)
+
+                output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+                self.assertEqual(len(output), 2, "Missing or extra results")
+
+            # pick IPs that are definitely not in the range
+            for _ in range(200):
+                rand_addr = generate_random_ip_address_not_in_range(min_ip, max_ip)
+                in_subnet = rand_addr >= min_ip and rand_addr <= max_ip
+                rand_ip = str(rand_addr)
+                events = [
+                    Event.from_data(d)
+                    for d in [
+                        {
+                            "event_type": "process",
+                            "process_name": "malicious.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444736000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "process",
+                            "process_name": "missing.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444738000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "file",
+                            "file_name": "suspicious.txt",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444740000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                    ]
+                ]
+
+                query = """
+                sequence by unique_pid with maxspan=7m
+                    [ process where cidrMatch(source.ip, "{}") ]
+                    [ process where cidrMatch(source.ip, "{}") ]
+                """.format(
+                    cidr_mask, cidr_mask
+                )
+
+                with elasticsearch_syntax:
+                    parsed_query = parse_query(query)
+
+                output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+                # Check against known truth if is in_subnet
+                rv = len(output) != 0
+                self.assertEqual(rv, in_subnet, "Missing or extra results")
+
+        # Randomized IPv6 testing
+        for _ in range(200):
+            # make an ip address
+            ip_addr = tuple(random.randrange(65536) for _ in range(8))
+            size = random.randrange(129)
+            total_ips = 2 ** (128 - size)
+
+            cidr_mask = ":".join("{:x}".format(x) for x in ip_addr) + "/{:d}".format(size)
+
+            min_ip, max_ip = to_range(cidr_mask)
+
+            # randomly pick IPs that *are* in the range
+            for _ in range(min(200, total_ips)):
+                rand_addr = generate_random_ip_from_range(min_ip, max_ip)
+                rand_ip = str(rand_addr)
+                events = [
+                    Event.from_data(d)
+                    for d in [
+                        {
+                            "event_type": "process",
+                            "process_name": "malicious.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444736000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "process",
+                            "process_name": "missing.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444738000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "file",
+                            "file_name": "suspicious.txt",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444740000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                    ]
+                ]
+
+                query = """
+                sequence by unique_pid with maxspan=7m
+                    [ process where cidrMatch(source.ip, "{}") ]
+                    [ process where cidrMatch(source.ip, "{}") ]
+                """.format(
+                    cidr_mask, cidr_mask
+                )
+
+                with elasticsearch_syntax:
+                    parsed_query = parse_query(query)
+
+                output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+                self.assertEqual(len(output), 2, "Missing or extra results")
+
+            # pick IPs that are definitely not in the range
+            for _ in range(200):
+                rand_addr = generate_random_ip_address_not_in_range(min_ip, max_ip)
+                in_subnet = rand_addr >= min_ip and rand_addr <= max_ip
+                rand_ip = str(rand_addr)
+                events = [
+                    Event.from_data(d)
+                    for d in [
+                        {
+                            "event_type": "process",
+                            "process_name": "malicious.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444736000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "process",
+                            "process_name": "missing.exe",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444738000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                        {
+                            "event_type": "file",
+                            "file_name": "suspicious.txt",
+                            "unique_pid": "host1-1",
+                            "timestamp": 116444740000000000,
+                            "source": {"ip": "{}".format(rand_ip)},
+                        },
+                    ]
+                ]
+
+                query = """
+                sequence by unique_pid with maxspan=7m
+                    [ process where cidrMatch(source.ip, "{}") ]
+                    [ process where cidrMatch(source.ip, "{}") ]
+                """.format(
+                    cidr_mask, cidr_mask
+                )
+
+                with elasticsearch_syntax:
+                    parsed_query = parse_query(query)
+
+                output = self.get_output(queries=[parsed_query], config=config, events=events)
+
+                # Check against known truth if is in_subnet
+                rv = len(output) != 0
+                self.assertEqual(rv, in_subnet, "Missing or extra results")
 
     def test_analytic_output(self):
         """Confirm that analytics return the same results as queries."""

@@ -1,17 +1,22 @@
 """EQL functions."""
 import re
-import socket
-import struct
 
-from .signatures import SignatureMixin
 from .errors import EqlError
+from .signatures import SignatureMixin
 from .types import TypeHint
-from .utils import is_string, to_unicode, is_number, fold_case, is_insensitive
-
+from .utils import (
+    fold_case,
+    get_ipaddress,
+    get_subnet,
+    is_cidr_pattern,
+    is_insensitive,
+    is_number,
+    is_string,
+    to_unicode,
+)
 
 _registry = {}
 REGEX_FLAGS = re.UNICODE | re.DOTALL
-MAX_IP = 0xffffffff
 
 
 def regex_flags():
@@ -193,126 +198,17 @@ class CidrMatch(FunctionSignature):
     additional_types = TypeHint.String.require_literal()
     return_value = TypeHint.Boolean
 
-    octet_re = r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])'
-    ip_re = r'\.'.join([octet_re, octet_re, octet_re, octet_re])
-    ip_compiled = re.compile(r'^{}$'.format(ip_re))
-    cidr_compiled = re.compile(r'^{}/(?:3[0-2]|2[0-9]|1[0-9]|[0-9])$'.format(ip_re))
-
-    # store it in native representation, then recover it in network order
-    masks = [struct.unpack(">L", struct.pack(">L", MAX_IP & ~(MAX_IP >> b)))[0] for b in range(33)]
-    mask_addresses = [socket.inet_ntoa(struct.pack(">L", m)) for m in masks]
-
-    @classmethod
-    def to_mask(cls, cidr_string):
-        """Split an IP address plus cidr block to the mask."""
-        ip_string, size = cidr_string.split("/")
-        size = int(size)
-        ip_bytes = socket.inet_aton(ip_string)
-        subnet_int, = struct.unpack(">L", ip_bytes)
-
-        mask = cls.masks[size]
-
-        return subnet_int & mask, mask
-
-    @classmethod
-    def make_octet_re(cls, start, end):
-        """Convert an octet-range into a regular expression."""
-        combos = []
-
-        if start == end:
-            return "{:d}".format(start)
-
-        if start == 0 and end == 255:
-            return cls.octet_re
-
-        # 0xx, 1xx, 2xx
-        for hundreds in (0, 100, 200):
-            h = int(hundreds / 100)
-            h_digit = "0?" if h == 0 else "{:d}".format(h)
-
-            # if the whole range is included, then add it
-            if start <= hundreds < hundreds + 99 <= end:
-                # allow for leading zeros
-                if h == 0:
-                    combos.append("{:s}[0-9]?[0-9]".format(h_digit))
-                else:
-                    combos.append("{:s}[0-9][0-9]".format(h_digit))
-                continue
-
-            # determine which of the tens ranges are entirely included
-            # so that we can do "h[a-b][0-9]"
-            hundreds_matches = []
-            full_tens = []
-
-            # now loop over h00, h10, h20
-            for tens in range(hundreds, hundreds + 100, 10):
-                t = int(tens / 10) % 10
-                t_digit = "0?" if (h == 0 and t == 0) else "{:d}".format(t)
-
-                if start <= tens < tens + 9 <= end:
-                    # fully included, add to the list
-                    full_tens.append(t)
-                    continue
-
-                # now add the final [a-b]
-                matching_ones = [one % 10 for one in range(tens, tens + 10) if start <= one <= end]
-
-                if matching_ones:
-                    ones_match = t_digit
-                    if len(matching_ones) == 1:
-                        ones_match += "{:d}".format(matching_ones[0])
-                    else:
-                        ones_match += "[{:d}-{:d}]".format(min(matching_ones), max(matching_ones))
-                    hundreds_matches.append(ones_match)
-
-            if full_tens:
-                if len(full_tens) == 1:
-                    tens_match = "{:d}".format(full_tens[0])
-                else:
-                    tens_match = "[{:d}-{:d}]".format(min(full_tens), max(full_tens))
-
-                # allow for 001 - 009
-                if h == 0 and 0 in full_tens:
-                    tens_match += "?"
-
-                tens_match += "[0-9]"
-                hundreds_matches.append(tens_match)
-
-            if len(hundreds_matches) == 1:
-                combos.append("{:s}{:s}".format(h_digit, hundreds_matches[0]))
-            elif len(hundreds_matches) > 1:
-                combos.append("{:s}(?:{:s})".format(h_digit, "|".join(hundreds_matches)))
-
-        return "(?:{})".format("|".join(combos))
-
-    @classmethod
-    def make_cidr_regex(cls, cidr):
-        """Convert a list of wildcards strings for matching a cidr."""
-        min_octets, max_octets = cls.to_range(cidr)
-        return r"\.".join(cls.make_octet_re(*pair) for pair in zip(min_octets, max_octets))
-
-    @classmethod
-    def to_range(cls, cidr):
-        """Get the IP range for a list of IP addresses."""
-        ip_integer, mask = cls.to_mask(cidr)
-        max_ip_integer = ip_integer | (MAX_IP ^ mask)
-
-        min_octets = struct.unpack("BBBB", struct.pack(">L", ip_integer))
-        max_octets = struct.unpack("BBBB", struct.pack(">L", max_ip_integer))
-
-        return min_octets, max_octets
-
     @classmethod
     def get_callback(cls, _, *cidr_matches):
         """Get the callback function with all the masks converted."""
-        masks = [cls.to_mask(cidr.value) for cidr in cidr_matches]
+        cidr_networks = [get_subnet(cidr.value) for cidr in cidr_matches]
 
         def callback(source, *_):
-            if is_string(source) and cls.ip_compiled.match(source):
-                ip_integer, _ = cls.to_mask(source + "/32")
+            if is_string(source):
+                ip_address = get_ipaddress(source)
 
-                for subnet, mask in masks:
-                    if ip_integer & mask == subnet:
+                for subnet in cidr_networks:
+                    if ip_address in subnet:
                         return True
 
             return False
@@ -322,13 +218,14 @@ class CidrMatch(FunctionSignature):
     @classmethod
     def run(cls, ip_address, *cidr_matches):
         """Compare an IP address against a list of cidr blocks."""
-        if is_string(ip_address) and cls.ip_compiled.match(ip_address):
-            ip_integer, _ = cls.to_mask(ip_address + "/32")
+        if is_string(ip_address):
+            ip_address = get_ipaddress(ip_address)
 
             for cidr in cidr_matches:
-                if is_string(cidr) and cls.cidr_compiled.match(cidr):
-                    subnet, mask = cls.to_mask(cidr)
-                    if ip_integer & mask == subnet:
+                if is_string(cidr):
+                    subnet = get_subnet(cidr)
+
+                    if ip_address in subnet:
                         return True
 
         return False
@@ -349,14 +246,13 @@ class CidrMatch(FunctionSignature):
             # overwrite the original node
             text = argument.node.value.strip()
 
-            if not cls.cidr_compiled.match(argument.node.value):
+            if not is_cidr_pattern(text):
                 return pos
 
             # Since it does match, we should also rewrite the string to align to the base of the subnet
-            ip_address, size = text.split("/")
-            subnet_integer, _ = cls.to_mask(text)
-            subnet_bytes = struct.pack(">L", subnet_integer)
-            subnet_base = socket.inet_ntoa(subnet_bytes)
+            _, size = text.split("/")
+            subnet = get_subnet(text)
+            subnet_base = subnet.network_address
 
             # overwrite the original argument so it becomes the subnet
             argument.node = String("{}/{}".format(subnet_base, size))
@@ -704,4 +600,4 @@ class Wildcard(FunctionSignature):
 
 
 # circular dependency
-from .ast import MathOperation, FunctionCall, Comparison, String  # noqa: E402
+from .ast import Comparison, FunctionCall, MathOperation, String  # noqa: E402

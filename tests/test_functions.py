@@ -1,6 +1,4 @@
 """Test Python Engine for EQL."""
-import random
-import re
 import unittest
 
 from eql.ast import String, Field
@@ -99,82 +97,63 @@ class TestFunctions(unittest.TestCase):
 
         self.assertIsNone(position)
 
-    def test_cidr_ranges(self):
-        """Check that CIDR ranges are correctly identified."""
-        cidr_range = CidrMatch.to_range("10.0.0.0/8")
-        self.assertListEqual(list(cidr_range), [
-            (10, 0, 0, 0), (10, 255, 255, 255)
-        ])
-        cidr_range = CidrMatch.to_range("123.45.67.189/32")
-        self.assertListEqual(list(cidr_range), [
-            (123, 45, 67, 189), (123, 45, 67, 189)
-        ])
+    def test_ipv6_cidr_match_validation(self):
+        """Check that invalid CIDR addresses are detected."""
+        arguments = [
+            Field("ip"),
+            String("2001:db8::/32"),
+            String("b"),
+            String("fe80::/64"),
+        ]
+        info = [types.NodeInfo(arg, types.TypeHint.String) for arg in arguments]
 
-        cidr_range = CidrMatch.to_range("0.0.0.0/0")
-        self.assertListEqual(list(cidr_range), [
-            (0, 0, 0, 0), (255, 255, 255, 255)
-        ])
+        position = CidrMatch.validate(info)
+        self.assertEqual(position, 2)
 
-        cidr_range = CidrMatch.to_range("192.168.15.2/22")
-        self.assertListEqual(list(cidr_range), [
-            (192, 168, 12, 0), (192, 168, 15, 255)
-        ])
+        # test that missing / causes failure
+        info[2].node.value = "2001:db8::1"
+        position = CidrMatch.validate(info)
+        self.assertEqual(position, 2)
 
-    def test_octet_regex(self):
-        """Test that octet regex are correctly matching the range."""
-        for _ in range(100):
-            # too many possible combos, so we can just randomly generate them
-            start = random.randrange(256)
-            end = random.randrange(256)
+        # test for invalid ip
+        info[2].node.value = "2001:db8::g/32"
+        position = CidrMatch.validate(info)
+        self.assertEqual(position, 2)
 
-            # order them correctly
-            start, end = min(start, end), max(start, end)
+        info[2].node.value = "2001:db8::1/32"
+        position = CidrMatch.validate(info)
+        self.assertIsNone(position)
 
-            # now build the regex and check that each one matches
-            regex = re.compile("^(?:" + CidrMatch.make_octet_re(start, end) + ")$")
-            self.assertEqual(regex.groups, 0)
+    def test_ipv6_cidr_match_rewrite(self):
+        """Test that cidrMatch() rewrites the arguments."""
+        arguments = [
+            Field("ip"),
+            String("2001:db8::/32"),  # IPv6 CIDR address
+        ]
+        info = [types.NodeInfo(arg, types.TypeHint.String) for arg in arguments]
 
-            for num in range(500):
-                should_match = start <= num <= end
-                did_match = regex.match(str(num)) is not None
-                self.assertEqual(should_match, did_match)
+        position = CidrMatch.validate(info)
+        self.assertEqual(position, None)
 
-    def test_cidr_regex(self):
-        """Test that octet regex are correctly matching the range."""
-        for _ in range(200):
-            # make an ip address
-            ip_addr = (
-                random.randrange(256),
-                random.randrange(256),
-                random.randrange(256),
-                random.randrange(256),
-            )
-            size = random.randrange(33)
-            total_ips = 2 ** (32 - size)
+        new_arguments = [arg.node for arg in info]
 
-            args = list(ip_addr)
-            args.append(size)
-            cidr_mask = "{:d}.{:d}.{:d}.{:d}/{:d}".format(*args)
+        # check that the original were only modified to round the values
+        self.assertIsNot(arguments[0], new_arguments[1])
+        self.assertIsNot(arguments[1], new_arguments[1])
 
-            pattern = CidrMatch.make_cidr_regex(cidr_mask)
+        # and that the values were set to the base of the subnet
+        self.assertEqual(new_arguments[1].value, "2001:db8::/32")
 
-            regex = re.compile("^(?:{})$".format(pattern))
-            self.assertEqual(regex.groups, 0)
+        # test that /0 is working
+        info[1].node = String("::/0")
+        position = CidrMatch.validate(info)
+        new_arguments = [arg.node for arg in info]
+        self.assertIsNone(position)
+        self.assertIsNot(arguments[1], new_arguments[1])
 
-            min_ip, max_ip = CidrMatch.to_range(cidr_mask)
+        # and /128
+        self.assertEqual(new_arguments[1].value, "::/0")
+        info[1].node = String("2001:db8::1/128")
+        position = CidrMatch.validate(info)
 
-            # randomly pick IPs that *are* in the range
-            for _ in range(min(200, total_ips)):
-                rand_addr = [random.randrange(mn, mx + 1) for mn, mx in zip(min_ip, max_ip)]
-                rand_ip = "{:d}.{:d}.{:d}.{:d}".format(*rand_addr)
-
-                self.assertIsNotNone(regex.match(rand_ip))
-
-            # todo: pick IPs that are definitely not in the range
-            for _ in range(200):
-                rand_addr = [random.randrange(0, 255) for _ in range(4)]
-                in_subnet = all(mn <= o <= mx for o, mn, mx in zip(rand_addr, min_ip, max_ip))
-                rand_ip = "{:d}.{:d}.{:d}.{:d}".format(*rand_addr)
-
-                rv = regex.match(rand_ip) is not None
-                self.assertEqual(rv, in_subnet)
+        self.assertIsNone(position)
