@@ -3,11 +3,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 # Version 0.9.19
 
- _Released 2023-10-10_
+ _Released 2023-10-31_
 
 ### Added
 
 * Support for [missing events](https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-missing-events) feature used in Elasticsearch sequence queries
+* Added IPv6 support for CidrMatch
+* Removed the regex support for testing CidrMatch in favor of the native ipaddress module testing
 
 # Version 0.9.18
 
