@@ -51,15 +51,15 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         self.host_key = self.get_config('host_key', 'hostname')
         self.pid_key = self.get_config('pid_key', 'pid')
         self.ppid_key = self.get_config('ppid_key', 'ppid')
+        self.process_type = self.get_config('process_type', 'process')
+        self.process_subtype = self.get_config('process_subtype', 'subtype')
+        self.create_values = self.get_config('create_values', ["create", "fork"])
+        self.terminate_values = self.get_config('terminate_values', ["terminate"])
 
         if self.get_config('data_source') == 'endgame':
             self.process_subtype = "opcode"
             self.create_values = (1, 3, 9)
             self.terminate_values = (2, 4)
-        else:
-            self.process_subtype = "subtype"
-            self.create_values = ["create", "fork"]
-            self.terminate_values = ["terminate"]
 
         self._scoped = []
 
@@ -766,7 +766,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         creates = self.create_values
         terminates = self.terminate_values
 
-        @self.event_callback("process")
+        @self.event_callback(self.process_type)
         def update_descendants(event):  # type: (Event) -> None
             ppid = event.data.get(self.ppid_key)
             pid = event.data.get(self.pid_key)
@@ -813,7 +813,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         creates = self.create_values
         terminates = self.terminate_values
 
-        @self.event_callback("process")
+        @self.event_callback(self.process_type)
         def update_children(event):  # type: (Event) -> None
             ppid = event.data.get(self.ppid_key)
             pid = event.data.get(self.pid_key)
@@ -859,7 +859,7 @@ class PythonEngine(BaseEngine, BaseTranspiler):
         creates = self.create_values
         terminates = self.terminate_values
 
-        @self.event_callback("process")
+        @self.event_callback(self.process_type)
         def purge_on_terminate(event):  # type: (Event) -> None
             pid = event.data.get(self.pid_key)
             subtype = event.data.get(process_subtype)
