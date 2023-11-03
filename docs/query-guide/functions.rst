@@ -123,6 +123,12 @@ math, string manipulation or more sophisticated expressions to be expressed.
 
     Returns the length of a string or array.
 
+.. function:: lstrip(s)
+
+    :param: s: The string that will be stripped
+
+    Returns a string with whitespace removed from the begining of input string ``s``.
+
 .. function:: match(source, pattern [, ...])
 
     Checks if multiple regular expressions are matched against a source string.
@@ -156,6 +162,12 @@ math, string manipulation or more sophisticated expressions to be expressed.
         number("1337")                  // returns 1337
         number("0xdeadbeef", 16)        // 3735928559
 
+.. function:: rstrip(s)
+
+    :param: s: The string that will be stripped
+
+    Returns a string with whitespace removed from the end of input string ``s``.
+
 .. function:: startsWith(x, y)
 
     Checks if the string ``x`` starts with the string ``y``.
@@ -167,6 +179,12 @@ math, string manipulation or more sophisticated expressions to be expressed.
 .. function:: stringContains(a, b)
 
     Returns true if ``b`` is a substring of ``a``
+
+.. function:: strip(s)
+
+    :param: s: The string that will be stripped
+
+    Returns a string with whitespace removed from the beginning and end of input string ``s``.
 
 .. function:: substring(source, start [, end])
 
