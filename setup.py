@@ -15,7 +15,8 @@ with io.open('eql/__init__.py', 'rt', encoding='utf8') as f:
     __version__ = re.search(r'__version__ = \'(.*?)\'', f.read()).group(1)
 
 install_requires = [
-    "lark>=1.3.1",
+    "lark>=1.3.1; python_version>='3.8'",
+    "lark-parser~=0.12.0; python_version<'3.8'",
     "enum34; python_version<'3.4'",
     "ipaddress; python_version<'3'",
 ]

@@ -7,7 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-* Updated `lark-parser` dependency to `lark>=1.3.1` (migrated from deprecated `lark-parser` package to `lark`)
+* Updated `lark-parser` dependency to `lark>=1.3.1` for Python 3.8+ (migrated from deprecated `lark-parser` package to `lark`)
+* Python < 3.8 continues to use `lark-parser~=0.12.0` for backward compatibility
+* Updated GitHub Actions workflows to use Python 3.8+ and newer action versions
 
 # Version 0.9.19
 
