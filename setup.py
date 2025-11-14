@@ -62,10 +62,22 @@ class Lint(Command):
         self.distribution.fetch_build_eggs(test_requires)
         self.distribution.packages.append('tests')
 
-        from flake8.main import Flake8Command
-        flake8cmd = Flake8Command(self.distribution)
-        flake8cmd.options_dict = {}
-        flake8cmd.run()
+        # Handle different flake8 API versions
+        try:
+            # Old flake8 API (2.x)
+            from flake8.main import Flake8Command
+            flake8cmd = Flake8Command(self.distribution)
+            flake8cmd.options_dict = {}
+            flake8cmd.run()
+        except ImportError:
+            # New flake8 API (3.x+)
+            import subprocess
+            # Run flake8 via command line (respects setup.cfg configuration)
+            result = subprocess.run(
+                [sys.executable, '-m', 'flake8', 'eql', 'tests'],
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+            sys.exit(result.returncode)
 
 
 class Test(TestCommand):
