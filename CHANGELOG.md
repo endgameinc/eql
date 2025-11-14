@@ -1,6 +1,14 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 0.9.20
+
+ _Released 2025-11-14_
+
+### Changed
+
+* Updated `lark-parser` dependency to `lark>=1.3.1` (migrated from deprecated `lark-parser` package to `lark`)
+
 # Version 0.9.19
 
  _Released 2023-10-31_
