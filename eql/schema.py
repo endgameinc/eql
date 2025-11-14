@@ -241,7 +241,11 @@ class Schema(ParserConfig):
         """Retrieve the active schema or the default."""
         current = cls.read_stack("schema")
         if current is None:
-            return cls.default()
+            default = cls.default()
+            if default is None:
+                # Ensure we always return a schema, never None
+                return EMPTY_SCHEMA
+            return default
         return current
 
     @classmethod

@@ -1026,8 +1026,18 @@ class LarkToEQL(Interpreter):
 
         if node["expressions"]:
             args = self.visit(node["expressions"])
+            # Filter out None values that can occur with empty expressions
+            if args is not None:
+                args = [arg for arg in args if arg is not None]
+            else:
+                args = []
         elif len(node.children) > 1:
             args = self.visit(node.children[1:])
+            # Filter out None values
+            if args is not None:
+                args = [arg for arg in args if arg is not None]
+            else:
+                args = []
 
         self.validate_signature(node, pipe_cls, args)
         self._pipe_schemas = pipe_cls.output_schemas(args, self._pipe_schemas)
@@ -1330,7 +1340,56 @@ class LarkToEQL(Interpreter):
     def macro(self, node):
         """Callback function to walk the AST."""
         name = self.visit(node.children[0])
-        params = self.visit(node.children[1:-1])
+        # Extract name string from NodeInfo if needed
+        if hasattr(name, 'node'):
+            name = self.name(node.children[0])
+        elif not isinstance(name, str):
+            name = str(name)
+
+        # Handle parameter list - it might be empty for macros with no parameters
+        # The grammar is: "macro" name "(" [name ("," name)*] ")" expr
+        # So children are: [0]=name, [1]=param_list (optional), [-1]=expr
+        params = []
+        if len(node.children) > 2:
+            # There's a parameter list node between name and expr
+            param_list_result = self.visit(node.children[1:-1])
+            if param_list_result:
+                if isinstance(param_list_result, list):
+                    # Extract parameter names from visited nodes, filtering out None
+                    for param in param_list_result:
+                        if param is not None:
+                            if isinstance(param, str):
+                                params.append(param)
+                            elif hasattr(param, 'node'):
+                                # It's a NodeInfo, extract the name from source
+                                if hasattr(param, 'source') and param.source:
+                                    param_name = self.name(param.source)
+                                    if param_name:
+                                        params.append(param_name)
+                                else:
+                                    if hasattr(param.node, 'children'):
+                                        param_name = self.name(param.node)
+                                        if param_name:
+                                            params.append(param_name)
+                                    else:
+                                        param_str = str(param)
+                                        if param_str:
+                                            params.append(param_str)
+                            elif hasattr(param, 'children'):
+                                param_name = self.name(param)
+                                if param_name:
+                                    params.append(param_name)
+                            else:
+                                param_str = str(param)
+                                if param_str:
+                                    params.append(param_str)
+                elif isinstance(param_list_result, str):
+                    params.append(param_list_result)
+                elif hasattr(param_list_result, 'children'):
+                    param_name = self.name(param_list_result)
+                    if param_name:
+                        params.append(param_name)
+
         body = self.visit(node.children[-1])
         definition = ast.Macro(name, params, body.node)
         self.new_preprocessor.add_definition(definition)
@@ -1338,7 +1397,8 @@ class LarkToEQL(Interpreter):
 
     def constant(self, node):
         """Callback function to walk the AST."""
-        name = self.visit(node["name"])
+        name_node = node["name"]
+        name = self.name(name_node) if hasattr(name_node, 'children') else str(name_node)
         value = self.visit(node["literal"])
         definition = ast.Constant(name, value.node)
         self.new_preprocessor.add_definition(definition)
