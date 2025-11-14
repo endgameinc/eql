@@ -7,9 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
-* Updated `lark-parser` dependency to `lark>=1.3.1` for Python 3.8+ (migrated from deprecated `lark-parser` package to `lark`)
-* Python < 3.8 continues to use `lark-parser~=0.12.0` for backward compatibility
+* Updated `lark-parser` dependency to `lark>=1.3.1` (migrated from deprecated `lark-parser` package to `lark`)
 * Updated GitHub Actions workflows to use Python 3.8+ and newer action versions
+* Simplified dependencies by removing Python 2.7 and Python < 3.8 compatibility code
+
+### Removed
+
+* **BREAKING**: Dropped support for Python 2.7 and Python < 3.8. The minimum required Python version is now 3.8.
 
 # Version 0.9.19
 

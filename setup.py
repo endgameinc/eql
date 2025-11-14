@@ -8,38 +8,24 @@ import re
 import io
 
 from setuptools import setup, Command
-from setuptools.command.test import test as TestCommand
 
 
 with io.open('eql/__init__.py', 'rt', encoding='utf8') as f:
     __version__ = re.search(r'__version__ = \'(.*?)\'', f.read()).group(1)
 
 install_requires = [
-    "lark>=1.3.1; python_version>='3.8'",
-    "lark-parser~=0.12.0; python_version<'3.8'",
-    "enum34; python_version<'3.4'",
-    "ipaddress; python_version<'3'",
+    "lark>=1.3.1",
 ]
 
 test_requires = [
-    "mock~=1.3.0",
     "pytest~=3.8.2",
     "pytest-cov==2.4",
-    "flake8==2.5.1; python_version<'3.8'",
-    "flake8>=3.8.0; python_version>='3.8'",
+    "flake8>=3.8.0",
     "pep257==0.7.0",
     "coverage==4.5.3",
-    "flake8-pep257==1.0.5; python_version<'3.8'",
-    "flake8-docstrings>=1.5.0; python_version>='3.8'",
-    "PyYAML<6.0; python_version<'3.4'",
-    "PyYAML; python_version>='3.4'",
+    "flake8-docstrings>=1.5.0",
+    "PyYAML",
     "toml~=0.10",
-    "pluggy==1.0.0-dev0; python_version<'3.4'",
-    "configparser<5.0; python_version<'3.4'",
-    "contextlib2~=0.6.0",
-    "more-itertools~=5.0; python_version<'3.4'",
-    "importlib-metadata<3.0; python_version<'3.4'",
-    "zipp<1.0; python_version<'3.4'",
     "attrs==21.4.0"
 ]
 etc_files = [os.path.relpath(fn, 'eql') for fn in glob.glob('eql/etc/*') if not fn.endswith('.py')]
@@ -59,42 +45,32 @@ class Lint(Command):
 
     def run(self):
         """Run the flake8 linter."""
-        self.distribution.fetch_build_eggs(test_requires)
-        self.distribution.packages.append('tests')
-
-        # Handle different flake8 API versions
-        try:
-            # Old flake8 API (2.x)
-            from flake8.main import Flake8Command
-            flake8cmd = Flake8Command(self.distribution)
-            flake8cmd.options_dict = {}
-            flake8cmd.run()
-        except ImportError:
-            # New flake8 API (3.x+)
-            import subprocess
-            # Run flake8 via command line (respects setup.cfg configuration)
-            result = subprocess.run(
-                [sys.executable, '-m', 'flake8', 'eql', 'tests'],
-                cwd=os.path.dirname(os.path.abspath(__file__))
-            )
-            sys.exit(result.returncode)
+        import subprocess
+        # Run flake8 via command line (respects setup.cfg configuration)
+        result = subprocess.run(
+            [sys.executable, '-m', 'flake8', 'eql', 'tests'],
+            cwd=os.path.dirname(os.path.abspath(__file__))
+        )
+        sys.exit(result.returncode)
 
 
-class Test(TestCommand):
+class Test(Command):
     """Use pytest (http://pytest.org/latest/) in place of the standard unittest library."""
 
     user_options = [("pytest-args=", "a", "Arguments to pass to pytest")]
 
     def initialize_options(self):
-        """Need to ensure pytest_args exists."""
-        TestCommand.initialize_options(self)
+        """Initialize options."""
         self.pytest_args = []
 
-    def run_tests(self):
+    def finalize_options(self):
+        """Finalize options."""
+        pass
+
+    def run(self):
         """Run pytest."""
         import pytest
         import eql
-
         eql.parser.full_tracebacks = True
         sys.exit(pytest.main(self.pytest_args))
 
@@ -113,19 +89,17 @@ setup(
         'Intended Audience :: Science/Research',
         'Intended Audience :: System Administrators',
         'Natural Language :: English',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
         'Topic :: Database',
         'Topic :: Internet :: Log Analysis',
         'Topic :: Scientific/Engineering :: Information Analysis',
     ],
     url='https://eql.readthedocs.io',
-    tests_require=install_requires + test_requires,
     cmdclass={
         'lint': Lint,
         'test': Test
