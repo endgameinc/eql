@@ -18,11 +18,11 @@ install_requires = [
 ]
 
 test_requires = [
-    "pytest~=3.8.2",
-    "pytest-cov==2.4",
+    "pytest>=6.0.0",
+    "pytest-cov>=2.4",
     "flake8>=3.8.0",
     "pep257==0.7.0",
-    "coverage==4.5.3",
+    "coverage>=4.5.3",
     "flake8-docstrings>=1.5.0",
     "PyYAML",
     "toml~=0.10",
