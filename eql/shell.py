@@ -624,12 +624,7 @@ class EqlShell(cmd.Cmd, object):
                 else:
                     header.append(k)
 
-            # check for python 2 compatibility
-            if type(u"") != str:
-                def writerow(row):
-                    csv_file.writerow([cell.encode("utf8") for cell in row])
-            else:
-                writerow = csv_file.writerow
+            writerow = csv_file.writerow
 
             writerow(header)
 
