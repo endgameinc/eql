@@ -96,6 +96,50 @@ class KvTree(Tree):
     def child_trees(self):
         return [child for child in self.children if isinstance(child, KvTree)]
 
+    @property
+    def line(self):
+        """Get line number from meta or fallback to first token."""
+        if hasattr(self, 'meta') and self.meta and hasattr(self.meta, 'line'):
+            return self.meta.line
+        # Fallback: get line from first token child
+        for child in self.children:
+            if isinstance(child, Token) and hasattr(child, 'line'):
+                return child.line
+        return 1
+
+    @property
+    def end_line(self):
+        """Get end line number from meta or fallback to last token."""
+        if hasattr(self, 'meta') and self.meta and hasattr(self.meta, 'end_line'):
+            return self.meta.end_line
+        # Fallback: get end_line from last token child
+        for child in reversed(self.children):
+            if isinstance(child, Token) and hasattr(child, 'end_line'):
+                return child.end_line
+        return self.line
+
+    @property
+    def column(self):
+        """Get column number from meta or fallback to first token."""
+        if hasattr(self, 'meta') and self.meta and hasattr(self.meta, 'column'):
+            return self.meta.column
+        # Fallback: get column from first token child
+        for child in self.children:
+            if isinstance(child, Token) and hasattr(child, 'column'):
+                return child.column
+        return 1
+
+    @property
+    def end_column(self):
+        """Get end column number from meta or fallback to last token."""
+        if hasattr(self, 'meta') and self.meta and hasattr(self.meta, 'end_column'):
+            return self.meta.end_column
+        # Fallback: get end_column from last token child
+        for child in reversed(self.children):
+            if isinstance(child, Token) and hasattr(child, 'end_column'):
+                return child.end_column
+        return self.column
+
 
 class LarkToEQL(Interpreter):
     """Walker of Lark tree to convert it into a EQL AST."""
