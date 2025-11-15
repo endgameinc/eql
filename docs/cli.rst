@@ -27,12 +27,6 @@ Type ``help`` within the shell to get a list of commands and ``exit`` when finis
 .. |asciicast| image:: https://asciinema.org/a/259453.svg
    :target: https://asciinema.org/a/259453
 
-.. note::
-
-    In Python 2.7, the argument parsing is a little different. Instead of running ``eql`` directly
-    to invoke the interactive shell, run ``eql shell``.
-
-
 In addition, the ``query`` command within EQL will stream over `JSON`_, and
 output as matches are found. An input file can be provided with ``-f`` in JSON
 or as lines of JSON (``.jsonl``). Lines of JSON can also be processed as streams from stdin.

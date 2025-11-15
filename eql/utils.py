@@ -12,29 +12,11 @@ PLUGIN_PREFIX = "eql_"
 CASE_INSENSITIVE = True
 _loaded_plugins = False
 
-# Var to check if Python2 or Python3
-py_version = sys.version_info.major
-
-# Python2 and Python3 compatible type checking
-unicode_t = type(u"")
-long_t = type(int(1e100))
-
-try:
-    chr_compat = unichr
-except NameError:
-    chr_compat = chr
-
-if unicode_t == str:
-    strings = str,
-    to_unicode = str
-else:
-    strings = str, unicode_t
-    to_unicode = unicode_t
-
-if long_t != int:
-    numbers = (int, float, long_t)
-else:
-    numbers = int, float
+# Type checking (Python 3.8+)
+strings = (str,)
+to_unicode = str
+numbers = (int, float)
+chr_compat = chr
 
 
 # Optionally load dynamic loaders
@@ -96,15 +78,11 @@ def str_presenter(dumper, data):
 
 def get_ipaddress(ipaddr_string):
     """Get an ip_address object from a string containing an ip address."""
-    if py_version == 2:
-        ipaddr_string = ipaddr_string.decode("utf-8")  # noqa: F821
     return ipaddress.ip_address(ipaddr_string)
 
 
 def get_subnet(cidr_string, strict=False):
     """Get an ip_network object from a string containing an cidr range."""
-    if py_version == 2:
-        cidr_string = cidr_string.decode("utf-8")  # noqa: F821
     return ipaddress.ip_network(cidr_string, strict=strict)
 
 
@@ -157,8 +135,6 @@ def get_type_converter(items):
 
 if yaml is not None:
     yaml.add_representer(str, str_presenter)
-    if str != unicode_t:
-        yaml.add_representer(unicode_t, str_presenter)
 
 
 def load_dump(filename):
