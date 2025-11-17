@@ -1022,22 +1022,21 @@ class LarkToEQL(Interpreter):
         if pipe_cls is None or pipe_name not in self._allowed_pipes:
             raise self._error(node["name"], "Unknown pipe {NAME}")
 
+        # Handle arguments - Lark 1.3.1 includes None in children for empty optional rules
+        # The grammar is: "|" name [single_atom single_atom+ | expressions]
         args = []
-
         if node["expressions"]:
-            args = self.visit(node["expressions"])
-            # Filter out None values that can occur with empty expressions
-            if args is not None:
-                args = [arg for arg in args if arg is not None]
-            else:
-                args = []
+            # expressions node exists, visit it
+            args = self.visit(node["expressions"]) or []
+            # Filter out None values (Lark 1.3.1 includes None for empty optional rules)
+            args = [arg for arg in args if arg is not None]
         elif len(node.children) > 1:
-            args = self.visit(node.children[1:])
-            # Filter out None values
-            if args is not None:
+            # Handle single_atom single_atom+ case - filter None before visiting
+            atom_nodes = [child for child in node.children[1:] if child is not None]
+            if atom_nodes:
+                args = self.visit(atom_nodes) or []
+                # Filter out None values
                 args = [arg for arg in args if arg is not None]
-            else:
-                args = []
 
         self.validate_signature(node, pipe_cls, args)
         self._pipe_schemas = pipe_cls.output_schemas(args, self._pipe_schemas)
@@ -1348,47 +1347,19 @@ class LarkToEQL(Interpreter):
 
         # Handle parameter list - it might be empty for macros with no parameters
         # The grammar is: "macro" name "(" [name ("," name)*] ")" expr
-        # So children are: [0]=name, [1]=param_list (optional), [-1]=expr
+        # Lark 1.3.1 includes None in children for empty optional rules
+        # So children are: [0]=name, [1]=param (or None), [2]=param (or None), ..., [-1]=expr
         params = []
         if len(node.children) > 2:
-            # There's a parameter list node between name and expr
-            param_list_result = self.visit(node.children[1:-1])
-            if param_list_result:
+            # Filter out None values before visiting (Lark 1.3.1 includes None for empty optional rules)
+            param_nodes = [child for child in node.children[1:-1] if child is not None]
+            if param_nodes:
+                param_list_result = self.visit(param_nodes)
                 if isinstance(param_list_result, list):
-                    # Extract parameter names from visited nodes, filtering out None
-                    for param in param_list_result:
-                        if param is not None:
-                            if isinstance(param, str):
-                                params.append(param)
-                            elif hasattr(param, 'node'):
-                                # It's a NodeInfo, extract the name from source
-                                if hasattr(param, 'source') and param.source:
-                                    param_name = self.name(param.source)
-                                    if param_name:
-                                        params.append(param_name)
-                                else:
-                                    if hasattr(param.node, 'children'):
-                                        param_name = self.name(param.node)
-                                        if param_name:
-                                            params.append(param_name)
-                                    else:
-                                        param_str = str(param)
-                                        if param_str:
-                                            params.append(param_str)
-                            elif hasattr(param, 'children'):
-                                param_name = self.name(param)
-                                if param_name:
-                                    params.append(param_name)
-                            else:
-                                param_str = str(param)
-                                if param_str:
-                                    params.append(param_str)
+                    # Extract parameter names - visit returns strings for name nodes
+                    params = [p for p in param_list_result if isinstance(p, str)]
                 elif isinstance(param_list_result, str):
-                    params.append(param_list_result)
-                elif hasattr(param_list_result, 'children'):
-                    param_name = self.name(param_list_result)
-                    if param_name:
-                        params.append(param_name)
+                    params = [param_list_result]
 
         body = self.visit(node.children[-1])
         definition = ast.Macro(name, params, body.node)
