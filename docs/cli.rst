@@ -13,7 +13,7 @@ the console. First install Python and then use ``pip`` to install EQL.
     $ pip install eql
 
 
-For the optimal shell experience, use Python 3.6+ and install the optional dependencies for EQL:
+For the optimal shell experience, use Python 3.8+ and install the optional dependencies for EQL:
 
 .. code-block:: console
 
