@@ -1,9 +1,9 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-# Version 0.9.20
+# Version 1.0.0
 
- _Released 2025-11-14_
+ _Released 2025-11-17_
 
 ### Changed
 
