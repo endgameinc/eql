@@ -30,9 +30,9 @@ Contributing to EQL is a simple five-step process facilitated by Git:
 * There is plenty of literature and resources out there to help you. A great place to start is [GitHub guides](https://guides.github.com/).
 
 ## Ways to contribute
-  
+
 ### Bug Fixes
-Bug fixes are a natural area to contribute. We only ask that you please use the [bug report issue](https://github.com/endgameinc/eql/issues) to track the bug. Please elaborate on how to reproduce the bug and what behavior you would have expected. Compatibility is a priority for EQL, so be sure to capture information about your operating system and version of python. 
+Bug fixes are a natural area to contribute. We only ask that you please use the [bug report issue](https://github.com/endgameinc/eql/issues) to track the bug. Please elaborate on how to reproduce the bug and what behavior you would have expected. Compatibility is a priority for EQL, so be sure to capture information about your operating system and version of python.
 
 ### Language or Engine Changes
 For any changes within the language or the evaluation engine, propose your changes in a *Feature Request* issue to start a discussion. For new functionality function, be mindful of handling different edge cases, acceptable input, etc. We are happy to collaborate on such topics and encourage you to share ideas.
@@ -49,7 +49,7 @@ Anyone is encouraged to make a PR for open issues that have a clear path forward
 * Include end-to-end tests by updating the test [data](eql/etc/test_data.json) and [queries](eql/etc/test_queries.toml). These are used as the gold standard of expected behavior, and the queries should have a list of the serial_event_id of the events, in the expected order.
 
 ### CLI
-Finally, the CLI is an area we are always looking to expand. This may include new input file types, new processing features, new tables, etc. Some shell functionality, like tab completions ANSI coloring, and history often varies across different operating systems. If possible, please test new functionality across a few different operating systems if you have access, and Python 2.7 and 3.6+. If you find any unusual behavior in the shell related to compatibility, please let us know in an issue.
+Finally, the CLI is an area we are always looking to expand. This may include new input file types, new processing features, new tables, etc. Some shell functionality, like tab completions ANSI coloring, and history often varies across different operating systems. If possible, please test new functionality across a few different operating systems if you have access, and Python 3.8+. If you find any unusual behavior in the shell related to compatibility, please let us know in an issue.
 
 ## Resources
 See the [resources page](https://eql.readthedocs.io/en/latest/resources.html) on ReadTheDocs for a full list of resources

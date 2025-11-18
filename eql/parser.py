@@ -96,6 +96,50 @@ class KvTree(Tree):
     def child_trees(self):
         return [child for child in self.children if isinstance(child, KvTree)]
 
+    @property
+    def line(self):
+        """Get line number from meta or fallback to first token."""
+        if hasattr(self, 'meta') and self.meta and hasattr(self.meta, 'line'):
+            return self.meta.line
+        # Fallback: get line from first token child
+        for child in self.children:
+            if isinstance(child, Token) and hasattr(child, 'line'):
+                return child.line
+        return 1
+
+    @property
+    def end_line(self):
+        """Get end line number from meta or fallback to last token."""
+        if hasattr(self, 'meta') and self.meta and hasattr(self.meta, 'end_line'):
+            return self.meta.end_line
+        # Fallback: get end_line from last token child
+        for child in reversed(self.children):
+            if isinstance(child, Token) and hasattr(child, 'end_line'):
+                return child.end_line
+        return self.line
+
+    @property
+    def column(self):
+        """Get column number from meta or fallback to first token."""
+        if hasattr(self, 'meta') and self.meta and hasattr(self.meta, 'column'):
+            return self.meta.column
+        # Fallback: get column from first token child
+        for child in self.children:
+            if isinstance(child, Token) and hasattr(child, 'column'):
+                return child.column
+        return 1
+
+    @property
+    def end_column(self):
+        """Get end column number from meta or fallback to last token."""
+        if hasattr(self, 'meta') and self.meta and hasattr(self.meta, 'end_column'):
+            return self.meta.end_column
+        # Fallback: get end_column from last token child
+        for child in reversed(self.children):
+            if isinstance(child, Token) and hasattr(child, 'end_column'):
+                return child.end_column
+        return self.column
+
 
 class LarkToEQL(Interpreter):
     """Walker of Lark tree to convert it into a EQL AST."""
@@ -978,12 +1022,21 @@ class LarkToEQL(Interpreter):
         if pipe_cls is None or pipe_name not in self._allowed_pipes:
             raise self._error(node["name"], "Unknown pipe {NAME}")
 
+        # Handle arguments - Lark 1.3.1 includes None in children for empty optional rules
+        # The grammar is: "|" name [single_atom single_atom+ | expressions]
         args = []
-
         if node["expressions"]:
-            args = self.visit(node["expressions"])
+            # expressions node exists, visit it
+            args = self.visit(node["expressions"]) or []
+            # Filter out None values (Lark 1.3.1 includes None for empty optional rules)
+            args = [arg for arg in args if arg is not None]
         elif len(node.children) > 1:
-            args = self.visit(node.children[1:])
+            # Handle single_atom single_atom+ case - filter None before visiting
+            atom_nodes = [child for child in node.children[1:] if child is not None]
+            if atom_nodes:
+                args = self.visit(atom_nodes) or []
+                # Filter out None values
+                args = [arg for arg in args if arg is not None]
 
         self.validate_signature(node, pipe_cls, args)
         self._pipe_schemas = pipe_cls.output_schemas(args, self._pipe_schemas)
@@ -1286,7 +1339,28 @@ class LarkToEQL(Interpreter):
     def macro(self, node):
         """Callback function to walk the AST."""
         name = self.visit(node.children[0])
-        params = self.visit(node.children[1:-1])
+        # Extract name string from NodeInfo if needed
+        if hasattr(name, 'node'):
+            name = self.name(node.children[0])
+        elif not isinstance(name, str):
+            name = str(name)
+
+        # Handle parameter list - it might be empty for macros with no parameters
+        # The grammar is: "macro" name "(" [name ("," name)*] ")" expr
+        # Lark 1.3.1 includes None in children for empty optional rules
+        # So children are: [0]=name, [1]=param (or None), [2]=param (or None), ..., [-1]=expr
+        params = []
+        if len(node.children) > 2:
+            # Filter out None values before visiting (Lark 1.3.1 includes None for empty optional rules)
+            param_nodes = [child for child in node.children[1:-1] if child is not None]
+            if param_nodes:
+                param_list_result = self.visit(param_nodes)
+                if isinstance(param_list_result, list):
+                    # Extract parameter names - visit returns strings for name nodes
+                    params = [p for p in param_list_result if isinstance(p, str)]
+                elif isinstance(param_list_result, str):
+                    params = [param_list_result]
+
         body = self.visit(node.children[-1])
         definition = ast.Macro(name, params, body.node)
         self.new_preprocessor.add_definition(definition)
@@ -1294,7 +1368,8 @@ class LarkToEQL(Interpreter):
 
     def constant(self, node):
         """Callback function to walk the AST."""
-        name = self.visit(node["name"])
+        name_node = node["name"]
+        name = self.name(name_node) if hasattr(name_node, 'children') else str(name_node)
         value = self.visit(node["literal"])
         definition = ast.Constant(name, value.node)
         self.new_preprocessor.add_definition(definition)

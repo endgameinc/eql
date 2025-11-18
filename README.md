@@ -13,7 +13,7 @@ Since Endgame [joined forced with Elastic](https://www.elastic.co/blog/endgame-j
 
 # Getting Started
 
-The EQL module current supports Python 2.7 and 3.5+. Assuming a supported Python version is installed, run the command:
+The EQL module requires Python 3.8 or higher. Assuming a supported Python version is installed, run the command:
 
 ```console
 $ pip install eql
@@ -23,7 +23,7 @@ If Python is configured and already in the PATH, then ``eql`` will be readily av
 
 ```console
 $ eql --version
-eql 0.9
+eql 0.9.20
 ```
 
 From there, try a [sample json file](docs/_static/example.json) and test it with EQL.

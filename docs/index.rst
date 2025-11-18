@@ -14,9 +14,9 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
 
 .. note::
    This documentation is about EQL for Elastic Endgame. Several syntax changes were made in Elasticsearch to `bring Event Query Language to the Elastic Stack <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql.html>`_. The existing Python EQL implementation remains unchanged, but please keep the below differences in mind when switching between the two different versions of EQL.
-   
+
    In the Elastic Stack:
-   
+
    - Most operators are now case-sensitive. For example, ``process_name == "cmd.exe"`` is no longer equivalent to ``process_name == "Cmd.exe"``.
    - Functions are now case-sensitive. To use the case-insensitive variant, use ``~``, such as ``endsWith~(process_name, ".exe")``.
    - For case-insensitive equality comparisons, use the ``:`` operator. For example, ``process_name : "cmd.exe"`` is equivalent to ``process_name : "Cmd.exe"``.
@@ -27,12 +27,12 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
    - ``=`` can no longer be substituted for the ``==`` operator.
    - ``'`` strings are no longer supported. Use ``"""`` or ``"`` to represent strings.
    - ``?"`` and ``?'`` no longer indicate raw strings. Use the ``"""..."""`` syntax instead.
-   
+
    For more details, see the `limitations <https://www.elastic.co/guide/en/elasticsearch/reference/current/eql-syntax.html#eql-syntax-limitations>`_ section of the Elasticsearch EQL documentation.
 
 Getting Started
 ^^^^^^^^^^^^^^^^
-The EQL module current supports Python 2.7 and 3.5+. Assuming a supported Python version is installed, run the command:
+The EQL module requires Python 3.8 or higher. Assuming a supported Python version is installed, run the command:
 
 .. code-block:: console
 
@@ -43,7 +43,7 @@ If Python is configured and already in the PATH, then ``eql`` will be readily av
 .. code-block:: console
 
      $ eql --version
-     eql 0.9
+     eql 1.0.0
 
 From there, try a :download:`sample json file <_static/example.json>` and test it with EQL.
 

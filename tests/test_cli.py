@@ -5,7 +5,7 @@ import os
 import uuid
 import unittest
 
-import mock
+from unittest import mock
 
 from eql.errors import EqlSchemaError
 from eql.loader import save_analytics

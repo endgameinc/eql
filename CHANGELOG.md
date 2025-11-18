@@ -1,6 +1,27 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 1.0.0
+
+ _Released 2025-11-17_
+
+### Changed
+
+* Updated `lark-parser` dependency to `lark>=1.3.1` (migrated from deprecated `lark-parser` package to `lark`)
+* Updated GitHub Actions workflows to use Python 3.8+ and newer action versions (`actions/checkout@v5`, `actions/setup-python@v5`)
+* Fixed compatibility issues with Lark 1.3.1:
+  * Fixed parsing of macros with empty parameter lists (e.g., `macro TRUE()`)
+  * Fixed parsing of pipes with no arguments (e.g., `| count`)
+  * Fixed `Schema.current()` to always return a valid Schema object
+* Simplified dependencies by removing Python 2.7 and Python < 3.8 compatibility code
+* Removed Python 2.7 compatibility comments and code from source files
+* Updated documentation to reflect Python 3.8+ requirement
+
+### Removed
+
+* **BREAKING**: Dropped support for Python 2.7 and Python < 3.8. The minimum required Python version is now 3.8.
+* Removed Python 2.7 GitHub Actions workflow (`.github/workflows/pythonpackage27.yml`)
+
 # Version 0.9.19
 
  _Released 2023-10-31_

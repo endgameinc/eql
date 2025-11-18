@@ -64,11 +64,8 @@ LIBEDIT = "libedit"
 PYREADLINE = "pyreadline"
 GNUREADLINE = "gnureadline"
 
-# Determine the input function that should be used for the prompt in a python2 and python3 compatible way
-try:
-    input_func = raw_input
-except NameError:
-    input_func = input
+# Input function for the prompt
+input_func = input
 
 # Determine which version of readline is installed
 for module in ["readline", "gnureadline"]:
@@ -624,12 +621,7 @@ class EqlShell(cmd.Cmd, object):
                 else:
                     header.append(k)
 
-            # check for python 2 compatibility
-            if type(u"") != str:
-                def writerow(row):
-                    csv_file.writerow([cell.encode("utf8") for cell in row])
-            else:
-                writerow = csv_file.writerow
+            writerow = csv_file.writerow
 
             writerow(header)
 

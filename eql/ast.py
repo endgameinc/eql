@@ -139,11 +139,7 @@ class BaseNode(object):
 
     def __str__(self):
         """Render the AST back as a valid EQL string."""
-        unicoded = self.__unicode__()
-        # Python 2.7
-        if not isinstance(unicoded, str):
-            unicoded = unicoded.encode('utf-8')
-        return unicoded
+        return self.__unicode__()
 
 
 # noinspection PyAbstractClass

@@ -1,7 +1,6 @@
 """Test Python Engine for EQL."""
 import ipaddress
 import random
-import sys
 import uuid
 from collections import defaultdict
 
@@ -396,9 +395,6 @@ class TestPythonEngine(TestEngine):
         """Test the cidrMatch custom function."""
         def to_range(cidr):
             """Convert a CIDR notation to a tuple of the minimum and maximum IP addresses in the range."""
-            # Python 2 support
-            if sys.version_info.major == 2:
-                cidr = unicode(cidr)
             ip_network = ipaddress.ip_network(cidr, strict=False)
 
             min_ip_address = ip_network.network_address

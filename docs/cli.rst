@@ -13,7 +13,7 @@ the console. First install Python and then use ``pip`` to install EQL.
     $ pip install eql
 
 
-For the optimal shell experience, use Python 3.6+ and install the optional dependencies for EQL:
+For the optimal shell experience, use Python 3.8+ and install the optional dependencies for EQL:
 
 .. code-block:: console
 
@@ -26,12 +26,6 @@ Type ``help`` within the shell to get a list of commands and ``exit`` when finis
 
 .. |asciicast| image:: https://asciinema.org/a/259453.svg
    :target: https://asciinema.org/a/259453
-
-.. note::
-
-    In Python 2.7, the argument parsing is a little different. Instead of running ``eql`` directly
-    to invoke the interactive shell, run ``eql shell``.
-
 
 In addition, the ``query`` command within EQL will stream over `JSON`_, and
 output as matches are found. An input file can be provided with ``-f`` in JSON
