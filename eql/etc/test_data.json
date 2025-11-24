@@ -2076,5 +2076,28 @@
     "unique_pid": 99999,
     "user_domain": "vagrant",
     "user_name": "vagrant"
+  },
+  {
+    "authentication_id": 854482244,
+    "command_line": " C:\\Windows\\system32\\net  group administrators \"findme2\" ",
+    "event_subtype_full": "creation_event",
+    "event_type": "process",
+    "event_type_full": "process_event",
+    "md5": "3b6928bc39e5530cead1e99269e7b1ee",
+    "opcode": 1,
+    "original_file_name": "net1.exe",
+    "parent_process_name": "net.exe",
+    "parent_process_path": "C:\\Windows\\System32\\net.exe",
+    "pid": 1392,
+    "ppid": 3608,
+    "process_name": "net1.exe",
+    "process_path": "C:\\Windows\\System32\\net1.exe",
+    "serial_event_id": 75306,
+    "subtype": "create",
+    "timestamp": 131605904083806370,
+    "unique_pid": 813840,
+    "unique_ppid": 750058,
+    "user_domain": "vagrant",
+    "user_name": "vagrant"
   }
 ]
