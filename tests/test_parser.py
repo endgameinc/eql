@@ -693,6 +693,15 @@ class TestParser(unittest.TestCase):
             parse_query('process where parent_name == process_name')
             parse_query('process where length(host_name) == length(user_name) - 1')
 
+        # Elastic Endpoint EQL allows field-to-field comparisons (unlike ES/SIEM EQL)
+        with elastic_endpoint_syntax, ignore_missing_functions:
+            parse_query('process where parent_name == process_name')
+            parse_query('process where Target.process.executable != process.executable')
+            parse_query('process where length(host_name) == length(user_name) - 1')
+            parse_query(
+                'api where process.Ext.api.metadata.client_process_id == process.pid'
+            )
+
         with schema:
             parse_query("process where process_name == 'cmd.exe'")
             parse_query("process where process_name == ?'cmd.exe'")

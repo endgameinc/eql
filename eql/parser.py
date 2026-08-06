@@ -58,8 +58,12 @@ allow_enum_fields = ParserConfig(enable_enum=True)
 allow_negation = ParserConfig(allow_negation=True)
 allow_sample = ParserConfig(allow_sample=True)
 allow_runs = ParserConfig(allow_runs=True)
-elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
-elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
+# reject_field_comparisons: ES/SIEM EQL only. Elastic Endpoint EQL allows field-to-field
+# comparisons (e.g. Target.process.executable != process.executable), so elastic_endpoint_syntax
+# must not set this flag.
+elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True, reject_field_comparisons=True)
+elasticsearch_validate_optional_fields = ParserConfig(
+    elasticsearch_syntax=True, validate_optional_fields=True, reject_field_comparisons=True)
 elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
@@ -183,6 +187,7 @@ class LarkToEQL(Interpreter):
         self._ignore_missing = ParserConfig.read_stack("ignore_missing_fields", False)
         self._strict_fields = ParserConfig.read_stack("strict_fields", False)
         self._elasticsearch_syntax = ParserConfig.read_stack("elasticsearch_syntax", False)
+        self._reject_field_comparisons = ParserConfig.read_stack("reject_field_comparisons", False)
         self._dollar_var = ParserConfig.read_stack("dollar_var", False)
         self._validate_optional_fields = ParserConfig.read_stack("validate_optional_fields", False)
         self._allow_enum = ParserConfig.read_stack("enable_enum", False)
@@ -725,16 +730,18 @@ class LarkToEQL(Interpreter):
         return any(isinstance(n, ast.Field) and n.base in self._alias_mapping for n in expr)
 
     def _check_elasticsearch_field_comparison(self, node, left, right, op):
-        """Reject ES-incompatible field comparisons under elasticsearch_syntax.
+        """Reject ES-incompatible field comparisons for SIEM/ES EQL only.
 
         Match Elasticsearch EQL: field-to-field comparisons (including via functions) and
         arithmetic involving fields are not supported in comparison operators.
         See: https://www.elastic.co/docs/reference/query-languages/eql/eql-syntax
         (ES rejects with: Comparisons against fields are not currently supported).
 
-        Exception: sequence event aliases (endpoint ``as p0`` / ``p0.field == field``).
+        Not applied under ``elastic_endpoint_syntax`` (Endpoint supports field comparisons).
+        Exception: sequence event aliases (endpoint ``as p0`` / ``p0.field == field``) when
+        the check is enabled under SIEM syntax with aliases.
         """
-        if not self._elasticsearch_syntax:
+        if not self._reject_field_comparisons:
             return
         if self._expression_has_alias_field(left.node) or self._expression_has_alias_field(right.node):
             return
