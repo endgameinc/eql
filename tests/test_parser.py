@@ -670,7 +670,10 @@ class TestParser(unittest.TestCase):
 
             # Forbidden: field vs field
             self.assertRaises(EqlSemanticError, parse_query, 'process where parent_name == process_name')
-            self.assertRaises(EqlSemanticError, parse_query, 'process where length(parent_name) == length(process_name)')
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'process where length(parent_name) == length(process_name)',
+            )
             # Forbidden: field arithmetic in comparison (ES#73681 / NTLM relay rule failure mode)
             self.assertRaises(
                 EqlSemanticError, parse_query,
