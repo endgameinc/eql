@@ -658,7 +658,7 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSemanticError, parse_query,
                               'sample ![process where true] [file where true] [file where true]')
 
-        # Elasticsearch EQL forbids field-to-field comparisons and field arithmetic in comparisons.
+        # Elasticsearch EQL requires at least one side of a comparison to fold to a constant.
         with elasticsearch_syntax, ignore_missing_functions:
             # Allowed: field/function vs literal
             parse_query('process where process_name == "cmd.exe"')
@@ -667,6 +667,11 @@ class TestParser(unittest.TestCase):
             parse_query('process where indexOf(process_name, "x") == null')
             # Allowed: field-to-field via functions (not comparison operators)
             parse_query('process where startswith(process_name, substring(user_name, 0, -1))')
+            # Allowed: arithmetic over fields compared against a constant, since only one
+            # side has to fold. Rejecting these would block valid ES queries.
+            parse_query('process where length(process_name) - 1 == 5')
+            parse_query('process where length(process_name) + length(user_name) > 10')
+            parse_query('process where substring(process_name, 0, length(user_name) - 1) == "x"')
 
             # Forbidden: field vs field
             self.assertRaises(EqlSemanticError, parse_query, 'process where parent_name == process_name')
@@ -674,18 +679,14 @@ class TestParser(unittest.TestCase):
                 EqlSemanticError, parse_query,
                 'process where length(parent_name) == length(process_name)',
             )
-            # Forbidden: field arithmetic in comparison (observed ES rejection / NTLM relay rule)
+            # Forbidden: field vs field arithmetic (observed ES rejection / NTLM relay rule)
             self.assertRaises(
                 EqlSemanticError, parse_query,
                 'process where length(host_name) == length(user_name) - 1'
             )
             self.assertRaises(
                 EqlSemanticError, parse_query,
-                'process where length(process_name) + length(user_name) > 10'
-            )
-            self.assertRaises(
-                EqlSemanticError, parse_query,
-                'process where length(process_name) - 1 == 5'
+                'process where length(host_name) - 1 == length(user_name)'
             )
 
         # Non-ES syntax still allows field comparisons (Python engine / historic EQL)

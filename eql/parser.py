@@ -712,38 +712,37 @@ class LarkToEQL(Interpreter):
     def _classify_comparison_side(self, expr):
         """Classify one comparison operand in a single AST walk.
 
-        Returns ``(has_field, has_field_math, has_alias)``.
+        Returns ``(has_field, has_alias)``. A side "has a field" if it references one anywhere,
+        including through functions and arithmetic, which is what makes it unfoldable to a
+        constant. ``has_alias`` means the side references a sequence event alias (``as p0``).
         """
         if isinstance(expr, (ast.String, ast.Number, ast.Boolean, ast.Null)):
-            return False, False, False
+            return False, False
 
         has_field = False
-        has_field_math = False
-        has_alias = False
         alias_bases = self._alias_mapping if (self._alias_enabled and self._alias_mapping) else None
 
         for node in expr:
             if isinstance(node, ast.Field):
                 has_field = True
-                if alias_bases is not None and node.base in alias_bases:
-                    has_alias = True
-                    # Alias presence exempts the whole comparison; no need to keep walking.
-                    break
-            elif isinstance(node, ast.MathOperation):
-                if any(isinstance(child, ast.Field) for child in node):
-                    has_field = True
-                    has_field_math = True
-                    # Without aliases, field math alone is enough to reject this side.
-                    if alias_bases is None:
-                        break
 
-        return has_field, has_field_math, has_alias
+                if alias_bases is None:
+                    # Nothing else to learn from this side; one field is enough.
+                    break
+
+                if node.base in alias_bases:
+                    # Alias presence exempts the whole comparison; no need to keep walking.
+                    return True, True
+
+        return has_field, False
 
     def _check_elasticsearch_field_comparison(self, node, left, right, op):
         """Reject ES-incompatible field comparisons for SIEM/ES EQL only.
 
-        Match Elasticsearch EQL: field-to-field comparisons (including via functions) and
-        arithmetic involving fields are not supported in comparison operators.
+        Match Elasticsearch EQL: a comparison operator requires at least one side to be a
+        constant. Comparing a field to another field is unsupported, even when either side is
+        wrapped in functions or arithmetic. Comparing a field expression to a constant (e.g.
+        ``length(a) - 1 == 5``) is supported, because the constant side folds.
         See: https://www.elastic.co/docs/reference/query-languages/eql/eql-syntax
         (ES rejects with: Comparisons against fields are not currently supported).
 
@@ -754,22 +753,21 @@ class LarkToEQL(Interpreter):
         if not self._reject_field_comparisons:
             return
 
-        left_field, left_math, left_alias = self._classify_comparison_side(left.node)
-        right_field, right_math, right_alias = self._classify_comparison_side(right.node)
+        left_field, left_alias = self._classify_comparison_side(left.node)
+        right_field, right_alias = self._classify_comparison_side(right.node)
 
         # Sequence aliases (``as p0``) may legally compare across events.
         if left_alias or right_alias:
             return
 
-        # Illegal: field vs field, or any side with field arithmetic in the comparison.
-        if not ((left_field and right_field) or left_math or right_math):
+        # Illegal only when neither side folds to a constant.
+        if not (left_field and right_field):
             return
 
-        offender = left.node if left_math else right.node
         raise self._error(
             node,
             "Comparisons against fields are not (currently) supported; offender [{}] in [{}]".format(
-                offender, op
+                right.node, op
             ),
             cls=EqlSemanticError,
         )

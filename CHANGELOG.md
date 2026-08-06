@@ -7,8 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-* Under `elasticsearch_syntax`, reject field-to-field comparisons and arithmetic involving fields
-  in comparison operators (e.g. `length(a) == length(b) - 1`), matching Elasticsearch EQL behavior.
+* Under `elasticsearch_syntax`, reject comparisons where neither side folds to a constant —
+  field-to-field comparisons, including through functions and arithmetic (e.g. `a == b`,
+  `length(a) == length(b) - 1`), matching Elasticsearch EQL behavior. Field expressions compared
+  against a constant (e.g. `length(a) - 1 == 5`) remain valid.
   Sequence event aliases (`as p0` / `p0.field == field`) remain allowed under `elastic_endpoint_syntax`.
 
 # Version 1.0.0
