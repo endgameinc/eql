@@ -674,7 +674,7 @@ class TestParser(unittest.TestCase):
                 EqlSemanticError, parse_query,
                 'process where length(parent_name) == length(process_name)',
             )
-            # Forbidden: field arithmetic in comparison (ES#73681 / NTLM relay rule failure mode)
+            # Forbidden: field arithmetic in comparison (observed ES rejection / NTLM relay rule)
             self.assertRaises(
                 EqlSemanticError, parse_query,
                 'process where length(host_name) == length(user_name) - 1'

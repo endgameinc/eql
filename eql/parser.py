@@ -730,7 +730,7 @@ class LarkToEQL(Interpreter):
         Match Elasticsearch EQL: field-to-field comparisons (including via functions) and
         arithmetic involving fields are not supported in comparison operators.
         See: https://www.elastic.co/docs/reference/query-languages/eql/eql-syntax
-        and https://github.com/elastic/elasticsearch/pull/73681
+        (ES rejects with: Comparisons against fields are not currently supported).
 
         Exception: sequence event aliases (endpoint ``as p0`` / ``p0.field == field``).
         """
