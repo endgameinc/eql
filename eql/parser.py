@@ -766,10 +766,9 @@ class LarkToEQL(Interpreter):
 
         raise self._error(
             node,
-            "Comparisons against fields are not (currently) supported; offender [{}] in [{}]".format(
-                right.node, op
-            ),
+            "Comparisons against fields are not (currently) supported; offender [{offender}] in [{op}]",
             cls=EqlSemanticError,
+            offender=right.node, op=op,
         )
 
     def comparison(self, node):

@@ -12,7 +12,7 @@ from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlType
 from eql.parser import (
     allow_negation, allow_sample, allow_runs, parse_query, parse_expression, parse_definitions,
     ignore_missing_functions, parse_field, parse_literal, extract_query_terms, keywords, elasticsearch_syntax,
-    elastic_endpoint_syntax, elasticsearch_validate_optional_fields
+    elastic_endpoint_syntax, elasticsearch_validate_optional_fields, ParserConfig
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -687,6 +687,31 @@ class TestParser(unittest.TestCase):
             self.assertRaises(
                 EqlSemanticError, parse_query,
                 'process where length(host_name) - 1 == length(user_name)'
+            )
+            # Offender strings with "{" must still raise EqlSemanticError (not ValueError
+            # from double-formatting the message in _error).
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'process where a == concat(b, "{")'
+            )
+
+        # Under elasticsearch_syntax + allow_alias, sequence event aliases (``as p0``) exempt
+        # comparisons that reference them, because alias-to-event comparisons are valid in ES EQL.
+        es_alias_syntax = ParserConfig(elasticsearch_syntax=True, reject_field_comparisons=True,
+                                       allow_alias=True)
+        with es_alias_syntax, ignore_missing_functions:
+            # Alias-referencing comparisons are allowed
+            parse_query(
+                'sequence [process where true] as p0 [process where p0.process_name == process_name]'
+            )
+            parse_query(
+                'sequence [process where true] as p0 '
+                '[process where length(p0.process_name) == length(process_name) - 1]'
+            )
+            # Non-alias field-vs-field is still rejected even with aliases present
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'sequence [process where true] as p0 [process where parent_name == process_name]'
             )
 
         # Non-ES syntax still allows field comparisons (Python engine / historic EQL)
