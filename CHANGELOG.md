@@ -1,6 +1,16 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 1.0.1
+
+ _Unreleased_
+
+### Fixed
+
+* Under `elasticsearch_syntax`, reject field-to-field comparisons and arithmetic involving fields
+  in comparison operators (e.g. `length(a) == length(b) - 1`), matching Elasticsearch EQL behavior.
+  Sequence event aliases (`as p0` / `p0.field == field`) remain allowed under `elastic_endpoint_syntax`.
+
 # Version 1.0.0
 
  _Released 2025-11-17_

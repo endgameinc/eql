@@ -116,7 +116,7 @@ class TestPythonEngine(TestEngine):
                 engine.add_analytic(parsed_analytic)
 
         sample_queries = [
-            'sample [event where x == y] [event where a == b]',
+            'sample [event where x == 1] [event where a == 2]',
             'sample by x,y,z [event where a == 1] [event where b == 2]',
             'sample [event where name == "test"] [event where name == "test"]'
         ]

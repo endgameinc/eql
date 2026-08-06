@@ -704,6 +704,20 @@ class LarkToEQL(Interpreter):
 
         return NodeInfo(ast.FunctionCall(function_name, [child.node for child in children]), TypeHint.Boolean)
 
+    @staticmethod
+    def _expression_contains_field(expr):
+        """Return True if the expression references a field anywhere in the tree."""
+        return any(isinstance(node, ast.Field) for node in expr)
+
+    @staticmethod
+    def _expression_contains_field_math(expr):
+        """Return True if a MathOperation in the tree involves a field (ES forbids this in comparisons)."""
+        for node in expr:
+            if isinstance(node, ast.MathOperation):
+                if any(isinstance(child, ast.Field) for child in node):
+                    return True
+        return False
+
     def comparison(self, node):
         """Callback function to walk the AST."""
         left, comp_op, right = self.visit_children(node)  # type: (NodeInfo, str, NodeInfo)
@@ -745,6 +759,38 @@ class LarkToEQL(Interpreter):
                     left.validate_type(TypeHint.String) and right.validate_type(TypeHint.String)):
 
                 raise self._type_error(right, left, error_message, error_node=node)
+
+        # Match Elasticsearch EQL: field-to-field comparisons (including via functions) and
+        # arithmetic involving fields are not supported in comparison operators.
+        # See: https://www.elastic.co/docs/reference/query-languages/eql/eql-syntax
+        # and https://github.com/elastic/elasticsearch/pull/73681
+        # Exception: sequence event aliases (endpoint `as p0` / p0.field == field) are allowed.
+        if self._elasticsearch_syntax:
+            def has_alias_field(expr):
+                if not self._alias_enabled or not self._alias_mapping:
+                    return False
+                return any(isinstance(n, ast.Field) and n.base in self._alias_mapping for n in expr)
+
+            left_has_field = self._expression_contains_field(left.node)
+            right_has_field = self._expression_contains_field(right.node)
+            offender = None
+            if not (has_alias_field(left.node) or has_alias_field(right.node)):
+                if left_has_field and right_has_field:
+                    offender = right.node if self._expression_contains_field_math(right.node) else (
+                        left.node if self._expression_contains_field_math(left.node) else right.node
+                    )
+                elif self._expression_contains_field_math(left.node):
+                    offender = left.node
+                elif self._expression_contains_field_math(right.node):
+                    offender = right.node
+            if offender is not None:
+                raise self._error(
+                    node,
+                    "Comparisons against fields are not (currently) supported; offender [{}] in [{}]".format(
+                        offender, op
+                    ),
+                    cls=EqlSemanticError,
+                )
 
         eql_node = ast.Comparison(left.node, op, right.node)
 

@@ -658,6 +658,38 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSemanticError, parse_query,
                               'sample ![process where true] [file where true] [file where true]')
 
+        # Elasticsearch EQL forbids field-to-field comparisons and field arithmetic in comparisons.
+        with elasticsearch_syntax, ignore_missing_functions:
+            # Allowed: field/function vs literal
+            parse_query('process where process_name == "cmd.exe"')
+            parse_query('process where length(process_name) == 7')
+            parse_query('process where length(process_name) > 0')
+            parse_query('process where indexOf(process_name, "x") == null')
+            # Allowed: field-to-field via functions (not comparison operators)
+            parse_query('process where startswith(process_name, substring(user_name, 0, -1))')
+
+            # Forbidden: field vs field
+            self.assertRaises(EqlSemanticError, parse_query, 'process where parent_name == process_name')
+            self.assertRaises(EqlSemanticError, parse_query, 'process where length(parent_name) == length(process_name)')
+            # Forbidden: field arithmetic in comparison (ES#73681 / NTLM relay rule failure mode)
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'process where length(host_name) == length(user_name) - 1'
+            )
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'process where length(process_name) + length(user_name) > 10'
+            )
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'process where length(process_name) - 1 == 5'
+            )
+
+        # Non-ES syntax still allows field comparisons (Python engine / historic EQL)
+        with ignore_missing_functions:
+            parse_query('process where parent_name == process_name')
+            parse_query('process where length(host_name) == length(user_name) - 1')
+
         with schema:
             parse_query("process where process_name == 'cmd.exe'")
             parse_query("process where process_name == ?'cmd.exe'")
