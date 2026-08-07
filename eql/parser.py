@@ -58,8 +58,12 @@ allow_enum_fields = ParserConfig(enable_enum=True)
 allow_negation = ParserConfig(allow_negation=True)
 allow_sample = ParserConfig(allow_sample=True)
 allow_runs = ParserConfig(allow_runs=True)
-elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True)
-elasticsearch_validate_optional_fields = ParserConfig(elasticsearch_syntax=True, validate_optional_fields=True)
+# reject_field_comparisons: ES/SIEM EQL only. Elastic Endpoint EQL allows field-to-field
+# comparisons (e.g. Target.process.executable != process.executable), so elastic_endpoint_syntax
+# must not set this flag.
+elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True, reject_field_comparisons=True)
+elasticsearch_validate_optional_fields = ParserConfig(
+    elasticsearch_syntax=True, validate_optional_fields=True, reject_field_comparisons=True)
 elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
@@ -183,6 +187,7 @@ class LarkToEQL(Interpreter):
         self._ignore_missing = ParserConfig.read_stack("ignore_missing_fields", False)
         self._strict_fields = ParserConfig.read_stack("strict_fields", False)
         self._elasticsearch_syntax = ParserConfig.read_stack("elasticsearch_syntax", False)
+        self._reject_field_comparisons = ParserConfig.read_stack("reject_field_comparisons", False)
         self._dollar_var = ParserConfig.read_stack("dollar_var", False)
         self._validate_optional_fields = ParserConfig.read_stack("validate_optional_fields", False)
         self._allow_enum = ParserConfig.read_stack("enable_enum", False)
@@ -704,6 +709,68 @@ class LarkToEQL(Interpreter):
 
         return NodeInfo(ast.FunctionCall(function_name, [child.node for child in children]), TypeHint.Boolean)
 
+    def _classify_comparison_side(self, expr):
+        """Classify one comparison operand in a single AST walk.
+
+        Returns ``(has_field, has_alias)``. A side "has a field" if it references one anywhere,
+        including through functions and arithmetic, which is what makes it unfoldable to a
+        constant. ``has_alias`` means the side references a sequence event alias (``as p0``).
+        """
+        if isinstance(expr, (ast.String, ast.Number, ast.Boolean, ast.Null)):
+            return False, False
+
+        has_field = False
+        alias_bases = self._alias_mapping if (self._alias_enabled and self._alias_mapping) else None
+
+        for node in expr:
+            if isinstance(node, ast.Field):
+                has_field = True
+
+                if alias_bases is None:
+                    # Nothing else to learn from this side; one field is enough.
+                    break
+
+                if node.base in alias_bases:
+                    # Alias presence exempts the whole comparison; no need to keep walking.
+                    return True, True
+
+        return has_field, False
+
+    def _check_elasticsearch_field_comparison(self, node, left, right, op):
+        """Reject ES-incompatible field comparisons for SIEM/ES EQL only.
+
+        Match Elasticsearch EQL: a comparison operator requires at least one side to be a
+        constant. Comparing a field to another field is unsupported, even when either side is
+        wrapped in functions or arithmetic. Comparing a field expression to a constant (e.g.
+        ``length(a) - 1 == 5``) is supported, because the constant side folds.
+        See: https://www.elastic.co/docs/reference/query-languages/eql/eql-syntax
+        (ES rejects with: Comparisons against fields are not currently supported).
+
+        Not applied under ``elastic_endpoint_syntax`` (Endpoint supports field comparisons).
+        Exception: sequence event aliases (endpoint ``as p0`` / ``p0.field == field``) when
+        the check is enabled under SIEM syntax with aliases.
+        """
+        if not self._reject_field_comparisons:
+            return
+
+        left_field, left_alias = self._classify_comparison_side(left.node)
+        right_field, right_alias = self._classify_comparison_side(right.node)
+
+        # Sequence aliases (``as p0``) may legally compare across events.
+        if left_alias or right_alias:
+            return
+
+        # Illegal only when neither side folds to a constant.
+        if not (left_field and right_field):
+            return
+
+        raise self._error(
+            node,
+            "Comparisons against fields are not (currently) supported; offender [{offender}] in [{op}]",
+            cls=EqlSemanticError,
+            offender=right.node, op=op,
+        )
+
     def comparison(self, node):
         """Callback function to walk the AST."""
         left, comp_op, right = self.visit_children(node)  # type: (NodeInfo, str, NodeInfo)
@@ -745,6 +812,8 @@ class LarkToEQL(Interpreter):
                     left.validate_type(TypeHint.String) and right.validate_type(TypeHint.String)):
 
                 raise self._type_error(right, left, error_message, error_node=node)
+
+        self._check_elasticsearch_field_comparison(node, left, right, op)
 
         eql_node = ast.Comparison(left.node, op, right.node)
 

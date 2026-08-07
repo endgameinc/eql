@@ -12,7 +12,7 @@ from eql.errors import EqlSchemaError, EqlSyntaxError, EqlSemanticError, EqlType
 from eql.parser import (
     allow_negation, allow_sample, allow_runs, parse_query, parse_expression, parse_definitions,
     ignore_missing_functions, parse_field, parse_literal, extract_query_terms, keywords, elasticsearch_syntax,
-    elastic_endpoint_syntax, elasticsearch_validate_optional_fields
+    elastic_endpoint_syntax, elasticsearch_validate_optional_fields, ParserConfig
 )
 from eql.walkers import DepthFirstWalker
 from eql.pipes import *   # noqa: F403
@@ -657,6 +657,76 @@ class TestParser(unittest.TestCase):
                               'join ![process where true] [file where true] [file where true]')
             self.assertRaises(EqlSemanticError, parse_query,
                               'sample ![process where true] [file where true] [file where true]')
+
+        # Elasticsearch EQL requires at least one side of a comparison to fold to a constant.
+        with elasticsearch_syntax, ignore_missing_functions:
+            # Allowed: field/function vs literal
+            parse_query('process where process_name == "cmd.exe"')
+            parse_query('process where length(process_name) == 7')
+            parse_query('process where length(process_name) > 0')
+            parse_query('process where indexOf(process_name, "x") == null')
+            # Allowed: field-to-field via functions (not comparison operators)
+            parse_query('process where startswith(process_name, substring(user_name, 0, -1))')
+            # Allowed: arithmetic over fields compared against a constant, since only one
+            # side has to fold. Rejecting these would block valid ES queries.
+            parse_query('process where length(process_name) - 1 == 5')
+            parse_query('process where length(process_name) + length(user_name) > 10')
+            parse_query('process where substring(process_name, 0, length(user_name) - 1) == "x"')
+
+            # Forbidden: field vs field
+            self.assertRaises(EqlSemanticError, parse_query, 'process where parent_name == process_name')
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'process where length(parent_name) == length(process_name)',
+            )
+            # Forbidden: field vs field arithmetic (observed ES rejection / NTLM relay rule)
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'process where length(host_name) == length(user_name) - 1'
+            )
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'process where length(host_name) - 1 == length(user_name)'
+            )
+            # Offender strings with "{" must still raise EqlSemanticError (not ValueError
+            # from double-formatting the message in _error).
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'process where a == concat(b, "{")'
+            )
+
+        # Under elasticsearch_syntax + allow_alias, sequence event aliases (``as p0``) exempt
+        # comparisons that reference them, because alias-to-event comparisons are valid in ES EQL.
+        es_alias_syntax = ParserConfig(elasticsearch_syntax=True, reject_field_comparisons=True,
+                                       allow_alias=True)
+        with es_alias_syntax, ignore_missing_functions:
+            # Alias-referencing comparisons are allowed
+            parse_query(
+                'sequence [process where true] as p0 [process where p0.process_name == process_name]'
+            )
+            parse_query(
+                'sequence [process where true] as p0 '
+                '[process where length(p0.process_name) == length(process_name) - 1]'
+            )
+            # Non-alias field-vs-field is still rejected even with aliases present
+            self.assertRaises(
+                EqlSemanticError, parse_query,
+                'sequence [process where true] as p0 [process where parent_name == process_name]'
+            )
+
+        # Non-ES syntax still allows field comparisons (Python engine / historic EQL)
+        with ignore_missing_functions:
+            parse_query('process where parent_name == process_name')
+            parse_query('process where length(host_name) == length(user_name) - 1')
+
+        # Elastic Endpoint EQL allows field-to-field comparisons (unlike ES/SIEM EQL)
+        with elastic_endpoint_syntax, ignore_missing_functions:
+            parse_query('process where parent_name == process_name')
+            parse_query('process where Target.process.executable != process.executable')
+            parse_query('process where length(host_name) == length(user_name) - 1')
+            parse_query(
+                'api where process.Ext.api.metadata.client_process_id == process.pid'
+            )
 
         with schema:
             parse_query("process where process_name == 'cmd.exe'")
