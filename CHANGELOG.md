@@ -3,7 +3,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 # Version 1.0.1
 
- _Unreleased_
+ _Released 2026-08-07_
 
 ### Fixed
 
