@@ -1,5 +1,6 @@
 """EQL functions."""
 import re
+import fnmatch
 
 from .errors import EqlError
 from .signatures import SignatureMixin
@@ -555,18 +556,9 @@ class Wildcard(FunctionSignature):
     def to_regex(cls, *wildcards):
         """Convert a list of wildcards to a regular expression."""
         expressions = []
-        head = "^"
-        tail = "$"
 
         for wildcard in wildcards:
-            pieces = [re.escape(p) for p in fold_case(wildcard).split('*')]
-            regex = head + '.*?'.join(pieces) + tail
-
-            tail_skip = '.*?$'
-
-            if regex.endswith(tail_skip):
-                regex = regex[:-len(tail_skip)]
-            expressions.append(regex)
+            expressions.append(fnmatch.translate(wildcard))
 
         return "|".join(expressions)
 
