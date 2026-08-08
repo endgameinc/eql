@@ -346,6 +346,26 @@ class Length(FunctionSignature):
 
 
 @register
+class LeftStrip(FunctionSignature):
+    """Strip leading whitespace from a string."""
+
+    name = "lstrip"
+    argument_types = [TypeHint.String]
+    return_value = TypeHint.String
+    minimum_args = 1
+
+    @classmethod
+    def run(cls, source):
+        """Strip whitespace from source."""
+        if not is_string(source):
+            return None
+
+        stripped = source.lstrip()
+
+        return stripped
+
+
+@register
 class Match(FunctionSignature):
     """Perform regular expression matching on a string."""
 
@@ -434,6 +454,26 @@ class Multiply(MathFunctionSignature):
 
 
 @register
+class RightStrip(FunctionSignature):
+    """Strip trailing whitespace from a string."""
+
+    name = "rstrip"
+    argument_types = [TypeHint.String]
+    return_value = TypeHint.String
+    minimum_args = 1
+
+    @classmethod
+    def run(cls, source):
+        """Strip whitespace from source."""
+        if not is_string(source):
+            return None
+
+        stripped = source.rstrip()
+
+        return stripped
+
+
+@register
 class Safe(DynamicFunctionSignature):
     """Evaluate an expression and suppress exceptions."""
 
@@ -471,6 +511,26 @@ class StringContains(FunctionSignature):
         if is_string(source) and is_string(substring):
             return fold_case(substring) in fold_case(source)
         return False
+
+
+@register
+class Strip(FunctionSignature):
+    """Strip leading & trailing whitespace from a string."""
+
+    name = "strip"
+    argument_types = [TypeHint.String]
+    return_value = TypeHint.String
+    minimum_args = 1
+
+    @classmethod
+    def run(cls, source):
+        """Strip whitespace from source."""
+        if not is_string(source):
+            return None
+
+        stripped = source.strip()
+
+        return stripped
 
 
 @register
