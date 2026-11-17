@@ -1,6 +1,19 @@
 # Event Query Language - Changelog
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+# Version 1.0.2
+
+ _Released 2026-11-16_
+
+### Fixed
+
+* Under `elasticsearch_syntax`, validate `regex` and `regex~` patterns with Lucene's regular expression
+  syntax, which Elasticsearch uses to compile them. `&`, `<`, `>`, `~`, `#`, `@` and `"` are operators
+  there, so a pattern such as `".*(;|>|<|&&).*"` is a valid EQL string but fails in Elasticsearch
+  (or silently matches something else). These patterns now raise an `EqlSemanticError` that points at the
+  pattern. The `match()` function and `elastic_endpoint_syntax` are unchanged.
+* Added `eql.lucene_regex.validate_lucene_regex()` to check a pattern against Lucene's syntax directly.
+
 # Version 1.0.1
 
  _Released 2026-08-07_
