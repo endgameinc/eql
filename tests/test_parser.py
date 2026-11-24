@@ -801,6 +801,61 @@ class TestParser(unittest.TestCase):
             self.assertRaises(EqlSyntaxError, parse_query, 'process where client.as.organization.name == "string"')
             self.assertRaises(EqlSyntaxError, parse_query, 'process where destination.as.organization.name == "string"')
 
+    def test_elasticsearch_lucene_regex(self):
+        """Test that regex/regex~ patterns are validated with Lucene's regex syntax under elasticsearch_syntax."""
+        # Elasticsearch compiles these with Lucene, where & < > ~ # @ " are operators unless escaped.
+        valid = [
+            'process where process_name regex "cmd\\\\.exe"',
+            'process where process_name regex~ """.*(;|\\&\\&|\\>|\\<).*"""',
+            'process where process_name regex """.*[<>&].*"""',
+            'process where process_name regex ("foo.*", ".*bar")',
+            # intended use of the optional operators
+            'process where process_name regex "foo<1-100>"',
+            'process where process_name regex "\\"literal.string\\""',
+        ]
+        invalid = [
+            # unescaped `<` opens an interval that is never closed; `&&` would be an intersection
+            'process where process_name regex """.*(;|`|\\||>|<|&&|%3b).*"""',
+            'process where process_name regex~ ".*<script>.*"',
+            'process where process_name regex ("foo.*", ".*~")',
+            'sequence [process where true] [network where destination_address regex "10<1-x>"]',
+            # braces in the pattern must not be formatted again by _error (EqlSemanticError, not ValueError)
+            'process where process_name regex "a{3,1}"',
+        ]
+
+        for config in (elasticsearch_syntax, elasticsearch_validate_optional_fields):
+            with config, ignore_missing_functions:
+                for query in valid:
+                    parse_query(query)
+                for query in invalid:
+                    with self.assertRaisesRegex(EqlSemanticError, "Invalid Lucene regular expression"):
+                        parse_query(query)
+
+        with elasticsearch_syntax, ignore_missing_functions:
+            # The caret points at the offending pattern, not the whole comparison
+            with self.assertRaises(EqlSemanticError) as ctx:
+                parse_query('process where process_name regex ".*<.*"')
+            self.assertEqual(ctx.exception.column, len('process where process_name regex '))
+
+            # match() is evaluated by the Python engine with Python's re, so it is not checked as Lucene syntax
+            parse_query('process where match(process_name, ".*<.*")')
+
+            # Expression fragments (no event type) are checked the same way as full queries
+            parse_expression('process_name regex~ """.*(;|\\&\\&|\\>|\\<).*"""')
+            parse_expression('process_name regex "foo<1-100>" and pid == 4')
+            for expression in (
+                'process_name regex~ ".*<script>.*"',
+                'pid == 4 and process_name regex ("foo.*", ".*~")',
+                'not (process_name regex "a{3,1}")',
+            ):
+                with self.assertRaisesRegex(EqlSemanticError, "Invalid Lucene regular expression"):
+                    parse_expression(expression)
+
+        # Elastic Endpoint does not compile regex patterns with Lucene
+        with elastic_endpoint_syntax, ignore_missing_functions:
+            for query in invalid:
+                parse_query(query)
+
     def test_nested_fields(self):
         """Test nested fields."""
         schema = Schema({

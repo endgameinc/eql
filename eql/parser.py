@@ -16,6 +16,7 @@ from .errors import (EqlError, EqlSchemaError, EqlSemanticError,
                      EqlSyntaxError, EqlTypeMismatchError)
 from .etc import get_etc_file
 from .functions import get_function, list_functions
+from .lucene_regex import LuceneRegexError, validate_lucene_regex
 from .optimizer import Optimizer
 from .schema import EVENT_TYPE_ANY, EVENT_TYPE_GENERIC, Schema
 from .types import NodeInfo, TypeFoldCheck, TypeHint
@@ -61,9 +62,13 @@ allow_runs = ParserConfig(allow_runs=True)
 # reject_field_comparisons: ES/SIEM EQL only. Elastic Endpoint EQL allows field-to-field
 # comparisons (e.g. Target.process.executable != process.executable), so elastic_endpoint_syntax
 # must not set this flag.
-elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True, reject_field_comparisons=True)
+# lucene_regex_syntax: ES/SIEM EQL only. Elasticsearch compiles regex/regex~ patterns with Lucene's RegExp,
+# which Elastic Endpoint does not use, so elastic_endpoint_syntax must not set this flag either.
+elasticsearch_syntax = ParserConfig(elasticsearch_syntax=True, reject_field_comparisons=True,
+                                    lucene_regex_syntax=True)
 elasticsearch_validate_optional_fields = ParserConfig(
-    elasticsearch_syntax=True, validate_optional_fields=True, reject_field_comparisons=True)
+    elasticsearch_syntax=True, validate_optional_fields=True, reject_field_comparisons=True,
+    lucene_regex_syntax=True)
 elastic_endpoint_syntax = ParserConfig(elasticsearch_syntax=True, dollar_var=True, allow_alias=True)
 
 keywords = ("and", "by", "const", "false", "in", "join", "macro",
@@ -188,6 +193,7 @@ class LarkToEQL(Interpreter):
         self._strict_fields = ParserConfig.read_stack("strict_fields", False)
         self._elasticsearch_syntax = ParserConfig.read_stack("elasticsearch_syntax", False)
         self._reject_field_comparisons = ParserConfig.read_stack("reject_field_comparisons", False)
+        self._lucene_regex_syntax = ParserConfig.read_stack("lucene_regex_syntax", False)
         self._dollar_var = ParserConfig.read_stack("dollar_var", False)
         self._validate_optional_fields = ParserConfig.read_stack("validate_optional_fields", False)
         self._allow_enum = ParserConfig.read_stack("enable_enum", False)
@@ -707,7 +713,37 @@ class LarkToEQL(Interpreter):
             if not child.validate_type(TypeHint.String):
                 raise self._type_error(child, TypeHint.String)
 
+        if function_name == "match" and self._lucene_regex_syntax:
+            for pattern in children[1:]:  # type: NodeInfo
+                self._check_lucene_regex(pattern)
+
         return NodeInfo(ast.FunctionCall(function_name, [child.node for child in children]), TypeHint.Boolean)
+
+    def _check_lucene_regex(self, pattern):
+        """Reject a ``regex``/``regex~`` pattern that Elasticsearch cannot compile.
+
+        Elasticsearch compiles these patterns with Lucene's ``RegExp`` and every optional operator enabled, so
+        ``&``, ``<``, ``>``, ``~``, ``#``, ``@`` and ``"`` are operators, not literals. A pattern that misuses them
+        is a valid EQL string but fails in Elasticsearch.
+        See: https://www.elastic.co/docs/reference/query-languages/query-dsl/regexp-syntax
+
+        Only applies to the ``regex`` operators. The ``match()`` function is evaluated by the Python engine with
+        Python's ``re`` module, which its own signature already validates.
+        """
+        if not isinstance(pattern.node, ast.String):
+            return
+
+        try:
+            validate_lucene_regex(pattern.node.value)
+        except LuceneRegexError as exc:
+            # Pass the reason as a format argument so braces in the pattern are not formatted again in _error
+            raise self._error(
+                pattern,
+                "Invalid Lucene regular expression: {reason}. "
+                "Escape the operators & < > ~ # @ \" with \\ to match them literally, or use like/like~",
+                cls=EqlSemanticError,
+                reason=exc,
+            )
 
     def _classify_comparison_side(self, expr):
         """Classify one comparison operand in a single AST walk.
