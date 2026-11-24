@@ -840,6 +840,17 @@ class TestParser(unittest.TestCase):
             # match() is evaluated by the Python engine with Python's re, so it is not checked as Lucene syntax
             parse_query('process where match(process_name, ".*<.*")')
 
+            # Expression fragments (no event type) are checked the same way as full queries
+            parse_expression('process_name regex~ """.*(;|\\&\\&|\\>|\\<).*"""')
+            parse_expression('process_name regex "foo<1-100>" and pid == 4')
+            for expression in (
+                'process_name regex~ ".*<script>.*"',
+                'pid == 4 and process_name regex ("foo.*", ".*~")',
+                'not (process_name regex "a{3,1}")',
+            ):
+                with self.assertRaisesRegex(EqlSemanticError, "Invalid Lucene regular expression"):
+                    parse_expression(expression)
+
         # Elastic Endpoint does not compile regex patterns with Lucene
         with elastic_endpoint_syntax, ignore_missing_functions:
             for query in invalid:
