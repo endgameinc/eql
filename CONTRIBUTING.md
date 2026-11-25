@@ -49,7 +49,7 @@ Anyone is encouraged to make a PR for open issues that have a clear path forward
 * Include end-to-end tests by updating the test [data](eql/etc/test_data.json) and [queries](eql/etc/test_queries.toml). These are used as the gold standard of expected behavior, and the queries should have a list of the serial_event_id of the events, in the expected order.
 
 ### CLI
-Finally, the CLI is an area we are always looking to expand. This may include new input file types, new processing features, new tables, etc. Some shell functionality, like tab completions ANSI coloring, and history often varies across different operating systems. If possible, please test new functionality across a few different operating systems if you have access, and Python 3.8+. If you find any unusual behavior in the shell related to compatibility, please let us know in an issue.
+Finally, the CLI is an area we are always looking to expand. This may include new input file types, new processing features, new tables, etc. Some shell functionality, like tab completions ANSI coloring, and history often varies across different operating systems. If possible, please test new functionality across a few different operating systems if you have access, and Python 3.10+. If you find any unusual behavior in the shell related to compatibility, please let us know in an issue.
 
 ## Resources
 See the [resources page](https://eql.readthedocs.io/en/latest/resources.html) on ReadTheDocs for a full list of resources

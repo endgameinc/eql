@@ -32,7 +32,7 @@ EQL also has a preprocessor that can perform parse and translation time evaluati
 
 Getting Started
 ^^^^^^^^^^^^^^^^
-The EQL module requires Python 3.8 or higher. Assuming a supported Python version is installed, run the command:
+The EQL module requires Python 3.10 or higher. Assuming a supported Python version is installed, run the command:
 
 .. code-block:: console
 
